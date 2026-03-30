@@ -96,7 +96,7 @@
     margin-bottom: 10px;
   }
 
-  select, input[type="text"] {
+  select, input[type="text"], input[type="number"], textarea {
     width: 100%;
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -110,8 +110,14 @@
     appearance: none;
     -webkit-appearance: none;
   }
-  select:focus, input:focus { border-color: var(--teal); }
+  select:focus, input:focus, textarea:focus { border-color: var(--teal); }
   select option { background: #1a1d27; }
+  textarea {
+    resize: vertical;
+    min-height: 92px;
+    line-height: 1.5;
+    font-family: var(--mono);
+  }
 
   .btn {
     width: 100%;
@@ -178,6 +184,61 @@
     margin-bottom: 8px;
   }
   .tip strong { color: var(--text-dim); font-weight: 500; }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 8px 0 10px;
+  }
+  .check-row input {
+    accent-color: var(--teal);
+    margin: 0;
+  }
+
+  .diag-box {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    padding: 9px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    white-space: pre-line;
+  }
+  .diag-box strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .diag-box.muted {
+    color: var(--text-muted);
+  }
+
+  .diag-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .diag-actions.two-up {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mini-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .help-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
 
   .terminal-pane {
     flex: 1;
@@ -330,6 +391,40 @@
     </div>
 
     <div class="section">
+      <div class="section-label">Advanced Diagnostics</div>
+      <select id="dtr-mode-select">
+        <option value="default" selected>Default DTR behavior</option>
+        <option value="low">Force DTR low after open</option>
+        <option value="high">Force DTR high after open</option>
+        <option value="pulse">Pulse DTR low/high after open</option>
+      </select>
+      <label class="check-row">
+        <input type="checkbox" id="observe-toggle">
+        <span>Observe only. Skip default wake and status traffic.</span>
+      </label>
+      <div class="mini-grid">
+        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="Startup wait ms">
+        <input type="number" id="sequence-delay-input" min="0" max="10000" step="50" value="450" placeholder="Step delay ms">
+      </div>
+      <div class="diag-box muted" id="preset-box">No preset loaded. Shareable test links can prefill diagnostics and safe command sequences.</div>
+      <div class="diag-actions">
+        <button class="icon-btn" id="dtr-low-btn" disabled>DTR Low</button>
+        <button class="icon-btn" id="dtr-high-btn" disabled>DTR High</button>
+        <button class="icon-btn" id="dtr-pulse-btn" disabled>Pulse</button>
+      </div>
+      <input type="text" id="builder-name-input" placeholder="Builder name, e.g. settings-and-build-info">
+      <textarea id="builder-commands-input" placeholder="One GRBL command per line. Up to 10 commands. Example:
+$$
+$#
+$I"></textarea>
+      <div class="diag-actions two-up">
+        <button class="icon-btn" id="apply-builder-btn">Use Builder</button>
+        <button class="icon-btn" id="copy-link-btn">Copy Link</button>
+      </div>
+      <div class="help-text">Builder commands run one at a time in order and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use FluidNC-style percent escapes like <code>%3F</code> for special characters, or <code>hex:18</code> / <code>hex:24 24 0A</code> for raw bytes.</div>
+    </div>
+
+    <div class="section">
       <div class="section-label">Quick commands</div>
       <div class="cmd-grid">
         <button class="cmd-btn" data-cmd="\n"       disabled><span class="cmd-label">Wake</span>\n</button>
@@ -373,6 +468,7 @@
     <div class="term-header">
       <span class="term-header-label">Terminal output</span>
       <div class="term-header-actions">
+        <button class="icon-btn" id="copy-diag-btn">Copy log</button>
         <button class="icon-btn" id="autoscroll-btn" title="Toggle autoscroll">↓ Auto</button>
         <button class="icon-btn" id="clear-btn">Clear</button>
         <button class="icon-btn" id="export-btn">Export</button>
@@ -395,10 +491,63 @@ const cmdInput     = document.getElementById('cmd-input');
 const sendBtn      = document.getElementById('send-btn');
 const clearBtn     = document.getElementById('clear-btn');
 const exportBtn    = document.getElementById('export-btn');
+const copyDiagBtn  = document.getElementById('copy-diag-btn');
 const autoscrollBtn= document.getElementById('autoscroll-btn');
 const baudSelect   = document.getElementById('baud-select');
+const dtrModeSelect= document.getElementById('dtr-mode-select');
+const observeToggle= document.getElementById('observe-toggle');
+const waitMsInput   = document.getElementById('wait-ms-input');
+const sequenceDelayInput = document.getElementById('sequence-delay-input');
+const presetBox    = document.getElementById('preset-box');
+const dtrLowBtn    = document.getElementById('dtr-low-btn');
+const dtrHighBtn   = document.getElementById('dtr-high-btn');
+const dtrPulseBtn  = document.getElementById('dtr-pulse-btn');
+const builderNameInput = document.getElementById('builder-name-input');
+const builderCommandsInput = document.getElementById('builder-commands-input');
+const applyBuilderBtn = document.getElementById('apply-builder-btn');
+const copyLinkBtn  = document.getElementById('copy-link-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
+
+const NAMED_PRESETS = {
+  'grbl-info': {
+    name: 'grbl-info',
+    description: 'Collect GRBL settings, offsets, and build info.',
+    commands: ['$$', '$#', '$I'],
+    waitMs: 500,
+    sequenceDelayMs: 450
+  },
+  'startup-status': {
+    name: 'startup-status',
+    description: 'Wake the controller and request a single real-time status report.',
+    commands: ['wake', '?'],
+    waitMs: 800,
+    sequenceDelayMs: 600
+  },
+  'observe-only': {
+    name: 'observe-only',
+    description: 'Open the port and watch without sending startup traffic.',
+    commands: [],
+    observeOnly: true,
+    waitMs: 2500,
+    sequenceDelayMs: 450
+  },
+  'dtr-pulse-info': {
+    name: 'dtr-pulse-info',
+    description: 'Pulse DTR, watch for startup output, then collect GRBL info.',
+    commands: ['$$', '$#', '$I'],
+    dtrMode: 'pulse',
+    observeOnly: true,
+    waitMs: 1800,
+    sequenceDelayMs: 500
+  }
+};
+
+const DEFAULT_SEQUENCE_DELAY_MS = 450;
+const DEFAULT_WAKE_DELAY_MS = 800;
+const DEFAULT_STATUS_DELAY_MS = 600;
+const MAX_LOG_LINES = 5000;
+const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 
 let port = null;
 let writer = null;
@@ -408,10 +557,597 @@ let autoScroll = true;
 let cmdHistory = [];
 let historyIdx = -1;
 let logLines = [];
+let dtrSupported = false;
+let diagnosticsPreset = null;
+let activeSequenceToken = 0;
+let pendingSequenceResponse = null;
+let currentRun = {
+  name: 'manual',
+  description: 'Manual connect',
+  source: 'manual',
+  baud: parseInt(baudSelect.value, 10),
+  dtrMode: 'default',
+  observeOnly: false,
+  waitMs: 0,
+  sequenceDelayMs: DEFAULT_SEQUENCE_DELAY_MS,
+  commands: [],
+  invalidCommands: [],
+  portInfo: null,
+  presetSummary: 'Manual connect'
+};
 
 if (!('serial' in navigator)) {
   noSerialSec.style.display = 'block';
   connectBtn.disabled = true;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isSequenceActive(token) {
+  return token === activeSequenceToken && !!port;
+}
+
+function parseBooleanParam(value) {
+  if (value == null) return null;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function parseNumberParam(value, fallback = 0, max = 10000) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.min(parsed, max);
+}
+
+function normalizeDtrMode(value) {
+  return ['default', 'low', 'high', 'pulse'].includes(value) ? value : 'default';
+}
+
+function formatHex(value) {
+  return typeof value === 'number' ? `0x${value.toString(16).padStart(4, '0')}` : 'n/a';
+}
+
+function formatPortInfo(info) {
+  if (!info) return 'Port info unavailable';
+  const parts = [];
+  if (typeof info.usbVendorId === 'number') parts.push(`VID ${formatHex(info.usbVendorId)}`);
+  if (typeof info.usbProductId === 'number') parts.push(`PID ${formatHex(info.usbProductId)}`);
+  if (typeof info.bluetoothServiceClassId === 'string') parts.push(`BT ${info.bluetoothServiceClassId}`);
+  return parts.length ? parts.join(' · ') : 'Port info unavailable';
+}
+
+function getCommandTokenDisplay(raw) {
+  const normalized = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\x18/g, '^X');
+  return normalized || '(empty)';
+}
+
+function bytesToDisplay(bytes) {
+  return Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+}
+
+function parseHexCommand(raw) {
+  const body = raw.slice(4).trim();
+  if (!body) {
+    throw new Error('hex: command is empty');
+  }
+
+  const cleaned = body.replace(/,/g, ' ');
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  const bytes = [];
+
+  for (const token of tokens) {
+    const normalized = token.replace(/^0x/i, '');
+    if (!/^[0-9a-fA-F]{2}$/.test(normalized)) {
+      throw new Error(`Invalid hex byte: ${token}`);
+    }
+    bytes.push(parseInt(normalized, 16));
+  }
+
+  return Uint8Array.from(bytes);
+}
+
+function parseEscapedCommandBytes(raw) {
+  const bytes = [];
+  const encoder = new TextEncoder();
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (char === '%' && /^[0-9a-fA-F]{2}$/.test(raw.slice(index + 1, index + 3))) {
+      bytes.push(parseInt(raw.slice(index + 1, index + 3), 16));
+      index += 2;
+      continue;
+    }
+
+    if (char === '\\') {
+      const next = raw[index + 1];
+      if (next === 'n') {
+        bytes.push(0x0A);
+        index += 1;
+        continue;
+      }
+      if (next === 'r') {
+        bytes.push(0x0D);
+        index += 1;
+        continue;
+      }
+      if (next === 't') {
+        bytes.push(0x09);
+        index += 1;
+        continue;
+      }
+      if (next === 'x' && /^[0-9a-fA-F]{2}$/.test(raw.slice(index + 2, index + 4))) {
+        bytes.push(parseInt(raw.slice(index + 2, index + 4), 16));
+        index += 3;
+        continue;
+      }
+    }
+
+    bytes.push(...encoder.encode(char));
+  }
+
+  return Uint8Array.from(bytes);
+}
+
+function normalizeCommandInput(raw) {
+  const text = (raw || '').trim();
+  if (!text) return null;
+
+  if (text === '^X' || text === '\\x18') {
+    return { input: text, send: '\x18', payload: Uint8Array.of(0x18), display: '^X', waitForAck: false };
+  }
+  if (text === '\\n' || text.toLowerCase() === 'wake') {
+    return { input: text, send: '\n', payload: Uint8Array.of(0x0A), display: '\\n', waitForAck: false };
+  }
+  if (text === '?') {
+    return { input: text, send: '?', payload: Uint8Array.of(0x3F), display: '?', waitForAck: false };
+  }
+
+  if (text.toLowerCase().startsWith('hex:')) {
+    const payload = parseHexCommand(text);
+    const lastByte = payload[payload.length - 1];
+    return {
+      input: text,
+      send: text,
+      payload,
+      display: `hex:${bytesToDisplay(payload)}`,
+      waitForAck: lastByte === 0x0A || lastByte === 0x0D
+    };
+  }
+
+  const payload = parseEscapedCommandBytes(text);
+  const needsLineEnding = payload.length === 0 || ![0x0A, 0x0D].includes(payload[payload.length - 1]);
+  const finalPayload = needsLineEnding ? Uint8Array.from([...payload, 0x0A]) : payload;
+
+  return {
+    input: text,
+    send: text.endsWith('\n') ? text : `${text}\n`,
+    payload: finalPayload,
+    display: text,
+    waitForAck: true
+  };
+}
+
+function parseCommandEntries(commands, maxCommands = 10) {
+  const valid = [];
+  const invalid = [];
+  const entries = commands.map(command => (command || '').trim()).filter(Boolean);
+
+  entries.slice(0, maxCommands).forEach(command => {
+    try {
+      const normalized = normalizeCommandInput(command);
+      if (normalized) valid.push(normalized.input);
+    } catch (error) {
+      invalid.push(`Rejected command "${command}": ${error.message}`);
+    }
+  });
+
+  if (entries.length > maxCommands) {
+    invalid.push(`Only the first ${maxCommands} commands will be used`);
+  }
+
+  return { valid, invalid };
+}
+
+function collectBuilderCommands() {
+  return builderCommandsInput.value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function buildPresetSummary(config) {
+  const summary = [];
+  summary.push(`Preset: ${config.name || 'custom-link'}`);
+  summary.push(`Commands: ${config.commands.length ? config.commands.map(getCommandTokenDisplay).join(', ') : 'none'}`);
+  summary.push(`DTR: ${config.dtrMode}`);
+  summary.push(`Observe only: ${config.observeOnly ? 'yes' : 'no'}`);
+  if (config.waitMs) summary.push(`Wait: ${config.waitMs} ms`);
+  summary.push(`Step delay: ${config.sequenceDelayMs} ms`);
+  if (config.invalidCommands.length) summary.push(config.invalidCommands.join(' | '));
+  return summary;
+}
+
+function parseDiagnosticsPreset() {
+  const params = new URLSearchParams(window.location.search);
+  const hasPresetParams = ['preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait', 'delay'].some(key => params.has(key));
+  if (!hasPresetParams) return null;
+
+  const presetName = params.get('preset');
+  const presetBase = presetName && NAMED_PRESETS[presetName] ? { ...NAMED_PRESETS[presetName] } : null;
+  const config = {
+    name: params.get('name') || presetBase?.name || 'custom-link',
+    description: presetBase?.description || 'URL-configured diagnostics run.',
+    source: 'url',
+    commands: presetBase?.commands ? [...presetBase.commands] : [],
+    dtrMode: presetBase?.dtrMode || 'default',
+    observeOnly: Boolean(presetBase?.observeOnly),
+    waitMs: presetBase?.waitMs || 0,
+    sequenceDelayMs: presetBase?.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS,
+    invalidCommands: [],
+    summary: []
+  };
+
+  if (presetName && !presetBase) {
+    config.invalidCommands.push(`Unknown preset: ${presetName}`);
+  }
+
+  const repeatedCommands = params.getAll('cmd');
+  if (repeatedCommands.length) {
+    const parsed = parseCommandEntries(repeatedCommands);
+    config.commands = parsed.valid;
+    config.invalidCommands.push(...parsed.invalid);
+  } else if (params.has('cmds')) {
+    const parsed = parseCommandEntries(params.get('cmds').split(','));
+    config.commands = parsed.valid;
+    config.invalidCommands.push(...parsed.invalid);
+  }
+
+  if (params.has('baud') && [...baudSelect.options].some(option => option.value === params.get('baud'))) {
+    config.baud = params.get('baud');
+  }
+
+  if (params.has('dtr')) {
+    config.dtrMode = normalizeDtrMode(params.get('dtr'));
+  }
+
+  const observe = parseBooleanParam(params.get('observe'));
+  if (observe != null) config.observeOnly = observe;
+
+  if (params.has('wait')) config.waitMs = parseNumberParam(params.get('wait'), config.waitMs || 0);
+  if (params.has('delay')) config.sequenceDelayMs = parseNumberParam(params.get('delay'), config.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS);
+
+  config.summary = buildPresetSummary(config);
+
+  return config;
+}
+
+function buildCustomPresetFromUi(source = 'builder') {
+  const parsed = parseCommandEntries(collectBuilderCommands());
+  const config = {
+    name: (builderNameInput.value || '').trim() || 'custom-builder',
+    description: 'Custom diagnostic sequence built in the page.',
+    source,
+    commands: parsed.valid,
+    dtrMode: normalizeDtrMode(dtrModeSelect.value),
+    observeOnly: observeToggle.checked,
+    waitMs: parseNumberParam(waitMsInput.value, 0),
+    sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, DEFAULT_SEQUENCE_DELAY_MS),
+    invalidCommands: parsed.invalid
+  };
+  config.summary = buildPresetSummary(config);
+  return config;
+}
+
+function updatePresetBox() {
+  if (!diagnosticsPreset) {
+    presetBox.className = 'diag-box muted';
+    presetBox.textContent = 'No preset loaded. Shareable test links can prefill diagnostics and command sequences.';
+    return;
+  }
+
+  presetBox.className = diagnosticsPreset.invalidCommands.length ? 'diag-box' : 'diag-box muted';
+  const lines = [
+    diagnosticsPreset.name,
+    diagnosticsPreset.description,
+    diagnosticsPreset.summary.join('\n')
+  ];
+  presetBox.textContent = lines.join('\n');
+}
+
+function applyPresetToUi() {
+  diagnosticsPreset = parseDiagnosticsPreset();
+  if (!diagnosticsPreset) {
+    updatePresetBox();
+    return;
+  }
+
+  if (diagnosticsPreset.baud && [...baudSelect.options].some(option => option.value === diagnosticsPreset.baud)) {
+    baudSelect.value = diagnosticsPreset.baud;
+  }
+  dtrModeSelect.value = normalizeDtrMode(diagnosticsPreset.dtrMode);
+  observeToggle.checked = Boolean(diagnosticsPreset.observeOnly);
+  waitMsInput.value = diagnosticsPreset.waitMs || 0;
+  sequenceDelayInput.value = diagnosticsPreset.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS;
+  builderNameInput.value = diagnosticsPreset.name || '';
+  builderCommandsInput.value = diagnosticsPreset.commands.join('\n');
+  updatePresetBox();
+}
+
+function setConnectionUi(isConnected) {
+  connectBtn.style.display = isConnected ? 'none' : 'block';
+  disconnectBtn.style.display = isConnected ? 'block' : 'none';
+  baudSelect.disabled = isConnected;
+  dtrModeSelect.disabled = isConnected;
+  observeToggle.disabled = isConnected;
+  waitMsInput.disabled = isConnected;
+  sequenceDelayInput.disabled = isConnected;
+  builderNameInput.disabled = isConnected;
+  builderCommandsInput.disabled = isConnected;
+  applyBuilderBtn.disabled = isConnected;
+  copyLinkBtn.disabled = isConnected;
+  cmdInput.disabled = !isConnected;
+  sendBtn.disabled = !isConnected;
+  cmdBtns.forEach(button => button.disabled = !isConnected);
+  dtrLowBtn.disabled = !isConnected || !dtrSupported;
+  dtrHighBtn.disabled = !isConnected || !dtrSupported;
+  dtrPulseBtn.disabled = !isConnected || !dtrSupported;
+}
+
+function getCurrentDiagnosticsConfig() {
+  const presetSummary = diagnosticsPreset ? diagnosticsPreset.summary.join(' | ') : 'Manual connect';
+  return {
+    name: diagnosticsPreset?.name || 'manual',
+    description: diagnosticsPreset?.description || 'Manual connect',
+    source: diagnosticsPreset ? 'url' : 'manual',
+    baud: parseInt(baudSelect.value, 10),
+    dtrMode: normalizeDtrMode(dtrModeSelect.value),
+    observeOnly: observeToggle.checked,
+    waitMs: parseNumberParam(waitMsInput.value, diagnosticsPreset?.waitMs || 0),
+    sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, diagnosticsPreset?.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS),
+    commands: diagnosticsPreset?.commands ? [...diagnosticsPreset.commands] : [],
+    invalidCommands: diagnosticsPreset?.invalidCommands ? [...diagnosticsPreset.invalidCommands] : [],
+    presetSummary
+  };
+}
+
+function buildPresetUrl(config) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('name', config.name || 'custom-builder');
+  url.searchParams.set('baud', String(baudSelect.value));
+  url.searchParams.set('dtr', config.dtrMode || 'default');
+  url.searchParams.set('observe', config.observeOnly ? '1' : '0');
+  url.searchParams.set('wait', String(config.waitMs || 0));
+  url.searchParams.set('delay', String(config.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS));
+  config.commands.slice(0, 10).forEach(command => url.searchParams.append('cmd', command));
+  return url.toString();
+}
+
+function buildDiagnosticsLogName() {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const label = currentRun.name || 'manual';
+  return `grbl-diagnostic-${label}-${ts}`;
+}
+
+function buildDiscoursePayload() {
+  const lines = [
+    `Log name: ${buildDiagnosticsLogName()}`,
+    `Timestamp: ${new Date().toISOString()}`,
+    `Preset: ${currentRun.name || 'manual'}`,
+    `Description: ${currentRun.description || 'Manual connect'}`,
+    `Baud: ${currentRun.baud || baudSelect.value}`,
+    `DTR mode: ${currentRun.dtrMode || 'default'}`,
+    `Observe only: ${currentRun.observeOnly ? 'yes' : 'no'}`,
+    `Port info: ${formatPortInfo(currentRun.portInfo)}`,
+    `Source URL: ${window.location.href}`
+  ];
+
+  return `[details="${DISCOURSE_TITLE}"]\n${lines.join('\n')}\n\n\`\`\`text\n${logLines.join('\n')}\n\`\`\`\n[/details]`;
+}
+
+async function copyDiagnosticsLog() {
+  try {
+    if (!navigator.clipboard?.writeText) {
+      throw new Error('Clipboard API not available in this browser context');
+    }
+    await navigator.clipboard.writeText(buildDiscoursePayload());
+    addLine('Diagnostics log copied to clipboard as a Discourse details block', 'sys');
+  } catch (e) {
+    addLine('Copy diagnostics failed: ' + e.message, 'err');
+  }
+}
+
+async function copyBuilderLink() {
+  const config = buildCustomPresetFromUi('builder');
+  try {
+    if (!navigator.clipboard?.writeText) {
+      throw new Error('Clipboard API not available in this browser context');
+    }
+    await navigator.clipboard.writeText(buildPresetUrl(config));
+    addLine('Diagnostic test link copied to clipboard', 'sys');
+  } catch (e) {
+    addLine('Copy link failed: ' + e.message, 'err');
+  }
+}
+
+function settlePendingSequenceResponse(result) {
+  if (!pendingSequenceResponse) return;
+  clearTimeout(pendingSequenceResponse.timeoutId);
+  const resolver = pendingSequenceResponse.resolve;
+  pendingSequenceResponse = null;
+  resolver(result);
+}
+
+function handleSequenceResponseLine(line) {
+  if (!pendingSequenceResponse) return;
+
+  if (/^ok$/i.test(line)) {
+    settlePendingSequenceResponse({ status: 'ok', line });
+    return;
+  }
+
+  if (/^error:\d+/i.test(line)) {
+    settlePendingSequenceResponse({ status: 'error', line });
+    return;
+  }
+
+  if (/ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) {
+    settlePendingSequenceResponse({ status: 'alarm', line });
+  }
+}
+
+function waitForSequenceCommandResult(command, timeoutMs = 3500) {
+  return new Promise(resolve => {
+    const timeoutId = setTimeout(() => {
+      if (pendingSequenceResponse?.timeoutId === timeoutId) {
+        pendingSequenceResponse = null;
+        resolve({ status: 'timeout', line: `No terminal acknowledgement for ${command.display}` });
+      }
+    }, timeoutMs);
+
+    pendingSequenceResponse = { resolve, timeoutId, command };
+  });
+}
+
+async function executeSequenceCommand(rawCommand) {
+  const command = normalizeCommandInput(rawCommand);
+  if (!command) return { status: 'skipped', line: 'Empty command' };
+
+  await sendCommand(command.payload || command.send, command.display);
+  if (!command.waitForAck) {
+    return { status: 'sent', line: `${command.display} sent without acknowledgement wait` };
+  }
+  return waitForSequenceCommandResult(command);
+}
+
+async function waitForStep(ms, token) {
+  if (!ms) return isSequenceActive(token);
+  await delay(ms);
+  return isSequenceActive(token);
+}
+
+async function applyDtrMode(mode, label = 'DTR action') {
+  if (!port || !dtrSupported) {
+    addLine('DTR control is not available for this connection', 'err');
+    return false;
+  }
+
+  try {
+    if (mode === 'low') {
+      await port.setSignals({ dataTerminalReady: false });
+      addLine(`${label}: DTR set low`, 'sys');
+    } else if (mode === 'high') {
+      await port.setSignals({ dataTerminalReady: true });
+      addLine(`${label}: DTR set high`, 'sys');
+    } else if (mode === 'pulse') {
+      await port.setSignals({ dataTerminalReady: false });
+      addLine(`${label}: DTR low`, 'sys');
+      await delay(200);
+      await port.setSignals({ dataTerminalReady: true });
+      addLine(`${label}: DTR high`, 'sys');
+    }
+    return true;
+  } catch (e) {
+    addLine(`${label} failed: ${e.message}`, 'err');
+    return false;
+  }
+}
+
+async function runStartupSequence(config, token) {
+  if (!isSequenceActive(token)) return;
+
+  addLine(`Diagnostics mode: ${config.presetSummary}`, 'sys');
+
+  if (config.invalidCommands.length) {
+    for (const item of config.invalidCommands) {
+      addLine(item, 'err');
+    }
+  }
+
+  if (config.dtrMode !== 'default') {
+    if (dtrSupported) {
+      const applied = await applyDtrMode(config.dtrMode, 'Startup DTR');
+      if (!applied || !isSequenceActive(token)) return;
+    } else {
+      addLine('Selected DTR diagnostics are not supported by this browser or port', 'err');
+    }
+  }
+
+  if (!isSequenceActive(token)) return;
+
+  if (config.waitMs) {
+    addLine(`Waiting ${config.waitMs} ms before startup commands`, 'sys');
+    if (!(await waitForStep(config.waitMs, token))) return;
+  }
+
+  if (config.commands.length) {
+    addLine('Running preset command sequence', 'sys');
+    for (let i = 0; i < config.commands.length; i++) {
+      if (!isSequenceActive(token)) return;
+      const command = normalizeCommandInput(config.commands[i]);
+      if (!command) continue;
+      addLine(`Sequence ${i + 1}/${config.commands.length}: ${command.display}`, 'sys');
+      const result = await executeSequenceCommand(config.commands[i]);
+      if (result.status === 'error' || result.status === 'alarm') {
+        addLine(`Sequence stopped on ${result.status}: ${result.line}`, 'err');
+        return;
+      }
+      if (result.status === 'timeout') {
+        addLine(result.line, 'sys');
+      }
+      if (i < config.commands.length - 1) {
+        if (!(await waitForStep(config.sequenceDelayMs, token))) return;
+      }
+    }
+    return;
+  }
+
+  if (config.observeOnly) {
+    addLine('Observe-only mode enabled. Startup traffic suppressed.', 'sys');
+    return;
+  }
+
+  addLine('Sending wake signal…', 'sys');
+  if (!(await waitForStep(DEFAULT_WAKE_DELAY_MS, token))) return;
+  await sendCommand('\n');
+  if (!(await waitForStep(DEFAULT_STATUS_DELAY_MS, token))) return;
+  await sendCommand('?');
+}
+
+async function disconnectPort(reason = 'Disconnected') {
+  activeSequenceToken += 1;
+  readLoopActive = false;
+
+  try {
+    if (reader) {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+      reader = null;
+    }
+    if (writer) {
+      await writer.close().catch(() => {});
+      writer.releaseLock();
+      writer = null;
+    }
+    if (port) {
+      await port.close().catch(() => {});
+      port = null;
+    }
+  } catch (e) {
+    addLine('Disconnect cleanup warning: ' + e.message, 'err');
+  }
+
+  dtrSupported = false;
+  settlePendingSequenceResponse({ status: 'cancelled', line: 'Sequence cancelled' });
+  setConnectionUi(false);
+  statusPill.textContent = 'Disconnected';
+  statusPill.className = 'status-pill';
+  addLine(reason, 'sys');
 }
 
 autoscrollBtn.addEventListener('click', () => {
@@ -423,6 +1159,14 @@ autoscrollBtn.addEventListener('click', () => {
 clearBtn.addEventListener('click', () => {
   terminal.innerHTML = '';
   logLines = [];
+});
+
+copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
+copyLinkBtn.addEventListener('click', copyBuilderLink);
+applyBuilderBtn.addEventListener('click', () => {
+  diagnosticsPreset = buildCustomPresetFromUi();
+  updatePresetBox();
+  addLine(`Builder loaded: ${diagnosticsPreset.name}`, 'sys');
 });
 
 exportBtn.addEventListener('click', () => {
@@ -465,6 +1209,11 @@ function addLine(text, type = 'rx') {
   div.appendChild(textSpan);
   terminal.appendChild(div);
 
+  while (logLines.length > MAX_LOG_LINES) {
+    logLines.shift();
+    if (terminal.firstChild) terminal.removeChild(terminal.firstChild);
+  }
+
   if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
   updateStatus(text);
 }
@@ -493,14 +1242,23 @@ function updateStatus(text) {
   }
 }
 
-async function sendCommand(raw) {
+async function sendCommand(raw, displayOverride = null) {
   if (!writer) return;
-  let cmd = raw;
-  cmd = cmd.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\x18/g, '\x18');
-  const encoded = new TextEncoder().encode(cmd);
+  let encoded;
+  let display;
+
+  if (raw instanceof Uint8Array) {
+    encoded = raw;
+    display = displayOverride || `hex:${bytesToDisplay(raw)}`;
+  } else {
+    let cmd = raw;
+    cmd = cmd.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\x18/g, '\x18');
+    encoded = new TextEncoder().encode(cmd);
+    display = displayOverride || raw.replace(/\n/g,'↵').replace(/\r/g,'').replace(/\x18/g,'^X');
+  }
+
   try {
     await writer.write(encoded);
-    const display = raw.replace(/\n/g,'↵').replace(/\r/g,'').replace(/\x18/g,'^X');
     if (display.trim()) addLine(display, 'tx');
   } catch(e) {
     addLine('Write error: ' + e.message, 'err');
@@ -510,79 +1268,91 @@ async function sendCommand(raw) {
 async function startReadLoop() {
   readLoopActive = true;
   let buffer = '';
+  const decoder = new TextDecoder();
   try {
     reader = port.readable.getReader();
     while (readLoopActive) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += new TextDecoder().decode(value);
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
       for (const line of lines) {
         const trimmed = line.replace(/\r/g, '').trim();
-        if (trimmed) addLine(trimmed, 'rx');
+        if (trimmed) {
+          addLine(trimmed, 'rx');
+          handleSequenceResponseLine(trimmed);
+        }
       }
     }
   } catch(e) {
     if (readLoopActive) addLine('Read error: ' + e.message, 'err');
+  } finally {
+    if (reader) {
+      reader.releaseLock();
+      reader = null;
+    }
   }
 }
 
 connectBtn.addEventListener('click', async () => {
+  const token = ++activeSequenceToken;
+  let stage = 'request-port';
   try {
+    currentRun = getCurrentDiagnosticsConfig();
     port = await navigator.serial.requestPort();
-    const baud = parseInt(baudSelect.value);
+    const portInfo = typeof port.getInfo === 'function' ? port.getInfo() : null;
+    currentRun.portInfo = portInfo;
+    addLine(`Selected port: ${formatPortInfo(portInfo)}`, 'sys');
+
+    stage = 'open';
+    const baud = parseInt(baudSelect.value, 10);
     await port.open({ baudRate: baud });
+
+    stage = 'writer';
+    dtrSupported = typeof port.setSignals === 'function';
+    currentRun = {
+      ...currentRun,
+      baud,
+      dtrMode: normalizeDtrMode(dtrModeSelect.value),
+      observeOnly: observeToggle.checked,
+      portInfo
+    };
 
     writer = port.writable.getWriter();
     startReadLoop();
 
-    connectBtn.style.display = 'none';
-    disconnectBtn.style.display = 'block';
-    baudSelect.disabled = true;
-    cmdInput.disabled = false;
-    sendBtn.disabled = false;
-    cmdBtns.forEach(b => b.disabled = false);
+    setConnectionUi(true);
 
     statusPill.textContent = 'Connected';
     statusPill.className = 'status-pill connected';
 
     addLine(`Connected at ${baud} baud`, 'sys');
-    addLine('Sending wake signal…', 'sys');
+    addLine(`DTR control ${dtrSupported ? 'available' : 'not supported by this connection'}`, dtrSupported ? 'sys' : 'err');
 
-    setTimeout(() => sendCommand('\n'), 800);
-    setTimeout(() => sendCommand('?'), 1400);
+    stage = 'startup';
+    await runStartupSequence(currentRun, token);
 
   } catch(e) {
-    if (e.name !== 'NotSelectedError') {
-      addLine('Connection failed: ' + e.message, 'err');
+    if (e.name === 'NotSelectedError' || e.name === 'NotFoundError') {
+      addLine('Port selection cancelled', 'sys');
+      return;
     }
+
+    addLine(`Connection failed during ${stage}: ${e.name || 'Error'} - ${e.message}`, 'err');
+    await disconnectPort('Connection attempt ended');
   }
 });
 
-disconnectBtn.addEventListener('click', async () => {
-  readLoopActive = false;
-  try {
-    if (reader) { await reader.cancel(); reader.releaseLock(); reader = null; }
-    if (writer) { await writer.close().catch(()=>{}); writer.releaseLock(); writer = null; }
-    if (port) { await port.close(); port = null; }
-  } catch(e) {}
-
-  connectBtn.style.display = 'block';
-  disconnectBtn.style.display = 'none';
-  baudSelect.disabled = false;
-  cmdInput.disabled = true;
-  sendBtn.disabled = true;
-  cmdBtns.forEach(b => b.disabled = true);
-
-  statusPill.textContent = 'Disconnected';
-  statusPill.className = 'status-pill';
-  addLine('Disconnected', 'sys');
-});
+disconnectBtn.addEventListener('click', () => disconnectPort('Disconnected'));
 
 cmdBtns.forEach(btn => {
   btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
 });
+
+dtrLowBtn.addEventListener('click', () => applyDtrMode('low', 'Manual DTR'));
+dtrHighBtn.addEventListener('click', () => applyDtrMode('high', 'Manual DTR'));
+dtrPulseBtn.addEventListener('click', () => applyDtrMode('pulse', 'Manual DTR'));
 
 sendBtn.addEventListener('click', () => {
   const val = cmdInput.value.trim();
@@ -607,8 +1377,13 @@ cmdInput.addEventListener('keydown', e => {
   }
 });
 
+applyPresetToUi();
+setConnectionUi(false);
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
+if (diagnosticsPreset) {
+  addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');
+}
 </script>
 </body>
 </html>
