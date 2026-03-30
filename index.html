@@ -53,8 +53,13 @@
   header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   header span { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
 
-  .status-pill {
+  .status-group {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-pill {
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -66,10 +71,15 @@
     border: 1px solid var(--border);
     transition: all 0.2s;
   }
-  .status-pill.idle    { background: var(--green-dim);  color: var(--green);  border-color: #166534; }
-  .status-pill.alarm   { background: var(--red-dim);    color: var(--red);    border-color: #7f1d1d; }
-  .status-pill.busy    { background: var(--amber-dim);  color: var(--amber);  border-color: #78350f; }
-  .status-pill.connected { background: var(--blue-dim); color: var(--blue);   border-color: #1e3a5f; }
+  .status-pill.unknown      { background: var(--surface2);  color: var(--text-muted); border-color: var(--border); }
+  .status-pill.disconnected { background: var(--surface2);  color: var(--text-muted); border-color: var(--border); }
+  .status-pill.connecting   { background: #113b46;          color: var(--teal);       border-color: #0f766e; }
+  .status-pill.connected    { background: var(--blue-dim);  color: var(--blue);       border-color: #1e3a5f; }
+  .status-pill.idle         { background: var(--green-dim); color: var(--green);      border-color: #166534; }
+  .status-pill.alarm        { background: var(--red-dim);   color: var(--red);        border-color: #7f1d1d; }
+  .status-pill.busy         { background: var(--amber-dim); color: var(--amber);      border-color: #78350f; }
+  .status-pill.fault        { background: var(--red-dim);   color: #fca5a5;           border-color: #991b1b; }
+  .status-pill.reset        { background: var(--blue-dim);  color: #93c5fd;           border-color: #1d4ed8; }
 
   main { display: flex; flex: 1; overflow: hidden; }
 
@@ -416,7 +426,10 @@
     <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="4"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="12" y1="8" x2="15" y2="8"/></svg>
   </div>
   <h1>GRBL Diagnostic <span>/ serial terminal</span></h1>
-  <div class="status-pill" id="status-pill">Disconnected</div>
+  <div class="status-group">
+    <div class="status-pill disconnected" id="transport-pill">Disconnected</div>
+    <div class="status-pill unknown" id="machine-pill">Unknown</div>
+  </div>
 </header>
 
 <main>
@@ -541,7 +554,8 @@ $#
 
 <script>
 const terminal     = document.getElementById('terminal');
-const statusPill   = document.getElementById('status-pill');
+const transportPill = document.getElementById('transport-pill');
+const machinePill  = document.getElementById('machine-pill');
 const connectBtn   = document.getElementById('connect-btn');
 const disconnectBtn= document.getElementById('disconnect-btn');
 const cmdInput     = document.getElementById('cmd-input');
@@ -608,6 +622,21 @@ const DEFAULT_STATUS_DELAY_MS = 600;
 const MAX_LOG_LINES = 5000;
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 
+const TRANSPORT_STATE_META = {
+  disconnected: { label: 'Disconnected', className: 'status-pill disconnected' },
+  connecting: { label: 'Connecting', className: 'status-pill connecting' },
+  connected: { label: 'Connected', className: 'status-pill connected' },
+  fault: { label: 'Connection Fault', className: 'status-pill fault' }
+};
+
+const MACHINE_STATE_META = {
+  unknown: { label: 'Unknown', className: 'status-pill unknown' },
+  reset: { label: 'Reset', className: 'status-pill reset' },
+  idle: { label: 'Idle', className: 'status-pill idle' },
+  busy: { label: 'Busy', className: 'status-pill busy' },
+  alarm: { label: 'Alarm', className: 'status-pill alarm' }
+};
+
 let port = null;
 let writer = null;
 let reader = null;
@@ -621,6 +650,8 @@ let diagnosticsPreset = null;
 let activeSequenceToken = 0;
 let pendingSequenceResponse = null;
 let readLoopPromise = null;
+let transportState = 'disconnected';
+let machineState = 'unknown';
 let currentRun = {
   name: 'manual',
   description: 'Manual connect',
@@ -643,6 +674,20 @@ if (!('serial' in navigator)) {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function setTransportState(state, label = null) {
+  transportState = TRANSPORT_STATE_META[state] ? state : 'disconnected';
+  const meta = TRANSPORT_STATE_META[transportState];
+  transportPill.textContent = label || meta.label;
+  transportPill.className = meta.className;
+}
+
+function setMachineState(state, label = null) {
+  machineState = MACHINE_STATE_META[state] ? state : 'unknown';
+  const meta = MACHINE_STATE_META[machineState];
+  machinePill.textContent = label || meta.label;
+  machinePill.className = meta.className;
 }
 
 function isSequenceActive(token) {
@@ -993,23 +1038,31 @@ function resetAdvancedDiagnostics() {
   addLine('Advanced diagnostics reset to defaults', 'sys');
 }
 
-function setConnectionUi(isConnected) {
+function setConnectionUi(mode = 'disconnected') {
+  const isConnected = mode === 'connected';
+  const isConnecting = mode === 'connecting';
+  const hasFault = mode === 'fault';
+  const serialSupported = 'serial' in navigator;
+
   connectBtn.style.display = 'block';
-  disconnectBtn.style.display = isConnected ? 'block' : 'none';
+  disconnectBtn.style.display = (isConnected || hasFault) ? 'block' : 'none';
   connectBtn.classList.toggle('primary', !isConnected);
   connectBtn.classList.toggle('success', isConnected);
-  connectBtn.textContent = isConnected ? 'Connected' : 'Connect';
-  connectBtn.disabled = isConnected;
-  baudSelect.disabled = isConnected;
-  dtrModeSelect.disabled = isConnected;
-  observeToggle.disabled = isConnected;
-  waitMsInput.disabled = isConnected;
-  sequenceDelayInput.disabled = isConnected;
-  builderNameInput.disabled = isConnected;
-  builderCommandsInput.disabled = isConnected;
-  applyBuilderBtn.disabled = isConnected;
-  copyLinkBtn.disabled = isConnected;
-  resetAdvancedBtn.disabled = isConnected;
+  connectBtn.classList.toggle('danger', hasFault);
+  connectBtn.textContent = isConnected ? 'Connected' : (isConnecting ? 'Connecting' : 'Connect');
+  connectBtn.disabled = !serialSupported || isConnected || isConnecting || hasFault;
+
+  const configLocked = isConnected || isConnecting || hasFault;
+  baudSelect.disabled = configLocked;
+  dtrModeSelect.disabled = configLocked;
+  observeToggle.disabled = configLocked;
+  waitMsInput.disabled = configLocked;
+  sequenceDelayInput.disabled = configLocked;
+  builderNameInput.disabled = configLocked;
+  builderCommandsInput.disabled = configLocked;
+  applyBuilderBtn.disabled = configLocked;
+  copyLinkBtn.disabled = configLocked;
+  resetAdvancedBtn.disabled = configLocked;
   cmdInput.disabled = !isConnected;
   sendBtn.disabled = !isConnected;
   cmdBtns.forEach(button => button.disabled = !isConnected);
@@ -1287,9 +1340,9 @@ async function disconnectPort(reason = 'Disconnected') {
 
   dtrSupported = false;
   settlePendingSequenceResponse({ status: 'cancelled', line: 'Sequence cancelled' });
-  setConnectionUi(false);
-  statusPill.textContent = 'Disconnected';
-  statusPill.className = 'status-pill';
+  setConnectionUi('disconnected');
+  setTransportState('disconnected');
+  setMachineState('unknown');
   addLine(reason, 'sys');
 }
 
@@ -1386,14 +1439,30 @@ function colorizeResponse(text) {
 
 function updateStatus(text) {
   if (!port) return;
-  const pill = statusPill;
-  if (text.includes('<Idle')) {
-    pill.textContent = 'Idle'; pill.className = 'status-pill idle';
-  } else if (text.includes('ALARM') || text.includes('Alarm')) {
-    pill.textContent = 'Alarm'; pill.className = 'status-pill alarm';
-  } else if (text.includes('<Run') || text.includes('<Hold')) {
-    pill.textContent = 'Busy'; pill.className = 'status-pill busy';
+  if (/^grbl\s/i.test(text)) {
+    setTransportState('connected');
+    setMachineState('reset');
+    return;
   }
+  if (text.includes('<Idle')) {
+    setTransportState('connected');
+    setMachineState('idle');
+  } else if (text.includes('ALARM') || text.includes('Alarm') || text.includes('<Alarm')) {
+    setTransportState('connected');
+    setMachineState('alarm');
+  } else if (text.includes('<Run') || text.includes('<Hold') || text.includes('<Jog') || text.includes('<Home')) {
+    setTransportState('connected');
+    setMachineState('busy');
+  }
+}
+
+function markConnectionFault(label) {
+  activeSequenceToken += 1;
+  readLoopActive = false;
+  settlePendingSequenceResponse({ status: 'cancelled', line: label });
+  setTransportState('fault', label);
+  setMachineState('unknown');
+  setConnectionUi('fault');
 }
 
 async function sendCommand(raw, displayOverride = null) {
@@ -1416,19 +1485,24 @@ async function sendCommand(raw, displayOverride = null) {
     if (display.trim()) addLine(display, 'tx');
   } catch(e) {
     addLine('Write error: ' + e.message, 'err');
+    markConnectionFault('Write fault');
   }
 }
 
 async function startReadLoop() {
   readLoopActive = true;
   let buffer = '';
+  let streamEnded = false;
   const decoder = new TextDecoder();
   const activeReader = port.readable.getReader();
   try {
     reader = activeReader;
     while (readLoopActive) {
       const { value, done } = await activeReader.read();
-      if (done) break;
+      if (done) {
+        streamEnded = true;
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -1441,12 +1515,19 @@ async function startReadLoop() {
       }
     }
   } catch(e) {
-    if (readLoopActive) addLine('Read error: ' + e.message, 'err');
+    if (readLoopActive) {
+      addLine('Read error: ' + e.message, 'err');
+      markConnectionFault('Read fault');
+    }
   } finally {
     if (reader === activeReader) reader = null;
     try {
       activeReader.releaseLock();
     } catch {}
+    if (streamEnded && port && readLoopActive) {
+      addLine('Serial stream ended', 'err');
+      markConnectionFault('Stream ended');
+    }
   }
 }
 
@@ -1454,6 +1535,9 @@ connectBtn.addEventListener('click', async () => {
   const token = ++activeSequenceToken;
   let stage = 'request-port';
   try {
+    setConnectionUi('connecting');
+    setTransportState('connecting');
+    setMachineState('unknown');
     currentRun = getCurrentDiagnosticsConfig();
     port = await navigator.serial.requestPort();
     const portInfo = typeof port.getInfo === 'function' ? port.getInfo() : null;
@@ -1477,10 +1561,9 @@ connectBtn.addEventListener('click', async () => {
     writer = port.writable.getWriter();
     readLoopPromise = startReadLoop();
 
-    setConnectionUi(true);
-
-    statusPill.textContent = 'Connected';
-    statusPill.className = 'status-pill connected';
+    setConnectionUi('connected');
+    setTransportState('connected');
+    setMachineState('unknown');
 
     addLine(`Connected at ${baud} baud`, 'sys');
     addLine(`DTR control ${dtrSupported ? 'available' : 'not supported by this connection'}`, dtrSupported ? 'sys' : 'err');
@@ -1490,6 +1573,9 @@ connectBtn.addEventListener('click', async () => {
 
   } catch(e) {
     if (e.name === 'NotSelectedError' || e.name === 'NotFoundError') {
+      setConnectionUi('disconnected');
+      setTransportState('disconnected');
+      setMachineState('unknown');
       addLine('Port selection cancelled', 'sys');
       return;
     }
@@ -1533,8 +1619,10 @@ cmdInput.addEventListener('keydown', e => {
 });
 
 applyPresetToUi();
-setConnectionUi(false);
+setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
+setTransportState('disconnected');
+setMachineState('unknown');
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
