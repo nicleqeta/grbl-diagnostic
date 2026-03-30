@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRBL Serial Diagnostic</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --green: #22c55e;
+    --green-dim: #166534;
+    --red: #ef4444;
+    --red-dim: #7f1d1d;
+    --amber: #f59e0b;
+    --amber-dim: #78350f;
+    --blue: #3b82f6;
+    --blue-dim: #1e3a5f;
+    --teal: #14b8a6;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+  }
+  .logo {
+    width: 28px; height: 28px;
+    background: var(--teal);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .logo svg { width: 16px; height: 16px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  header span { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+
+  .status-pill {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+  .status-pill.idle    { background: var(--green-dim);  color: var(--green);  border-color: #166534; }
+  .status-pill.alarm   { background: var(--red-dim);    color: var(--red);    border-color: #7f1d1d; }
+  .status-pill.busy    { background: var(--amber-dim);  color: var(--amber);  border-color: #78350f; }
+  .status-pill.connected { background: var(--blue-dim); color: var(--blue);   border-color: #1e3a5f; }
+
+  main { display: flex; flex: 1; overflow: hidden; }
+
+  .sidebar {
+    width: 260px;
+    min-width: 260px;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .section {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  select, input[type="text"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: var(--sans);
+    outline: none;
+    margin-bottom: 8px;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select:focus, input:focus { border-color: var(--teal); }
+  select option { background: #1a1d27; }
+
+  .btn {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    transition: all 0.15s;
+    font-family: var(--sans);
+  }
+  .btn:hover { background: #2a2f45; border-color: #3e4460; }
+  .btn:active { transform: scale(0.98); }
+  .btn.primary {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn.primary:hover { background: #0d9488; }
+  .btn.danger {
+    background: var(--red-dim);
+    border-color: #7f1d1d;
+    color: var(--red);
+  }
+  .btn.danger:hover { background: #991b1b; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .cmd-btn {
+    padding: 7px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-dim);
+    transition: all 0.15s;
+    font-family: var(--mono);
+    text-align: left;
+    line-height: 1.3;
+  }
+  .cmd-btn:hover { background: #2a2f45; color: var(--text); border-color: var(--teal); }
+  .cmd-btn:active { transform: scale(0.97); }
+  .cmd-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .cmd-btn .cmd-label { font-size: 10px; color: var(--text-muted); font-family: var(--sans); display: block; margin-bottom: 1px; }
+
+  .tip {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border-radius: 6px;
+    border-left: 3px solid var(--teal);
+    margin-bottom: 8px;
+  }
+  .tip strong { color: var(--text-dim); font-weight: 500; }
+
+  .terminal-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .term-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .term-header-label { font-size: 12px; color: var(--text-muted); font-weight: 500; flex: 1; }
+  .term-header-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--sans);
+  }
+  .icon-btn:hover { color: var(--text); border-color: #3e4460; background: var(--surface2); }
+
+  #terminal {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    background: var(--bg);
+  }
+  #terminal::-webkit-scrollbar { width: 6px; }
+  #terminal::-webkit-scrollbar-track { background: transparent; }
+  #terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .line { display: flex; gap: 8px; align-items: flex-start; }
+  .line-time { color: var(--text-muted); font-size: 11px; min-width: 56px; padding-top: 2px; flex-shrink: 0; }
+  .line-arrow { flex-shrink: 0; padding-top: 1px; }
+  .line-tx .line-arrow { color: var(--teal); }
+  .line-rx .line-arrow { color: var(--text-muted); }
+  .line-sys .line-arrow { color: var(--amber); }
+  .line-err .line-arrow { color: var(--red); }
+  .line-text { word-break: break-all; }
+  .line-tx .line-text { color: var(--teal); }
+  .line-rx .line-text { color: var(--text); }
+  .line-sys .line-text { color: var(--amber); font-style: italic; }
+  .line-err .line-text { color: var(--red); }
+
+  .line-text .tok-idle   { color: var(--green); font-weight: 600; }
+  .line-text .tok-alarm  { color: var(--red); font-weight: 600; }
+  .line-text .tok-run    { color: var(--amber); font-weight: 600; }
+  .line-text .tok-hold   { color: var(--amber); font-weight: 600; }
+  .line-text .tok-ok     { color: var(--green); }
+  .line-text .tok-error  { color: var(--red); }
+
+  .term-input-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  #cmd-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-family: var(--mono);
+    outline: none;
+    margin-bottom: 0;
+  }
+  #cmd-input:focus { border-color: var(--teal); }
+  #cmd-input::placeholder { color: var(--text-muted); }
+  .send-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--sans);
+    white-space: nowrap;
+  }
+  .send-btn:hover { border-color: var(--teal); color: var(--teal); }
+  .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .no-serial-warning {
+    margin: 12px 16px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--red-dim);
+    border: 1px solid #7f1d1d;
+    color: var(--red);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 600px) {
+    .sidebar { width: 220px; min-width: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="4"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="12" y1="8" x2="15" y2="8"/></svg>
+  </div>
+  <h1>GRBL Diagnostic <span>/ serial terminal</span></h1>
+  <div class="status-pill" id="status-pill">Disconnected</div>
+</header>
+
+<main>
+  <div class="sidebar">
+
+    <div class="section" id="no-serial-section" style="display:none;">
+      <div class="no-serial-warning">
+        Web Serial API not available.<br>
+        Use <strong>Chrome</strong> or <strong>Edge</strong> desktop browser.
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Connection</div>
+      <select id="baud-select">
+        <option value="115200" selected>115200 baud (GRBL default)</option>
+        <option value="9600">9600 baud</option>
+        <option value="57600">57600 baud</option>
+        <option value="38400">38400 baud</option>
+        <option value="19200">19200 baud</option>
+      </select>
+      <button class="btn primary" id="connect-btn">Connect to device</button>
+      <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Quick commands</div>
+      <div class="cmd-grid">
+        <button class="cmd-btn" data-cmd="\n"       disabled><span class="cmd-label">Wake</span>\n</button>
+        <button class="cmd-btn" data-cmd="?"        disabled><span class="cmd-label">Status</span>?</button>
+        <button class="cmd-btn" data-cmd="$X\n"     disabled><span class="cmd-label">Clear alarm</span>$X</button>
+        <button class="cmd-btn" data-cmd="$$\n"     disabled><span class="cmd-label">Get settings</span>$$</button>
+        <button class="cmd-btn" data-cmd="$#\n"     disabled><span class="cmd-label">Coord offsets</span>$#</button>
+        <button class="cmd-btn" data-cmd="$G\n"     disabled><span class="cmd-label">GCode state</span>$G</button>
+        <button class="cmd-btn" data-cmd="$I\n"     disabled><span class="cmd-label">Build info</span>$I</button>
+        <button class="cmd-btn" data-cmd="\x18"     disabled><span class="cmd-label">Soft reset</span>^X</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Alarm reference</div>
+      <div style="font-size:11px; color:var(--text-muted); line-height:1.8; font-family:var(--mono);">
+        ALARM:1 Hard limit<br>
+        ALARM:2 Soft limit<br>
+        ALARM:3 Reset while in motion<br>
+        ALARM:4 Probe fail (contact)<br>
+        ALARM:5 Probe fail (no contact)<br>
+        ALARM:6 Homing fail (reset)<br>
+        ALARM:7 Homing fail (door)<br>
+        ALARM:8 Homing fail (pulloff)<br>
+        ALARM:9 Homing fail (approach)<br>
+        ALARM:10 Homing fail (dual)<br>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Tips</div>
+      <div class="tip"><strong>Garbled chars on connect?</strong> Normal — Arduino bootloader noise. Wait for the Grbl startup line.</div>
+      <div class="tip"><strong>Stuck on BUSY?</strong> Send $X to clear alarm state.</div>
+      <div class="tip"><strong>No ports listed?</strong> Install CP2102 or CH340 USB driver.</div>
+      <div class="tip"><strong>Chrome / Edge only.</strong> Web Serial API is not supported in Firefox or Safari.</div>
+    </div>
+
+  </div>
+
+  <div class="terminal-pane">
+    <div class="term-header">
+      <span class="term-header-label">Terminal output</span>
+      <div class="term-header-actions">
+        <button class="icon-btn" id="autoscroll-btn" title="Toggle autoscroll">↓ Auto</button>
+        <button class="icon-btn" id="clear-btn">Clear</button>
+        <button class="icon-btn" id="export-btn">Export</button>
+      </div>
+    </div>
+    <div id="terminal"></div>
+    <div class="term-input-bar">
+      <input type="text" id="cmd-input" placeholder="Type command and press Enter…" disabled autocomplete="off" spellcheck="false">
+      <button class="send-btn" id="send-btn" disabled>Send</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const terminal     = document.getElementById('terminal');
+const statusPill   = document.getElementById('status-pill');
+const connectBtn   = document.getElementById('connect-btn');
+const disconnectBtn= document.getElementById('disconnect-btn');
+const cmdInput     = document.getElementById('cmd-input');
+const sendBtn      = document.getElementById('send-btn');
+const clearBtn     = document.getElementById('clear-btn');
+const exportBtn    = document.getElementById('export-btn');
+const autoscrollBtn= document.getElementById('autoscroll-btn');
+const baudSelect   = document.getElementById('baud-select');
+const cmdBtns      = document.querySelectorAll('.cmd-btn');
+const noSerialSec  = document.getElementById('no-serial-section');
+
+let port = null;
+let writer = null;
+let reader = null;
+let readLoopActive = false;
+let autoScroll = true;
+let cmdHistory = [];
+let historyIdx = -1;
+let logLines = [];
+
+if (!('serial' in navigator)) {
+  noSerialSec.style.display = 'block';
+  connectBtn.disabled = true;
+}
+
+autoscrollBtn.addEventListener('click', () => {
+  autoScroll = !autoScroll;
+  autoscrollBtn.style.color = autoScroll ? 'var(--teal)' : '';
+  autoscrollBtn.style.borderColor = autoScroll ? 'var(--teal)' : '';
+});
+
+clearBtn.addEventListener('click', () => {
+  terminal.innerHTML = '';
+  logLines = [];
+});
+
+exportBtn.addEventListener('click', () => {
+  const text = logLines.join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ts = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  a.download = `grbl-log-${ts}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+function addLine(text, type = 'rx') {
+  const now = new Date();
+  const time = now.toTimeString().slice(0,8);
+  const arrows = { tx: '→', rx: '←', sys: '●', err: '✕' };
+  const arrow = arrows[type] || '←';
+
+  logLines.push(`[${time}] ${arrow} ${text}`);
+
+  const div = document.createElement('div');
+  div.className = `line line-${type}`;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'line-time';
+  timeSpan.textContent = time;
+
+  const arrowSpan = document.createElement('span');
+  arrowSpan.className = 'line-arrow';
+  arrowSpan.textContent = arrow;
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'line-text';
+  textSpan.innerHTML = colorizeResponse(text);
+
+  div.appendChild(timeSpan);
+  div.appendChild(arrowSpan);
+  div.appendChild(textSpan);
+  terminal.appendChild(div);
+
+  if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
+  updateStatus(text);
+}
+
+function colorizeResponse(text) {
+  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return escaped
+    .replace(/\bIDLE\b/g,  '<span class="tok-idle">IDLE</span>')
+    .replace(/\bAlarm\b/g, '<span class="tok-alarm">Alarm</span>')
+    .replace(/\bRun\b/g,   '<span class="tok-run">Run</span>')
+    .replace(/\bHold\b/g,  '<span class="tok-hold">Hold</span>')
+    .replace(/\bok\b/gi,   '<span class="tok-ok">ok</span>')
+    .replace(/error:\d+/gi,m => `<span class="tok-error">${m}</span>`)
+    .replace(/ALARM:\d+/g, m => `<span class="tok-alarm">${m}</span>`);
+}
+
+function updateStatus(text) {
+  if (!port) return;
+  const pill = statusPill;
+  if (text.includes('<Idle')) {
+    pill.textContent = 'Idle'; pill.className = 'status-pill idle';
+  } else if (text.includes('ALARM') || text.includes('Alarm')) {
+    pill.textContent = 'Alarm'; pill.className = 'status-pill alarm';
+  } else if (text.includes('<Run') || text.includes('<Hold')) {
+    pill.textContent = 'Busy'; pill.className = 'status-pill busy';
+  }
+}
+
+async function sendCommand(raw) {
+  if (!writer) return;
+  let cmd = raw;
+  cmd = cmd.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\x18/g, '\x18');
+  const encoded = new TextEncoder().encode(cmd);
+  try {
+    await writer.write(encoded);
+    const display = raw.replace(/\n/g,'↵').replace(/\r/g,'').replace(/\x18/g,'^X');
+    if (display.trim()) addLine(display, 'tx');
+  } catch(e) {
+    addLine('Write error: ' + e.message, 'err');
+  }
+}
+
+async function startReadLoop() {
+  readLoopActive = true;
+  let buffer = '';
+  try {
+    reader = port.readable.getReader();
+    while (readLoopActive) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += new TextDecoder().decode(value);
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        const trimmed = line.replace(/\r/g, '').trim();
+        if (trimmed) addLine(trimmed, 'rx');
+      }
+    }
+  } catch(e) {
+    if (readLoopActive) addLine('Read error: ' + e.message, 'err');
+  }
+}
+
+connectBtn.addEventListener('click', async () => {
+  try {
+    port = await navigator.serial.requestPort();
+    const baud = parseInt(baudSelect.value);
+    await port.open({ baudRate: baud });
+
+    writer = port.writable.getWriter();
+    startReadLoop();
+
+    connectBtn.style.display = 'none';
+    disconnectBtn.style.display = 'block';
+    baudSelect.disabled = true;
+    cmdInput.disabled = false;
+    sendBtn.disabled = false;
+    cmdBtns.forEach(b => b.disabled = false);
+
+    statusPill.textContent = 'Connected';
+    statusPill.className = 'status-pill connected';
+
+    addLine(`Connected at ${baud} baud`, 'sys');
+    addLine('Sending wake signal…', 'sys');
+
+    setTimeout(() => sendCommand('\n'), 800);
+    setTimeout(() => sendCommand('?'), 1400);
+
+  } catch(e) {
+    if (e.name !== 'NotSelectedError') {
+      addLine('Connection failed: ' + e.message, 'err');
+    }
+  }
+});
+
+disconnectBtn.addEventListener('click', async () => {
+  readLoopActive = false;
+  try {
+    if (reader) { await reader.cancel(); reader.releaseLock(); reader = null; }
+    if (writer) { await writer.close().catch(()=>{}); writer.releaseLock(); writer = null; }
+    if (port) { await port.close(); port = null; }
+  } catch(e) {}
+
+  connectBtn.style.display = 'block';
+  disconnectBtn.style.display = 'none';
+  baudSelect.disabled = false;
+  cmdInput.disabled = true;
+  sendBtn.disabled = true;
+  cmdBtns.forEach(b => b.disabled = true);
+
+  statusPill.textContent = 'Disconnected';
+  statusPill.className = 'status-pill';
+  addLine('Disconnected', 'sys');
+});
+
+cmdBtns.forEach(btn => {
+  btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
+});
+
+sendBtn.addEventListener('click', () => {
+  const val = cmdInput.value.trim();
+  if (!val) return;
+  if (cmdHistory[0] !== val) cmdHistory.unshift(val);
+  if (cmdHistory.length > 50) cmdHistory.pop();
+  historyIdx = -1;
+  cmdInput.value = '';
+  sendCommand(val + '\n');
+});
+
+cmdInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { sendBtn.click(); return; }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (historyIdx < cmdHistory.length - 1) { historyIdx++; cmdInput.value = cmdHistory[historyIdx]; }
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (historyIdx > 0) { historyIdx--; cmdInput.value = cmdHistory[historyIdx]; }
+    else { historyIdx = -1; cmdInput.value = ''; }
+  }
+});
+
+addLine('GRBL Serial Diagnostic ready', 'sys');
+addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
+</script>
+</body>
+</html>
