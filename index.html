@@ -478,7 +478,7 @@ $#
         <button class="icon-btn" id="copy-link-btn">Copy Link</button>
       </div>
       <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Diagnostics</button>
-      <div class="help-text">Builder commands run one at a time in order and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use FluidNC-style percent escapes like <code>%3F</code> for special characters, or <code>hex:18</code> / <code>hex:24 24 0A</code> for raw bytes.</div>
+      <div class="help-text">Builder commands run one at a time in order and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use FluidNC-style percent escapes like <code>%3F</code> for special characters, or <code>hex:18</code> / <code>hex:24 24 0A</code> for raw bytes. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
       </div>
     </details>
 
@@ -757,6 +757,17 @@ function parseEscapedCommandBytes(raw) {
 function normalizeCommandInput(raw) {
   const text = (raw || '').trim();
   if (!text) return null;
+
+  if (/^\|(clip|copy|copy-log)$/i.test(text)) {
+    return {
+      input: text,
+      send: text,
+      display: '|clip',
+      waitForAck: false,
+      kind: 'action',
+      action: 'clip'
+    };
+  }
 
   if (text === '^X' || text === '\\x18') {
     return { input: text, send: '\x18', payload: Uint8Array.of(0x18), display: '^X', waitForAck: false };
@@ -1063,15 +1074,17 @@ async function copyDiagnosticsLog() {
   try {
     if (!logLines.length) {
       addLine('No diagnostic log is available to copy yet', 'sys');
-      return;
+      return false;
     }
     if (!navigator.clipboard?.writeText) {
       throw new Error('Clipboard API not available in this browser context');
     }
     await navigator.clipboard.writeText(buildDiscoursePayload());
     addLine('Diagnostic log copied to system clipboard', 'sys');
+    return true;
   } catch (e) {
     addLine('Copy diagnostics failed: ' + e.message, 'err');
+    return false;
   }
 }
 
@@ -1130,6 +1143,18 @@ function waitForSequenceCommandResult(command, timeoutMs = 3500) {
 async function executeSequenceCommand(rawCommand) {
   const command = normalizeCommandInput(rawCommand);
   if (!command) return { status: 'skipped', line: 'Empty command' };
+
+  if (command.kind === 'action') {
+    if (command.action === 'clip') {
+      const copied = await copyDiagnosticsLog();
+      return {
+        status: copied ? 'action' : 'error',
+        line: copied ? 'Diagnostics log copied to clipboard' : 'Clipboard copy failed'
+      };
+    }
+
+    return { status: 'skipped', line: `Unknown action ${command.display}` };
+  }
 
   await sendCommand(command.payload || command.send, command.display);
   if (!command.waitForAck) {
