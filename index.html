@@ -438,8 +438,22 @@
         <option value="38400">38400 baud</option>
         <option value="19200">19200 baud</option>
       </select>
-      <button class="btn primary" id="connect-btn">Connect to device</button>
+      <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Quick commands</div>
+      <div class="cmd-grid">
+        <button class="cmd-btn" data-cmd="\n"       disabled><span class="cmd-label">Wake</span>\n</button>
+        <button class="cmd-btn" data-cmd="?"        disabled><span class="cmd-label">Status</span>?</button>
+        <button class="cmd-btn" data-cmd="$X\n"     disabled><span class="cmd-label">Clear alarm</span>$X</button>
+        <button class="cmd-btn" data-cmd="$$\n"     disabled><span class="cmd-label">Get settings</span>$$</button>
+        <button class="cmd-btn" data-cmd="$#\n"     disabled><span class="cmd-label">Coord offsets</span>$#</button>
+        <button class="cmd-btn" data-cmd="$G\n"     disabled><span class="cmd-label">GCode state</span>$G</button>
+        <button class="cmd-btn" data-cmd="$I\n"     disabled><span class="cmd-label">Build info</span>$I</button>
+        <button class="cmd-btn" data-cmd="\x18"     disabled><span class="cmd-label">Soft reset</span>^X</button>
+      </div>
     </div>
 
     <details class="section section-collapsible" id="advanced-section">
@@ -483,20 +497,6 @@ $#
     </details>
 
     <div class="section">
-      <div class="section-label">Quick commands</div>
-      <div class="cmd-grid">
-        <button class="cmd-btn" data-cmd="\n"       disabled><span class="cmd-label">Wake</span>\n</button>
-        <button class="cmd-btn" data-cmd="?"        disabled><span class="cmd-label">Status</span>?</button>
-        <button class="cmd-btn" data-cmd="$X\n"     disabled><span class="cmd-label">Clear alarm</span>$X</button>
-        <button class="cmd-btn" data-cmd="$$\n"     disabled><span class="cmd-label">Get settings</span>$$</button>
-        <button class="cmd-btn" data-cmd="$#\n"     disabled><span class="cmd-label">Coord offsets</span>$#</button>
-        <button class="cmd-btn" data-cmd="$G\n"     disabled><span class="cmd-label">GCode state</span>$G</button>
-        <button class="cmd-btn" data-cmd="$I\n"     disabled><span class="cmd-label">Build info</span>$I</button>
-        <button class="cmd-btn" data-cmd="\x18"     disabled><span class="cmd-label">Soft reset</span>^X</button>
-      </div>
-    </div>
-
-    <div class="section">
       <div class="section-label">Alarm reference</div>
       <div style="font-size:11px; color:var(--text-muted); line-height:1.8; font-family:var(--mono);">
         ALARM:1 Hard limit<br>
@@ -514,7 +514,6 @@ $#
 
     <div class="section">
       <div class="section-label">Tips</div>
-      <div class="tip"><strong>Garbled chars on connect?</strong> Normal — Arduino bootloader noise. Wait for the Grbl startup line.</div>
       <div class="tip"><strong>Stuck on BUSY?</strong> Send $X to clear alarm state.</div>
       <div class="tip"><strong>No ports listed?</strong> Install CP2102 or CH340 USB driver.</div>
       <div class="tip"><strong>Chrome / Edge only.</strong> Web Serial API is not supported in Firefox or Safari.</div>
@@ -995,11 +994,12 @@ function resetAdvancedDiagnostics() {
 }
 
 function setConnectionUi(isConnected) {
-  connectBtn.style.display = isConnected ? 'none' : 'block';
+  connectBtn.style.display = 'block';
   disconnectBtn.style.display = isConnected ? 'block' : 'none';
-  disconnectBtn.classList.toggle('success', isConnected);
-  disconnectBtn.classList.toggle('danger', !isConnected);
-  disconnectBtn.textContent = isConnected ? 'Connected • Disconnect' : 'Disconnect';
+  connectBtn.classList.toggle('primary', !isConnected);
+  connectBtn.classList.toggle('success', isConnected);
+  connectBtn.textContent = isConnected ? 'Connected' : 'Connect';
+  connectBtn.disabled = isConnected;
   baudSelect.disabled = isConnected;
   dtrModeSelect.disabled = isConnected;
   observeToggle.disabled = isConnected;
