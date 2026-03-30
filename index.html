@@ -96,6 +96,31 @@
     margin-bottom: 10px;
   }
 
+  .section-collapsible {
+    padding: 0;
+  }
+  .section-toggle {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .section-toggle::-webkit-details-marker { display: none; }
+  .section-toggle-icon {
+    color: var(--text-muted);
+    font-size: 11px;
+    transition: transform 0.15s ease;
+  }
+  .section-collapsible[open] .section-toggle-icon {
+    transform: rotate(90deg);
+  }
+  .section-content {
+    padding: 0 16px 14px;
+  }
+
   select, input[type="text"], input[type="number"], textarea {
     width: 100%;
     background: var(--surface2);
@@ -141,6 +166,13 @@
     font-weight: 600;
   }
   .btn.primary:hover { background: #0d9488; }
+  .btn.success {
+    background: var(--green-dim);
+    border-color: #166534;
+    color: var(--green);
+    font-weight: 600;
+  }
+  .btn.success:hover { background: #14532d; border-color: #15803d; color: #bbf7d0; }
   .btn.danger {
     background: var(--red-dim);
     border-color: #7f1d1d;
@@ -270,6 +302,26 @@
     font-family: var(--sans);
   }
   .icon-btn:hover { color: var(--text); border-color: #3e4460; background: var(--surface2); }
+  .icon-btn.dirty {
+    color: var(--amber);
+    border-color: #8b5d14;
+    background: var(--amber-dim);
+  }
+  .icon-btn.dirty:hover {
+    color: #ffd37a;
+    border-color: #a56d17;
+    background: #5a3d0c;
+  }
+  .icon-btn.ready {
+    color: var(--green);
+    border-color: #166534;
+    background: var(--green-dim);
+  }
+  .icon-btn.ready:hover {
+    color: #bbf7d0;
+    border-color: #15803d;
+    background: #14532d;
+  }
 
   #terminal {
     flex: 1;
@@ -308,7 +360,7 @@
     display: flex;
     gap: 8px;
     padding: 10px 16px;
-    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
   }
@@ -390,8 +442,12 @@
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
 
-    <div class="section">
-      <div class="section-label">Advanced Diagnostics</div>
+    <details class="section section-collapsible" id="advanced-section">
+      <summary class="section-toggle">
+        <span class="section-label">Advanced Diagnostics</span>
+        <span class="section-toggle-icon">▸</span>
+      </summary>
+      <div class="section-content">
       <select id="dtr-mode-select">
         <option value="default" selected>Default DTR behavior</option>
         <option value="low">Force DTR low after open</option>
@@ -423,7 +479,8 @@ $#
       </div>
       <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Diagnostics</button>
       <div class="help-text">Builder commands run one at a time in order and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use FluidNC-style percent escapes like <code>%3F</code> for special characters, or <code>hex:18</code> / <code>hex:24 24 0A</code> for raw bytes.</div>
-    </div>
+      </div>
+    </details>
 
     <div class="section">
       <div class="section-label">Quick commands</div>
@@ -466,6 +523,10 @@ $#
   </div>
 
   <div class="terminal-pane">
+    <div class="term-input-bar">
+      <input type="text" id="cmd-input" placeholder="Type command and press Enter…" disabled autocomplete="off" spellcheck="false">
+      <button class="send-btn" id="send-btn" disabled>Send</button>
+    </div>
     <div class="term-header">
       <span class="term-header-label">Terminal output</span>
       <div class="term-header-actions">
@@ -476,10 +537,6 @@ $#
       </div>
     </div>
     <div id="terminal"></div>
-    <div class="term-input-bar">
-      <input type="text" id="cmd-input" placeholder="Type command and press Enter…" disabled autocomplete="off" spellcheck="false">
-      <button class="send-btn" id="send-btn" disabled>Send</button>
-    </div>
   </div>
 </main>
 
@@ -495,6 +552,7 @@ const exportBtn    = document.getElementById('export-btn');
 const copyDiagBtn  = document.getElementById('copy-diag-btn');
 const autoscrollBtn= document.getElementById('autoscroll-btn');
 const baudSelect   = document.getElementById('baud-select');
+const advancedSection = document.getElementById('advanced-section');
 const dtrModeSelect= document.getElementById('dtr-mode-select');
 const observeToggle= document.getElementById('observe-toggle');
 const waitMsInput   = document.getElementById('wait-ms-input');
@@ -866,6 +924,7 @@ function applyPresetToUi() {
   diagnosticsPreset = parseDiagnosticsPreset();
   if (!diagnosticsPreset) {
     updatePresetBox();
+    updateAdvancedDiagnosticsDirtyState();
     return;
   }
 
@@ -878,7 +937,32 @@ function applyPresetToUi() {
   sequenceDelayInput.value = diagnosticsPreset.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS;
   builderNameInput.value = diagnosticsPreset.name || '';
   builderCommandsInput.value = diagnosticsPreset.commands.join('\n');
+  if (advancedSection) advancedSection.open = true;
   updatePresetBox();
+  updateAdvancedDiagnosticsDirtyState();
+}
+
+function isAdvancedDiagnosticsDirty() {
+  return Boolean(
+    window.location.search ||
+    diagnosticsPreset ||
+    dtrModeSelect.value !== 'default' ||
+    observeToggle.checked ||
+    parseNumberParam(waitMsInput.value, 0) !== 0 ||
+    parseNumberParam(sequenceDelayInput.value, DEFAULT_SEQUENCE_DELAY_MS) !== DEFAULT_SEQUENCE_DELAY_MS ||
+    builderNameInput.value.trim() ||
+    collectBuilderCommands().length
+  );
+}
+
+function updateAdvancedDiagnosticsDirtyState() {
+  resetAdvancedBtn.classList.toggle('dirty', isAdvancedDiagnosticsDirty());
+}
+
+function updateCopyLogState() {
+  const hasLog = logLines.length > 0;
+  copyDiagBtn.classList.toggle('ready', hasLog);
+  copyDiagBtn.title = hasLog ? 'Copy the current diagnostics log to the system clipboard' : 'No diagnostics log available yet';
 }
 
 function resetAdvancedDiagnostics() {
@@ -889,13 +973,22 @@ function resetAdvancedDiagnostics() {
   sequenceDelayInput.value = String(DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = '';
   builderCommandsInput.value = '';
+  if (window.location.search) {
+    const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+    window.history.replaceState({}, '', cleanUrl);
+  }
+  if (advancedSection) advancedSection.open = false;
   updatePresetBox();
+  updateAdvancedDiagnosticsDirtyState();
   addLine('Advanced diagnostics reset to defaults', 'sys');
 }
 
 function setConnectionUi(isConnected) {
   connectBtn.style.display = isConnected ? 'none' : 'block';
   disconnectBtn.style.display = isConnected ? 'block' : 'none';
+  disconnectBtn.classList.toggle('success', isConnected);
+  disconnectBtn.classList.toggle('danger', !isConnected);
+  disconnectBtn.textContent = isConnected ? 'Connected • Disconnect' : 'Disconnect';
   baudSelect.disabled = isConnected;
   dtrModeSelect.disabled = isConnected;
   observeToggle.disabled = isConnected;
@@ -968,11 +1061,15 @@ function buildDiscoursePayload() {
 
 async function copyDiagnosticsLog() {
   try {
+    if (!logLines.length) {
+      addLine('No diagnostic log is available to copy yet', 'sys');
+      return;
+    }
     if (!navigator.clipboard?.writeText) {
       throw new Error('Clipboard API not available in this browser context');
     }
     await navigator.clipboard.writeText(buildDiscoursePayload());
-    addLine('Diagnostics log copied to clipboard as a Discourse details block', 'sys');
+    addLine('Diagnostic log copied to system clipboard', 'sys');
   } catch (e) {
     addLine('Copy diagnostics failed: ' + e.message, 'err');
   }
@@ -1180,16 +1277,25 @@ autoscrollBtn.addEventListener('click', () => {
 clearBtn.addEventListener('click', () => {
   terminal.innerHTML = '';
   logLines = [];
+  updateCopyLogState();
 });
 
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLinkBtn.addEventListener('click', copyBuilderLink);
 applyBuilderBtn.addEventListener('click', () => {
   diagnosticsPreset = buildCustomPresetFromUi();
+  if (advancedSection) advancedSection.open = true;
   updatePresetBox();
+  updateAdvancedDiagnosticsDirtyState();
   addLine(`Builder loaded: ${diagnosticsPreset.name}`, 'sys');
 });
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
+
+[dtrModeSelect, observeToggle, waitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
+  control.addEventListener(control === observeToggle ? 'change' : 'input', () => {
+    updateAdvancedDiagnosticsDirtyState();
+  });
+});
 
 exportBtn.addEventListener('click', () => {
   const text = logLines.join('\n');
@@ -1236,6 +1342,7 @@ function addLine(text, type = 'rx') {
     if (terminal.firstChild) terminal.removeChild(terminal.firstChild);
   }
 
+  updateCopyLogState();
   if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
   updateStatus(text);
 }
@@ -1402,6 +1509,7 @@ cmdInput.addEventListener('keydown', e => {
 
 applyPresetToUi();
 setConnectionUi(false);
+updateAdvancedDiagnosticsDirtyState();
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
