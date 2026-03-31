@@ -592,9 +592,10 @@ const NAMED_PRESETS = {
   },
   'startup-status': {
     name: 'startup-status',
-    description: 'Wake the controller and request a single real-time status report.',
-    commands: ['wake', '?'],
-    waitMs: 800,
+    description: 'Wait for a device ready signal, then request a single real-time status report.',
+    commands: [],
+    waitMs: 200,
+    bannerTimeoutMs: 3000,
     sequenceDelayMs: 600
   },
   'observe-only': {
@@ -617,8 +618,9 @@ const NAMED_PRESETS = {
 };
 
 const DEFAULT_SEQUENCE_DELAY_MS = 450;
-const DEFAULT_WAKE_DELAY_MS = 800;
 const DEFAULT_STATUS_DELAY_MS = 600;
+const DEFAULT_BANNER_TIMEOUT_MS = 3000;
+const DEFAULT_READY_SETTLE_MS = 150;
 const MAX_LOG_LINES = 5000;
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 
@@ -652,6 +654,9 @@ let pendingSequenceResponse = null;
 let readLoopPromise = null;
 let transportState = 'disconnected';
 let machineState = 'unknown';
+let readySignalSeen = false;
+let readySignalLine = null;
+let readySignalAt = null;
 let currentRun = {
   name: 'manual',
   description: 'Manual connect',
@@ -660,11 +665,14 @@ let currentRun = {
   dtrMode: 'default',
   observeOnly: false,
   waitMs: 0,
+  bannerTimeoutMs: DEFAULT_BANNER_TIMEOUT_MS,
   sequenceDelayMs: DEFAULT_SEQUENCE_DELAY_MS,
   commands: [],
   invalidCommands: [],
   portInfo: null,
-  presetSummary: 'Manual connect'
+  presetSummary: 'Manual connect',
+  startupResolved: 'not-run',
+  startupReadyLine: null
 };
 
 if (!('serial' in navigator)) {
@@ -674,6 +682,29 @@ if (!('serial' in navigator)) {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function looksLikeReadyLine(line) {
+  const printable = line.replace(/[^\x20-\x7E]/g, '').trim();
+  if (printable.length < 4) return false;
+
+  const isAllGarbage = /^[\uFFFD\x00-\x1F\x80-\x9F]+$/.test(line.trim());
+  if (isAllGarbage) return false;
+
+  return true;
+}
+
+function resetReadySignalState() {
+  readySignalSeen = false;
+  readySignalLine = null;
+  readySignalAt = null;
+}
+
+function recordReadySignal(line) {
+  if (!looksLikeReadyLine(line)) return;
+  readySignalSeen = true;
+  readySignalLine = line.trim();
+  readySignalAt = Date.now();
 }
 
 function setTransportState(state, label = null) {
@@ -883,6 +914,7 @@ function buildPresetSummary(config) {
   summary.push(`DTR: ${config.dtrMode}`);
   summary.push(`Observe only: ${config.observeOnly ? 'yes' : 'no'}`);
   if (config.waitMs) summary.push(`Wait: ${config.waitMs} ms`);
+  summary.push(`Banner wait: ${config.bannerTimeoutMs === 0 ? 'disabled' : `${config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS} ms`}`);
   summary.push(`Step delay: ${config.sequenceDelayMs} ms`);
   if (config.invalidCommands.length) summary.push(config.invalidCommands.join(' | '));
   return summary;
@@ -890,7 +922,7 @@ function buildPresetSummary(config) {
 
 function parseDiagnosticsPreset() {
   const params = new URLSearchParams(window.location.search);
-  const hasPresetParams = ['preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait', 'delay'].some(key => params.has(key));
+  const hasPresetParams = ['preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait', 'delay', 'banner_timeout', 'banner_wait'].some(key => params.has(key));
   if (!hasPresetParams) return null;
 
   const presetName = params.get('preset');
@@ -903,6 +935,7 @@ function parseDiagnosticsPreset() {
     dtrMode: presetBase?.dtrMode || 'default',
     observeOnly: Boolean(presetBase?.observeOnly),
     waitMs: presetBase?.waitMs || 0,
+    bannerTimeoutMs: presetBase?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS,
     sequenceDelayMs: presetBase?.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS,
     invalidCommands: [],
     summary: []
@@ -936,6 +969,8 @@ function parseDiagnosticsPreset() {
 
   if (params.has('wait')) config.waitMs = parseNumberParam(params.get('wait'), config.waitMs || 0);
   if (params.has('delay')) config.sequenceDelayMs = parseNumberParam(params.get('delay'), config.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS);
+  if (params.has('banner_timeout')) config.bannerTimeoutMs = parseNumberParam(params.get('banner_timeout'), DEFAULT_BANNER_TIMEOUT_MS);
+  if (params.has('banner_wait') && params.get('banner_wait') === '0') config.bannerTimeoutMs = 0;
 
   config.summary = buildPresetSummary(config);
 
@@ -952,6 +987,7 @@ function buildCustomPresetFromUi(source = 'builder') {
     dtrMode: normalizeDtrMode(dtrModeSelect.value),
     observeOnly: observeToggle.checked,
     waitMs: parseNumberParam(waitMsInput.value, 0),
+    bannerTimeoutMs: diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS,
     sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, DEFAULT_SEQUENCE_DELAY_MS),
     invalidCommands: parsed.invalid
   };
@@ -1035,6 +1071,9 @@ function resetAdvancedDiagnostics() {
   if (advancedSection) advancedSection.open = false;
   updatePresetBox();
   updateAdvancedDiagnosticsDirtyState();
+  currentRun.bannerTimeoutMs = DEFAULT_BANNER_TIMEOUT_MS;
+  currentRun.startupResolved = 'not-run';
+  currentRun.startupReadyLine = null;
   addLine('Advanced diagnostics reset to defaults', 'sys');
 }
 
@@ -1081,10 +1120,13 @@ function getCurrentDiagnosticsConfig() {
     dtrMode: normalizeDtrMode(dtrModeSelect.value),
     observeOnly: observeToggle.checked,
     waitMs: parseNumberParam(waitMsInput.value, diagnosticsPreset?.waitMs || 0),
+    bannerTimeoutMs: diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS,
     sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, diagnosticsPreset?.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS),
     commands: diagnosticsPreset?.commands ? [...diagnosticsPreset.commands] : [],
     invalidCommands: diagnosticsPreset?.invalidCommands ? [...diagnosticsPreset.invalidCommands] : [],
-    presetSummary
+    presetSummary,
+    startupResolved: 'pending',
+    startupReadyLine: null
   };
 }
 
@@ -1096,6 +1138,11 @@ function buildPresetUrl(config) {
   url.searchParams.set('dtr', config.dtrMode || 'default');
   url.searchParams.set('observe', config.observeOnly ? '1' : '0');
   url.searchParams.set('wait', String(config.waitMs || 0));
+  if ((config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) === 0) {
+    url.searchParams.set('banner_wait', '0');
+  } else if ((config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) !== DEFAULT_BANNER_TIMEOUT_MS) {
+    url.searchParams.set('banner_timeout', String(config.bannerTimeoutMs));
+  }
   url.searchParams.set('delay', String(config.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS));
   config.commands.slice(0, 10).forEach(command => url.searchParams.append('cmd', command));
   return url.toString();
@@ -1116,6 +1163,9 @@ function buildDiscoursePayload() {
     `Baud: ${currentRun.baud || baudSelect.value}`,
     `DTR mode: ${currentRun.dtrMode || 'default'}`,
     `Observe only: ${currentRun.observeOnly ? 'yes' : 'no'}`,
+    `Banner wait: ${currentRun.bannerTimeoutMs === 0 ? 'disabled' : `${currentRun.bannerTimeoutMs || DEFAULT_BANNER_TIMEOUT_MS} ms`}`,
+    `Startup resolved: ${currentRun.startupResolved || 'not-run'}`,
+    `Ready line: ${currentRun.startupReadyLine || 'n/a'}`,
     `Port info: ${formatPortInfo(currentRun.portInfo)}`,
     `Source URL: ${window.location.href}`
   ];
@@ -1222,6 +1272,29 @@ async function waitForStep(ms, token) {
   return isSequenceActive(token);
 }
 
+async function waitForReadySignal(timeoutMs, token) {
+  if (timeoutMs === 0) {
+    return { reason: 'disabled', triggerLine: null };
+  }
+
+  if (readySignalSeen) {
+    return { reason: 'banner', triggerLine: readySignalLine };
+  }
+
+  const startedAt = Date.now();
+  while (isSequenceActive(token)) {
+    if (readySignalSeen) {
+      return { reason: 'banner', triggerLine: readySignalLine };
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      return { reason: 'timeout', triggerLine: null };
+    }
+    await delay(50);
+  }
+
+  return { reason: 'cancelled', triggerLine: null };
+}
+
 async function applyDtrMode(mode, label = 'DTR action') {
   if (!port || !dtrSupported) {
     addLine('DTR control is not available for this connection', 'err');
@@ -1277,6 +1350,8 @@ async function runStartupSequence(config, token) {
   }
 
   if (config.commands.length) {
+    currentRun.startupResolved = 'preset-commands';
+    currentRun.startupReadyLine = null;
     addLine('Running preset command sequence', 'sys');
     for (let i = 0; i < config.commands.length; i++) {
       if (!isSequenceActive(token)) return;
@@ -1299,20 +1374,41 @@ async function runStartupSequence(config, token) {
   }
 
   if (config.observeOnly) {
+    currentRun.startupResolved = 'observe-only';
     addLine('Observe-only mode enabled. Startup traffic suppressed.', 'sys');
     return;
   }
 
+  if ((config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) > 0) {
+    addLine(`Waiting up to ${config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS} ms for a ready signal`, 'sys');
+  }
+
+  const ready = await waitForReadySignal(config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS, token);
+  if (!isSequenceActive(token) || ready.reason === 'cancelled') return;
+
+  currentRun.startupResolved = ready.reason;
+  currentRun.startupReadyLine = ready.triggerLine;
+
+  if (ready.reason === 'banner' && ready.triggerLine) {
+    addLine(`Ready signal detected: "${ready.triggerLine}"`, 'sys');
+  } else if (ready.reason === 'timeout') {
+    addLine('No ready signal within timeout - proceeding anyway', 'sys');
+  }
+  addLine(`Startup resolved via: ${ready.reason}`, 'sys');
+
+  if (!(await waitForStep(DEFAULT_READY_SETTLE_MS, token))) return;
+
   addLine('Sending wake signal…', 'sys');
-  if (!(await waitForStep(DEFAULT_WAKE_DELAY_MS, token))) return;
   await sendCommand('\n');
-  if (!(await waitForStep(DEFAULT_STATUS_DELAY_MS, token))) return;
+  if (!(await waitForStep(config.sequenceDelayMs || DEFAULT_STATUS_DELAY_MS, token))) return;
   await sendCommand('?');
 }
 
 async function disconnectPort(reason = 'Disconnected') {
   activeSequenceToken += 1;
   readLoopActive = false;
+  resetReadySignalState();
+  currentRun.startupReadyLine = null;
   const localPort = port;
   const localReader = reader;
   const localWriter = writer;
@@ -1393,6 +1489,10 @@ function addLine(text, type = 'rx') {
   const arrows = { tx: '→', rx: '←', sys: '●', err: '✕' };
   const arrow = arrows[type] || '←';
 
+  if (type === 'rx') {
+    recordReadySignal(text);
+  }
+
   logLines.push(`[${time}] ${arrow} ${text}`);
 
   const div = document.createElement('div');
@@ -1459,6 +1559,9 @@ function updateStatus(text) {
 function markConnectionFault(label) {
   activeSequenceToken += 1;
   readLoopActive = false;
+  resetReadySignalState();
+  currentRun.startupResolved = 'fault';
+  currentRun.startupReadyLine = null;
   settlePendingSequenceResponse({ status: 'cancelled', line: label });
   setTransportState('fault', label);
   setMachineState('unknown');
@@ -1535,6 +1638,7 @@ connectBtn.addEventListener('click', async () => {
   const token = ++activeSequenceToken;
   let stage = 'request-port';
   try {
+    resetReadySignalState();
     setConnectionUi('connecting');
     setTransportState('connecting');
     setMachineState('unknown');
@@ -1555,7 +1659,9 @@ connectBtn.addEventListener('click', async () => {
       baud,
       dtrMode: normalizeDtrMode(dtrModeSelect.value),
       observeOnly: observeToggle.checked,
-      portInfo
+      portInfo,
+      startupResolved: 'pending',
+      startupReadyLine: null
     };
 
     writer = port.writable.getWriter();
