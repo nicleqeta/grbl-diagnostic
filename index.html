@@ -499,7 +499,7 @@
       <textarea id="builder-commands-input" placeholder="One GRBL command per line. Up to 10 commands. Example:
 $$
 $#
-    $I" title="Enter up to 10 commands, one per line. Commands run in order and stop if the active command returns error: or ALARM:. Supports plain GRBL text, %XX escapes, and hex: raw byte sequences."></textarea>
+$I" title="Enter up to 10 commands, one per line. Commands run in order and stop if the active command returns error: or ALARM:. Supports plain GRBL text, %XX escapes, and hex: raw byte sequences."></textarea>
       <div class="diag-actions two-up">
         <button class="icon-btn" id="apply-builder-btn">Use Builder</button>
         <button class="icon-btn" id="copy-link-btn">Copy Link</button>
@@ -1568,6 +1568,34 @@ function markConnectionFault(label) {
   setConnectionUi('fault');
 }
 
+function resetAfterFailedOpen(reason) {
+  readLoopActive = false;
+  resetReadySignalState();
+  currentRun.startupResolved = 'not-run';
+  currentRun.startupReadyLine = null;
+  port = null;
+  reader = null;
+  writer = null;
+  readLoopPromise = null;
+  dtrSupported = false;
+  settlePendingSequenceResponse({ status: 'cancelled', line: reason });
+  setConnectionUi('disconnected');
+  setTransportState('disconnected');
+  setMachineState('unknown');
+}
+
+function isPortBusyOpenError(error, stage) {
+  if (stage !== 'open' || !error) return false;
+  const name = String(error.name || '').toLowerCase();
+  const message = String(error.message || '').toLowerCase();
+  return name === 'networkerror' && (
+    message.includes("failed to execute 'open' on 'serialport'") ||
+    message.includes('the port is already open') ||
+    message.includes('access to the port is denied') ||
+    message.includes('device is in use')
+  );
+}
+
 async function sendCommand(raw, displayOverride = null) {
   if (!writer) return;
   let encoded;
@@ -1683,6 +1711,13 @@ connectBtn.addEventListener('click', async () => {
       setTransportState('disconnected');
       setMachineState('unknown');
       addLine('Port selection cancelled', 'sys');
+      return;
+    }
+
+    if (isPortBusyOpenError(e, stage)) {
+      resetAfterFailedOpen('Connection attempt ended');
+      addLine(`Connection failed during ${stage}: ${e.name || 'Error'} - ${e.message}`, 'err');
+      addLine('Please check that all other software is disconnected from your machine, including instances of this software in other browser tabs, then try again. If the problem continues after everything else is closed, unplug and reconnect the USB cable and try again.', 'sys');
       return;
     }
 
