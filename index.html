@@ -505,7 +505,7 @@ $#
         <button class="icon-btn" id="copy-link-btn">Copy Link</button>
       </div>
       <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Diagnostics</button>
-      <div class="help-text">Builder commands run one at a time in order and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use FluidNC-style percent escapes like <code>%3F</code> for special characters, or <code>hex:18</code> / <code>hex:24 24 0A</code> for raw bytes. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
+      <div class="help-text">These commands run one at a time in order, and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use <code>hex:18</code> for a raw byte like <code>0x18</code>. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
       </div>
     </details>
 
