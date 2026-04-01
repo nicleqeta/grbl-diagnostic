@@ -1341,9 +1341,35 @@ function describeDtrState(asserted) {
   return `DTR ${asserted ? 'asserted' : 'deasserted'} (dataTerminalReady=${asserted})`;
 }
 
+function formatControlSignals(signals) {
+  if (!signals) return 'control input lines unavailable';
+
+  const parts = [];
+  if (typeof signals.clearToSend === 'boolean') parts.push(`CTS=${signals.clearToSend}`);
+  if (typeof signals.dataSetReady === 'boolean') parts.push(`DSR=${signals.dataSetReady}`);
+  if (typeof signals.dataCarrierDetect === 'boolean') parts.push(`DCD=${signals.dataCarrierDetect}`);
+  if (typeof signals.ringIndicator === 'boolean') parts.push(`RI=${signals.ringIndicator}`);
+  return parts.length ? parts.join(' ') : 'control input lines unavailable';
+}
+
+async function logControlSignals(label, logUnavailable = false) {
+  if (!port || typeof port.getSignals !== 'function') {
+    if (logUnavailable) addLine(`${label}: control input lines unavailable`, 'sys');
+    return;
+  }
+
+  try {
+    const signals = await port.getSignals();
+    addLine(`${label}: ${formatControlSignals(signals)}`, 'sys');
+  } catch (e) {
+    if (logUnavailable) addLine(`${label}: unable to read control input lines (${e.message})`, 'err');
+  }
+}
+
 async function setDtrSignalState(asserted, label, detail) {
   await port.setSignals({ dataTerminalReady: asserted });
   addLine(`${label}: ${describeDtrState(asserted)}${detail ? ` ${detail}` : ''}`, 'sys');
+  await logControlSignals(`${label} input signal snapshot`);
 }
 
 async function applyDtrMode(mode, label = 'DTR action') {
@@ -1729,6 +1755,7 @@ connectBtn.addEventListener('click', async () => {
     const baud = parseInt(baudSelect.value, 10);
     await port.open({ baudRate: baud });
     addLine(`Port open completed at ${baud} baud`, 'sys');
+    await logControlSignals('Signals after open', true);
 
     stage = 'writer';
     dtrSupported = typeof port.setSignals === 'function';
