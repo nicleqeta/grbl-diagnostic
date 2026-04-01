@@ -592,7 +592,7 @@ const NAMED_PRESETS = {
   },
   'startup-status': {
     name: 'startup-status',
-    description: 'Wait for a device ready signal, then request a single real-time status report.',
+    description: 'Wait for device startup text, then request a single real-time status report.',
     commands: [],
     waitMs: 200,
     bannerTimeoutMs: 3000,
@@ -1427,7 +1427,7 @@ async function runStartupSequence(config, token) {
   }
 
   if ((config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) > 0) {
-    addLine(`Waiting up to ${config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS} ms for a ready signal`, 'sys');
+    addLine(`Waiting up to ${config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS} ms for startup text`, 'sys');
   }
 
   const ready = await waitForReadySignal(config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS, token);
@@ -1437,9 +1437,9 @@ async function runStartupSequence(config, token) {
   currentRun.startupReadyLine = ready.triggerLine;
 
   if (ready.reason === 'banner' && ready.triggerLine) {
-    addLine(`Ready signal detected: "${ready.triggerLine}"`, 'sys');
+    addLine(`Startup text detected: "${ready.triggerLine}"`, 'sys');
   } else if (ready.reason === 'timeout') {
-    addLine('No ready signal within timeout - proceeding anyway', 'sys');
+    addLine('No startup text detected within timeout - proceeding anyway', 'sys');
   }
   addLine(`Startup resolved via: ${ready.reason}`, 'sys');
 
