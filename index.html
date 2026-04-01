@@ -490,11 +490,6 @@
         <input type="number" id="sequence-delay-input" min="0" max="10000" step="50" value="450" placeholder="Step delay ms" title="Delay between diagnostic sequence commands. Increase this if the controller needs more time between commands like $$, $#, and $I.">
       </div>
       <div class="diag-box muted" id="preset-box">No preset loaded. Shareable test links can prefill diagnostics and safe command sequences.</div>
-      <div class="diag-actions">
-        <button class="icon-btn" id="dtr-low-btn" disabled>DTR Low</button>
-        <button class="icon-btn" id="dtr-high-btn" disabled>DTR High</button>
-        <button class="icon-btn" id="dtr-pulse-btn" disabled>Pulse</button>
-      </div>
       <input type="text" id="builder-name-input" placeholder="Builder name, e.g. settings-and-build-info" title="Optional label for this advanced diagnostic setup and the generated support link.">
       <textarea id="builder-commands-input" placeholder="One GRBL command per line. Up to 10 commands. Example:
 $$
@@ -571,9 +566,6 @@ const observeToggle= document.getElementById('observe-toggle');
 const waitMsInput   = document.getElementById('wait-ms-input');
 const sequenceDelayInput = document.getElementById('sequence-delay-input');
 const presetBox    = document.getElementById('preset-box');
-const dtrLowBtn    = document.getElementById('dtr-low-btn');
-const dtrHighBtn   = document.getElementById('dtr-high-btn');
-const dtrPulseBtn  = document.getElementById('dtr-pulse-btn');
 const builderNameInput = document.getElementById('builder-name-input');
 const builderCommandsInput = document.getElementById('builder-commands-input');
 const applyBuilderBtn = document.getElementById('apply-builder-btn');
@@ -1106,9 +1098,6 @@ function setConnectionUi(mode = 'disconnected') {
   cmdInput.disabled = !isConnected;
   sendBtn.disabled = !isConnected;
   cmdBtns.forEach(button => button.disabled = !isConnected);
-  dtrLowBtn.disabled = !isConnected || !dtrSupported;
-  dtrHighBtn.disabled = !isConnected || !dtrSupported;
-  dtrPulseBtn.disabled = !isConnected || !dtrSupported;
 }
 
 function getCurrentDiagnosticsConfig() {
@@ -1807,10 +1796,6 @@ disconnectBtn.addEventListener('click', () => disconnectPort('Disconnected'));
 cmdBtns.forEach(btn => {
   btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
 });
-
-dtrLowBtn.addEventListener('click', () => applyDtrMode('low', 'Manual DTR'));
-dtrHighBtn.addEventListener('click', () => applyDtrMode('high', 'Manual DTR'));
-dtrPulseBtn.addEventListener('click', () => applyDtrMode('pulse', 'Manual DTR'));
 
 sendBtn.addEventListener('click', () => {
   const val = cmdInput.value.trim();
