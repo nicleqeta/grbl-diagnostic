@@ -1352,21 +1352,40 @@ function buildDiscoursePayload() {
   return `[details="${DISCOURSE_TITLE}"]\n${escapeDiscourseHtmlChars(lines.join('\n'))}\n\n\`\`\`text\n${escapeDiscourseHtmlChars(logLines.join('\n'))}\n\`\`\`\n[/details]`;
 }
 
+function downloadTextFile(text, filenamePrefix = 'grbl-diagnostic') {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ts = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  a.download = `${filenamePrefix}-${ts}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function copyDiagnosticsLog() {
+  const payload = buildDiscoursePayload();
   try {
     if (!logLines.length) {
       addLine('No diagnostic log is available to copy yet', 'sys');
-      return false;
+      return { ok: false, method: 'none' };
     }
     if (!navigator.clipboard?.writeText) {
       throw new Error('Clipboard API not available in this browser context');
     }
-    await navigator.clipboard.writeText(buildDiscoursePayload());
+    await navigator.clipboard.writeText(payload);
     addLine('Diagnostic log copied to system clipboard', 'sys');
-    return true;
+    return { ok: true, method: 'clipboard' };
   } catch (e) {
-    addLine('Copy diagnostics failed: ' + e.message, 'err');
-    return false;
+    try {
+      downloadTextFile(payload, 'grbl-diagnostic');
+      addLine(`Clipboard copy unavailable (${e.message}); downloaded diagnostics file instead`, 'sys');
+      return { ok: true, method: 'download' };
+    } catch (downloadError) {
+      addLine('Copy diagnostics failed: ' + e.message, 'err');
+      addLine('Diagnostics download fallback failed: ' + downloadError.message, 'err');
+      return { ok: false, method: 'none' };
+    }
   }
 }
 
@@ -1452,10 +1471,14 @@ async function executeSequenceCommand(rawCommand) {
 
   if (command.kind === 'action') {
     if (command.action === 'clip') {
-      const copied = await copyDiagnosticsLog();
+      const copyResult = await copyDiagnosticsLog();
       return {
-        status: copied ? 'action' : 'error',
-        line: copied ? 'Diagnostics log copied to clipboard' : 'Clipboard copy failed'
+        status: copyResult.ok ? 'action' : 'error',
+        line: copyResult.ok
+          ? (copyResult.method === 'download'
+            ? 'Diagnostics download fallback completed'
+            : 'Diagnostics log copied to clipboard')
+          : 'Clipboard copy failed'
       };
     }
 
@@ -1718,14 +1741,7 @@ updateSequenceDelayUi();
 
 exportBtn.addEventListener('click', () => {
   const text = logLines.join('\n');
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const ts = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
-  a.download = `grbl-log-${ts}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(text, 'grbl-log');
 });
 
 function addLine(text, type = 'rx') {
