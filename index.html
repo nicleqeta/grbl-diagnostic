@@ -1904,7 +1904,9 @@ connectBtn.addEventListener('click', async () => {
 disconnectBtn.addEventListener('click', () => disconnectPort('Disconnected'));
 
 cmdBtns.forEach(btn => {
-  btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
+  btn.addEventListener('click', () => {
+    void executeSequenceCommand(btn.dataset.cmd);
+  });
 });
 
 sendBtn.addEventListener('click', () => {
@@ -1914,7 +1916,7 @@ sendBtn.addEventListener('click', () => {
   if (cmdHistory.length > 50) cmdHistory.pop();
   historyIdx = -1;
   cmdInput.value = '';
-  sendCommand(val + '\n');
+  void executeSequenceCommand(val);
 });
 
 cmdInput.addEventListener('keydown', e => {
