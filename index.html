@@ -482,6 +482,7 @@
       </select>
       <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
+      <div class="diag-box muted" id="startup-banner-box">No GRBL startup banner seen yet.</div>
     </div>
 
     <div class="section">
@@ -518,6 +519,10 @@
         <input type="checkbox" id="show-request-response-toggle">
         <span>Show request/response correlation</span>
       </label>
+      <div class="label-input-row">
+        <span class="label-input-row-label">Start wait:</span>
+        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="200" placeholder="200" title="Wait after opening the port and applying any DTR action before sending startup commands. This is a fixed settle delay before any startup traffic, unlike Banner wait which waits for incoming startup text.">
+      </div>
       <div class="check-input-row">
         <label class="check-row">
           <input type="checkbox" id="banner-wait-toggle" checked>
@@ -531,10 +536,6 @@
           <span>Extra sequence delay</span>
         </label>
         <input type="number" id="sequence-delay-input" min="1" max="10000" step="50" value="450" placeholder="450" title="Extra delay between diagnostic sequence commands. Disable this to send the next command as soon as the prior one is acknowledged.">
-      </div>
-      <div class="label-input-row">
-        <span class="label-input-row-label">Start wait:</span>
-        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="0" title="Wait after opening the port and applying any DTR action before sending startup commands. This is a fixed settle delay before any startup traffic, unlike Banner wait which waits for incoming startup text.">
       </div>
       <div class="diag-box muted" id="preset-box">No preset loaded. Shareable test links can prefill diagnostics and safe command sequences.</div>
       <input type="text" id="builder-name-input" placeholder="Builder name, e.g. settings-and-build-info" title="Optional label for this advanced diagnostic setup and the generated support link.">
@@ -614,6 +615,7 @@ const sequenceDelayToggle = document.getElementById('sequence-delay-toggle');
 const waitMsInput   = document.getElementById('wait-ms-input');
 const sequenceDelayInput = document.getElementById('sequence-delay-input');
 const presetBox    = document.getElementById('preset-box');
+const startupBannerBox = document.getElementById('startup-banner-box');
 const builderNameInput = document.getElementById('builder-name-input');
 const builderCommandsInput = document.getElementById('builder-commands-input');
 const copyLinkBtn  = document.getElementById('copy-link-btn');
@@ -697,6 +699,7 @@ let machineState = 'unknown';
 let readySignalSeen = false;
 let readySignalLine = null;
 let readySignalAt = null;
+let startupBannerLine = null;
 let currentRun = {
   name: 'manual',
   description: 'Manual connect',
@@ -713,7 +716,8 @@ let currentRun = {
   portInfo: null,
   presetSummary: 'Manual connect',
   startupResolved: 'not-run',
-  startupReadyLine: null
+  startupReadyLine: null,
+  startupBannerLine: null
 };
 
 if (!('serial' in navigator)) {
@@ -723,6 +727,10 @@ if (!('serial' in navigator)) {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function looksLikeGrblBanner(line) {
+  return /^grbl\b/i.test(String(line || '').trim());
 }
 
 function looksLikeReadyLine(line) {
@@ -741,11 +749,33 @@ function resetReadySignalState() {
   readySignalAt = null;
 }
 
+function updateStartupBannerUi() {
+  if (!startupBannerBox) return;
+
+  if (startupBannerLine) {
+    startupBannerBox.className = 'diag-box';
+    startupBannerBox.textContent = startupBannerLine;
+    return;
+  }
+
+  startupBannerBox.className = 'diag-box muted';
+  startupBannerBox.textContent = 'No GRBL startup banner seen yet.';
+}
+
+function setStartupBanner(line) {
+  startupBannerLine = line ? String(line).trim() : null;
+  currentRun.startupBannerLine = startupBannerLine;
+  updateStartupBannerUi();
+}
+
 function recordReadySignal(line) {
   if (!looksLikeReadyLine(line)) return;
   readySignalSeen = true;
   readySignalLine = line.trim();
   readySignalAt = Date.now();
+  if (looksLikeGrblBanner(line)) {
+    setStartupBanner(line);
+  }
 }
 
 function setTransportState(state, label = null) {
@@ -1118,7 +1148,7 @@ function applyPresetToUi() {
   showRequestResponseToggle.checked = Boolean(diagnosticsPreset.showRequestResponseCorrelation);
   bannerWaitToggle.checked = (diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) !== 0;
   bannerWaitMsInput.value = String(diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS);
-  waitMsInput.value = diagnosticsPreset.waitMs || 0;
+  waitMsInput.value = diagnosticsPreset.waitMs || 200;
   sequenceDelayToggle.checked = (diagnosticsPreset.sequenceDelayMs || 0) !== 0;
   sequenceDelayInput.value = String((diagnosticsPreset.sequenceDelayMs || 0) || DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = diagnosticsPreset.name || '';
@@ -1176,7 +1206,7 @@ function resetAdvancedDiagnostics() {
   showRequestResponseToggle.checked = false;
   bannerWaitToggle.checked = true;
   bannerWaitMsInput.value = String(DEFAULT_BANNER_TIMEOUT_MS);
-  waitMsInput.value = '0';
+  waitMsInput.value = '200';
   sequenceDelayToggle.checked = false;
   sequenceDelayInput.value = String(DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = '';
@@ -1310,6 +1340,7 @@ function buildDiscoursePayload() {
     `Observe only: ${currentRun.observeOnly ? 'yes' : 'no'}`,
     `Banner wait: ${currentRun.bannerTimeoutMs === 0 ? 'disabled' : `${currentRun.bannerTimeoutMs || DEFAULT_BANNER_TIMEOUT_MS} ms`}`,
     `Startup resolved: ${currentRun.startupResolved || 'not-run'}`,
+    `GRBL banner: ${currentRun.startupBannerLine || startupBannerLine || 'n/a'}`,
     `Ready line: ${currentRun.startupReadyLine || 'n/a'}`,
     `Port info: ${formatPortInfo(currentRun.portInfo)}`,
     `Source URL: ${window.location.href}`
@@ -1619,6 +1650,7 @@ async function disconnectPort(reason = 'Disconnected') {
   readLoopActive = false;
   resetReadySignalState();
   currentRun.startupReadyLine = null;
+  setStartupBanner(null);
   const localPort = port;
   const localReader = reader;
   const localWriter = writer;
@@ -1883,6 +1915,7 @@ connectBtn.addEventListener('click', async () => {
     setTransportState('connecting');
     setMachineState('unknown');
     currentRun = getCurrentDiagnosticsConfig();
+    setStartupBanner(null);
     port = await navigator.serial.requestPort();
     const portInfo = typeof port.getInfo === 'function' ? port.getInfo() : null;
     currentRun.portInfo = portInfo;
@@ -1904,7 +1937,8 @@ connectBtn.addEventListener('click', async () => {
       showRequestResponseCorrelation: showRequestResponseToggle.checked,
       portInfo,
       startupResolved: 'pending',
-      startupReadyLine: null
+      startupReadyLine: null,
+      startupBannerLine: null
     };
 
     writer = port.writable.getWriter();
@@ -1976,6 +2010,7 @@ setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
 setTransportState('disconnected');
 setMachineState('unknown');
+updateStartupBannerUi();
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
