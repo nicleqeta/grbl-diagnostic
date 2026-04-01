@@ -1750,7 +1750,6 @@ connectBtn.addEventListener('click', async () => {
     setMachineState('unknown');
 
     addLine(`Connected at ${baud} baud`, 'sys');
-    addLine(`DTR control ${dtrSupported ? 'available' : 'not supported by this connection'}`, dtrSupported ? 'sys' : 'err');
 
     stage = 'startup';
     await runStartupSequence(currentRun, token);
