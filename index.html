@@ -361,6 +361,10 @@
     border-color: #15803d;
     background: #14532d;
   }
+  #reset-advanced-btn {
+    width: 100%;
+    display: block;
+  }
 
   #terminal {
     flex: 1;
@@ -482,7 +486,6 @@
       </select>
       <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
-      <div class="diag-box muted" id="startup-banner-box">No GRBL startup banner seen yet.</div>
     </div>
 
     <div class="section">
@@ -521,7 +524,7 @@
       </label>
       <div class="label-input-row">
         <span class="label-input-row-label">Start wait:</span>
-        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="200" placeholder="200" title="Wait after opening the port and applying any DTR action before sending startup commands. This is a fixed settle delay before any startup traffic, unlike Banner wait which waits for incoming startup text.">
+        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="0" title="Wait after opening the port and applying any DTR action before sending startup commands. This is a fixed settle delay before any startup traffic, unlike Banner wait which waits for incoming startup text.">
       </div>
       <div class="check-input-row">
         <label class="check-row">
@@ -1148,7 +1151,7 @@ function applyPresetToUi() {
   showRequestResponseToggle.checked = Boolean(diagnosticsPreset.showRequestResponseCorrelation);
   bannerWaitToggle.checked = (diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) !== 0;
   bannerWaitMsInput.value = String(diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS);
-  waitMsInput.value = diagnosticsPreset.waitMs || 200;
+  waitMsInput.value = diagnosticsPreset.waitMs || 0;
   sequenceDelayToggle.checked = (diagnosticsPreset.sequenceDelayMs || 0) !== 0;
   sequenceDelayInput.value = String((diagnosticsPreset.sequenceDelayMs || 0) || DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = diagnosticsPreset.name || '';
@@ -1206,7 +1209,7 @@ function resetAdvancedDiagnostics() {
   showRequestResponseToggle.checked = false;
   bannerWaitToggle.checked = true;
   bannerWaitMsInput.value = String(DEFAULT_BANNER_TIMEOUT_MS);
-  waitMsInput.value = '200';
+  waitMsInput.value = '0';
   sequenceDelayToggle.checked = false;
   sequenceDelayInput.value = String(DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = '';
