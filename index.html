@@ -495,10 +495,7 @@
 $$
 $#
 $I" title="Enter up to 10 commands, one per line. Commands run in order and stop if the active command returns error: or ALARM:. Supports plain GRBL text, %XX escapes, and hex: raw byte sequences."></textarea>
-      <div class="diag-actions two-up">
-        <button class="icon-btn" id="apply-builder-btn">Use Builder</button>
-        <button class="icon-btn" id="copy-link-btn">Copy Link</button>
-      </div>
+      <button class="btn" id="copy-link-btn">Copy Link</button>
       <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Diagnostics</button>
       <div class="help-text">These commands run one at a time in order, and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use <code>hex:18</code> for a raw byte like <code>0x18</code>. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
       </div>
@@ -568,7 +565,6 @@ const sequenceDelayInput = document.getElementById('sequence-delay-input');
 const presetBox    = document.getElementById('preset-box');
 const builderNameInput = document.getElementById('builder-name-input');
 const builderCommandsInput = document.getElementById('builder-commands-input');
-const applyBuilderBtn = document.getElementById('apply-builder-btn');
 const copyLinkBtn  = document.getElementById('copy-link-btn');
 const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
@@ -988,18 +984,60 @@ function buildCustomPresetFromUi(source = 'builder') {
   return config;
 }
 
+function matchesDiagnosticsPreset(config) {
+  if (!diagnosticsPreset) return false;
+
+  const presetCommands = diagnosticsPreset.commands || [];
+  return (
+    config.name === (diagnosticsPreset.name || 'custom-link') &&
+    config.dtrMode === normalizeDtrMode(diagnosticsPreset.dtrMode) &&
+    config.observeOnly === Boolean(diagnosticsPreset.observeOnly) &&
+    config.waitMs === (diagnosticsPreset.waitMs || 0) &&
+    config.sequenceDelayMs === (diagnosticsPreset.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS) &&
+    config.bannerTimeoutMs === (diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) &&
+    config.commands.length === presetCommands.length &&
+    config.commands.every((command, index) => command === presetCommands[index])
+  );
+}
+
+function getActiveAdvancedDiagnosticsConfig(source = 'builder') {
+  const config = buildCustomPresetFromUi(source);
+  config.bannerTimeoutMs = diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS;
+  if (matchesDiagnosticsPreset(config)) {
+    config.description = diagnosticsPreset.description || config.description;
+    config.source = diagnosticsPreset.source || config.source;
+  }
+  config.summary = buildPresetSummary(config);
+  return config;
+}
+
+function hasAdvancedDiagnosticsSelection(config = getActiveAdvancedDiagnosticsConfig()) {
+  return Boolean(
+    config.invalidCommands.length ||
+    config.dtrMode !== 'default' ||
+    config.observeOnly ||
+    config.waitMs !== 0 ||
+    config.sequenceDelayMs !== DEFAULT_SEQUENCE_DELAY_MS ||
+    builderNameInput.value.trim() ||
+    config.commands.length ||
+    (config.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) !== DEFAULT_BANNER_TIMEOUT_MS
+  );
+}
+
 function updatePresetBox() {
-  if (!diagnosticsPreset) {
+  const activeConfig = getActiveAdvancedDiagnosticsConfig();
+
+  if (!hasAdvancedDiagnosticsSelection(activeConfig)) {
     presetBox.className = 'diag-box muted';
     presetBox.textContent = 'No preset loaded. Shareable test links can prefill diagnostics and command sequences.';
     return;
   }
 
-  presetBox.className = diagnosticsPreset.invalidCommands.length ? 'diag-box' : 'diag-box muted';
+  presetBox.className = 'diag-box';
   const lines = [
-    diagnosticsPreset.name,
-    diagnosticsPreset.description,
-    diagnosticsPreset.summary.join('\n')
+    activeConfig.name,
+    activeConfig.description,
+    activeConfig.summary.join('\n')
   ];
   presetBox.textContent = lines.join('\n');
 }
@@ -1027,16 +1065,7 @@ function applyPresetToUi() {
 }
 
 function isAdvancedDiagnosticsDirty() {
-  return Boolean(
-    window.location.search ||
-    diagnosticsPreset ||
-    dtrModeSelect.value !== 'default' ||
-    observeToggle.checked ||
-    parseNumberParam(waitMsInput.value, 0) !== 0 ||
-    parseNumberParam(sequenceDelayInput.value, DEFAULT_SEQUENCE_DELAY_MS) !== DEFAULT_SEQUENCE_DELAY_MS ||
-    builderNameInput.value.trim() ||
-    collectBuilderCommands().length
-  );
+  return hasAdvancedDiagnosticsSelection();
 }
 
 function updateAdvancedDiagnosticsDirtyState() {
@@ -1092,8 +1121,7 @@ function setConnectionUi(mode = 'disconnected') {
   sequenceDelayInput.disabled = configLocked;
   builderNameInput.disabled = configLocked;
   builderCommandsInput.disabled = configLocked;
-  applyBuilderBtn.disabled = configLocked;
-  copyLinkBtn.disabled = configLocked;
+  copyLinkBtn.disabled = false;
   resetAdvancedBtn.disabled = configLocked;
   cmdInput.disabled = !isConnected;
   sendBtn.disabled = !isConnected;
@@ -1101,20 +1129,31 @@ function setConnectionUi(mode = 'disconnected') {
 }
 
 function getCurrentDiagnosticsConfig() {
-  const presetSummary = diagnosticsPreset ? diagnosticsPreset.summary.join(' | ') : 'Manual connect';
+  const activeConfig = getActiveAdvancedDiagnosticsConfig();
+
+  if (!hasAdvancedDiagnosticsSelection(activeConfig)) {
+    return {
+      name: 'manual',
+      description: 'Manual connect',
+      source: 'manual',
+      baud: parseInt(baudSelect.value, 10),
+      dtrMode: 'default',
+      observeOnly: false,
+      waitMs: 0,
+      bannerTimeoutMs: DEFAULT_BANNER_TIMEOUT_MS,
+      sequenceDelayMs: DEFAULT_SEQUENCE_DELAY_MS,
+      commands: [],
+      invalidCommands: [],
+      presetSummary: 'Manual connect',
+      startupResolved: 'pending',
+      startupReadyLine: null
+    };
+  }
+
   return {
-    name: diagnosticsPreset?.name || 'manual',
-    description: diagnosticsPreset?.description || 'Manual connect',
-    source: diagnosticsPreset ? 'url' : 'manual',
+    ...activeConfig,
     baud: parseInt(baudSelect.value, 10),
-    dtrMode: normalizeDtrMode(dtrModeSelect.value),
-    observeOnly: observeToggle.checked,
-    waitMs: parseNumberParam(waitMsInput.value, diagnosticsPreset?.waitMs || 0),
-    bannerTimeoutMs: diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS,
-    sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, diagnosticsPreset?.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS),
-    commands: diagnosticsPreset?.commands ? [...diagnosticsPreset.commands] : [],
-    invalidCommands: diagnosticsPreset?.invalidCommands ? [...diagnosticsPreset.invalidCommands] : [],
-    presetSummary,
+    presetSummary: activeConfig.summary.join(' | '),
     startupResolved: 'pending',
     startupReadyLine: null
   };
@@ -1191,7 +1230,7 @@ async function copyDiagnosticsLog() {
 }
 
 async function copyBuilderLink() {
-  const config = buildCustomPresetFromUi('builder');
+  const config = getActiveAdvancedDiagnosticsConfig('builder');
   try {
     if (!navigator.clipboard?.writeText) {
       throw new Error('Clipboard API not available in this browser context');
@@ -1518,17 +1557,11 @@ clearBtn.addEventListener('click', () => {
 
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLinkBtn.addEventListener('click', copyBuilderLink);
-applyBuilderBtn.addEventListener('click', () => {
-  diagnosticsPreset = buildCustomPresetFromUi();
-  if (advancedSection) advancedSection.open = true;
-  updatePresetBox();
-  updateAdvancedDiagnosticsDirtyState();
-  addLine(`Builder loaded: ${diagnosticsPreset.name}`, 'sys');
-});
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
 
 [dtrModeSelect, observeToggle, waitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
   control.addEventListener(control === observeToggle ? 'change' : 'input', () => {
+    updatePresetBox();
     updateAdvancedDiagnosticsDirtyState();
   });
 });
