@@ -1154,6 +1154,10 @@ function buildDiagnosticsLogName() {
   return `grbl-diagnostic-${label}-${ts}`;
 }
 
+function escapeDiscourseHtmlChars(str) {
+  return String(str).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function buildDiscoursePayload() {
   const lines = [
     `Log name: ${buildDiagnosticsLogName()}`,
@@ -1170,7 +1174,7 @@ function buildDiscoursePayload() {
     `Source URL: ${window.location.href}`
   ];
 
-  return `[details="${DISCOURSE_TITLE}"]\n${lines.join('\n')}\n\n\`\`\`text\n${logLines.join('\n')}\n\`\`\`\n[/details]`;
+  return `[details="${DISCOURSE_TITLE}"]\n${escapeDiscourseHtmlChars(lines.join('\n'))}\n\n\`\`\`text\n${escapeDiscourseHtmlChars(logLines.join('\n'))}\n\`\`\`\n[/details]`;
 }
 
 async function copyDiagnosticsLog() {
