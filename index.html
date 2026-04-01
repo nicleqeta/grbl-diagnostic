@@ -240,6 +240,20 @@
     margin: 0;
   }
 
+  .check-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px;
+    gap: 6px;
+    align-items: center;
+    margin: 8px 0 10px;
+  }
+  .check-input-row .check-row {
+    margin: 0;
+  }
+  .check-input-row input[type="number"] {
+    margin-bottom: 0;
+  }
+
   .diag-box {
     font-size: 11px;
     color: var(--text-dim);
@@ -489,6 +503,13 @@
         <input type="checkbox" id="show-request-response-toggle">
         <span>Show request/response correlation</span>
       </label>
+      <div class="check-input-row">
+        <label class="check-row">
+          <input type="checkbox" id="banner-wait-toggle" checked>
+          <span>Banner wait</span>
+        </label>
+        <input type="number" id="banner-wait-ms-input" min="1" max="10000" step="100" value="3000" placeholder="3000" title="Milliseconds to wait for startup text before proceeding. Disable Banner wait to skip this wait entirely.">
+      </div>
       <div class="mini-grid">
         <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="Startup wait ms" title="Wait after opening the port and applying any DTR action before sending startup commands. Use this to let reset noise settle or to wait for the GRBL startup banner.">
         <input type="number" id="sequence-delay-input" min="0" max="10000" step="50" value="450" placeholder="Step delay ms" title="Delay between diagnostic sequence commands. Increase this if the controller needs more time between commands like $$, $#, and $I.">
@@ -565,6 +586,8 @@ const advancedSection = document.getElementById('advanced-section');
 const dtrModeSelect= document.getElementById('dtr-mode-select');
 const observeToggle= document.getElementById('observe-toggle');
 const showRequestResponseToggle = document.getElementById('show-request-response-toggle');
+const bannerWaitToggle = document.getElementById('banner-wait-toggle');
+const bannerWaitMsInput = document.getElementById('banner-wait-ms-input');
 const waitMsInput   = document.getElementById('wait-ms-input');
 const sequenceDelayInput = document.getElementById('sequence-delay-input');
 const presetBox    = document.getElementById('preset-box');
@@ -987,7 +1010,7 @@ function buildCustomPresetFromUi(source = 'builder') {
     observeOnly: observeToggle.checked,
     showRequestResponseCorrelation: showRequestResponseToggle.checked,
     waitMs: parseNumberParam(waitMsInput.value, 0),
-    bannerTimeoutMs: diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS,
+    bannerTimeoutMs: bannerWaitToggle.checked ? parseNumberParam(bannerWaitMsInput.value, DEFAULT_BANNER_TIMEOUT_MS) : 0,
     sequenceDelayMs: parseNumberParam(sequenceDelayInput.value, DEFAULT_SEQUENCE_DELAY_MS),
     invalidCommands: parsed.invalid
   };
@@ -1014,7 +1037,6 @@ function matchesDiagnosticsPreset(config) {
 
 function getActiveAdvancedDiagnosticsConfig(source = 'builder') {
   const config = buildCustomPresetFromUi(source);
-  config.bannerTimeoutMs = diagnosticsPreset?.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS;
   if (matchesDiagnosticsPreset(config)) {
     config.description = diagnosticsPreset.description || config.description;
     config.source = diagnosticsPreset.source || config.source;
@@ -1058,8 +1080,10 @@ function updatePresetBox() {
 function applyPresetToUi() {
   diagnosticsPreset = parseDiagnosticsPreset();
   if (!diagnosticsPreset) {
+    updateBannerWaitUi();
     updatePresetBox();
     updateAdvancedDiagnosticsDirtyState();
+    updateUrlFromAdvancedDiagnostics();
     return;
   }
 
@@ -1069,13 +1093,17 @@ function applyPresetToUi() {
   dtrModeSelect.value = normalizeDtrMode(diagnosticsPreset.dtrMode);
   observeToggle.checked = Boolean(diagnosticsPreset.observeOnly);
   showRequestResponseToggle.checked = Boolean(diagnosticsPreset.showRequestResponseCorrelation);
+  bannerWaitToggle.checked = (diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS) !== 0;
+  bannerWaitMsInput.value = String(diagnosticsPreset.bannerTimeoutMs ?? DEFAULT_BANNER_TIMEOUT_MS);
   waitMsInput.value = diagnosticsPreset.waitMs || 0;
   sequenceDelayInput.value = diagnosticsPreset.sequenceDelayMs || DEFAULT_SEQUENCE_DELAY_MS;
   builderNameInput.value = diagnosticsPreset.name || '';
   builderCommandsInput.value = diagnosticsPreset.commands.join('\n');
+  updateBannerWaitUi();
   if (advancedSection) advancedSection.open = true;
   updatePresetBox();
   updateAdvancedDiagnosticsDirtyState();
+  updateUrlFromAdvancedDiagnostics();
 }
 
 function isAdvancedDiagnosticsDirty() {
@@ -1084,6 +1112,22 @@ function isAdvancedDiagnosticsDirty() {
 
 function updateAdvancedDiagnosticsDirtyState() {
   resetAdvancedBtn.classList.toggle('dirty', isAdvancedDiagnosticsDirty());
+}
+
+function updateUrlFromAdvancedDiagnostics() {
+  const activeConfig = getActiveAdvancedDiagnosticsConfig('builder');
+  const nextUrl = hasAdvancedDiagnosticsSelection(activeConfig)
+    ? buildPresetUrl(activeConfig)
+    : `${window.location.pathname}${window.location.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function updateBannerWaitUi() {
+  if (bannerWaitToggle.checked && parseNumberParam(bannerWaitMsInput.value, 0) === 0) {
+    bannerWaitMsInput.value = String(DEFAULT_BANNER_TIMEOUT_MS);
+  }
+  const connectionLocked = bannerWaitToggle.disabled;
+  bannerWaitMsInput.disabled = connectionLocked || !bannerWaitToggle.checked;
 }
 
 function updateCopyLogState() {
@@ -1097,6 +1141,8 @@ function resetAdvancedDiagnostics() {
   dtrModeSelect.value = 'default';
   observeToggle.checked = false;
   showRequestResponseToggle.checked = false;
+  bannerWaitToggle.checked = true;
+  bannerWaitMsInput.value = String(DEFAULT_BANNER_TIMEOUT_MS);
   waitMsInput.value = '0';
   sequenceDelayInput.value = String(DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = '';
@@ -1106,6 +1152,7 @@ function resetAdvancedDiagnostics() {
     window.history.replaceState({}, '', cleanUrl);
   }
   if (advancedSection) advancedSection.open = false;
+  updateBannerWaitUi();
   updatePresetBox();
   updateAdvancedDiagnosticsDirtyState();
   currentRun.bannerTimeoutMs = DEFAULT_BANNER_TIMEOUT_MS;
@@ -1133,7 +1180,9 @@ function setConnectionUi(mode = 'disconnected') {
   dtrModeSelect.disabled = configLocked;
   observeToggle.disabled = configLocked;
   showRequestResponseToggle.disabled = configLocked;
+  bannerWaitToggle.disabled = configLocked;
   waitMsInput.disabled = configLocked;
+  bannerWaitMsInput.disabled = configLocked;
   sequenceDelayInput.disabled = configLocked;
   builderNameInput.disabled = configLocked;
   builderCommandsInput.disabled = configLocked;
@@ -1142,6 +1191,7 @@ function setConnectionUi(mode = 'disconnected') {
   cmdInput.disabled = !isConnected;
   sendBtn.disabled = !isConnected;
   cmdBtns.forEach(button => button.disabled = !isConnected);
+  updateBannerWaitUi();
 }
 
 function getCurrentDiagnosticsConfig() {
@@ -1581,12 +1631,16 @@ copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLinkBtn.addEventListener('click', copyBuilderLink);
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
 
-[dtrModeSelect, observeToggle, showRequestResponseToggle, waitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
-  control.addEventListener(control === observeToggle || control === showRequestResponseToggle ? 'change' : 'input', () => {
+[dtrModeSelect, observeToggle, showRequestResponseToggle, bannerWaitToggle, waitMsInput, bannerWaitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
+  control.addEventListener(control === observeToggle || control === showRequestResponseToggle || control === bannerWaitToggle ? 'change' : 'input', () => {
+    if (control === bannerWaitToggle) updateBannerWaitUi();
     updatePresetBox();
     updateAdvancedDiagnosticsDirtyState();
+    updateUrlFromAdvancedDiagnostics();
   });
 });
+
+updateBannerWaitUi();
 
 exportBtn.addEventListener('click', () => {
   const text = logLines.join('\n');
