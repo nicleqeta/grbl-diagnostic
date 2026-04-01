@@ -651,6 +651,7 @@ let dtrSupported = false;
 let diagnosticsPreset = null;
 let activeSequenceToken = 0;
 let pendingSequenceResponse = null;
+let sequenceRequestCounter = 0;
 let readLoopPromise = null;
 let transportState = 'disconnected';
 let machineState = 'unknown';
@@ -1154,6 +1155,11 @@ function buildDiagnosticsLogName() {
   return `grbl-diagnostic-${label}-${ts}`;
 }
 
+function formatLogTimestamp(date = new Date()) {
+  const pad = (value, width = 2) => String(value).padStart(width, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+}
+
 function escapeDiscourseHtmlChars(str) {
   return String(str).replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -1210,10 +1216,29 @@ async function copyBuilderLink() {
 
 function settlePendingSequenceResponse(result) {
   if (!pendingSequenceResponse) return;
-  clearTimeout(pendingSequenceResponse.timeoutId);
-  const resolver = pendingSequenceResponse.resolve;
+  const pending = pendingSequenceResponse;
+  clearTimeout(pending.timeoutId);
+  const resolver = pending.resolve;
   pendingSequenceResponse = null;
-  resolver(result);
+  const settled = {
+    ...result,
+    requestId: result.requestId || pending.requestId,
+    command: result.command || pending.command
+  };
+
+  if (settled.status === 'ok') {
+    addLine(`[${settled.requestId}] satisfied by ok: ${settled.line}`, 'sys');
+  } else if (settled.status === 'error') {
+    addLine(`[${settled.requestId}] satisfied by error: ${settled.line}`, 'err');
+  } else if (settled.status === 'alarm') {
+    addLine(`[${settled.requestId}] satisfied by alarm: ${settled.line}`, 'err');
+  } else if (settled.status === 'timeout') {
+    addLine(`[${settled.requestId}] timed out waiting for terminal acknowledgement for ${pending.command.display}`, 'err');
+  } else if (settled.status === 'cancelled') {
+    addLine(`[${settled.requestId}] cancelled before acknowledgement: ${settled.line}`, 'err');
+  }
+
+  resolver(settled);
 }
 
 function handleSequenceResponseLine(line) {
@@ -1234,16 +1259,20 @@ function handleSequenceResponseLine(line) {
   }
 }
 
-function waitForSequenceCommandResult(command, timeoutMs = 3500) {
+function waitForSequenceCommandResult(command, requestId, timeoutMs = 3500) {
   return new Promise(resolve => {
     const timeoutId = setTimeout(() => {
       if (pendingSequenceResponse?.timeoutId === timeoutId) {
-        pendingSequenceResponse = null;
-        resolve({ status: 'timeout', line: `No terminal acknowledgement for ${command.display}` });
+        settlePendingSequenceResponse({
+          status: 'timeout',
+          line: `No terminal acknowledgement for ${command.display}`,
+          requestId,
+          command
+        });
       }
     }, timeoutMs);
 
-    pendingSequenceResponse = { resolve, timeoutId, command };
+    pendingSequenceResponse = { resolve, timeoutId, command, requestId };
   });
 }
 
@@ -1263,11 +1292,20 @@ async function executeSequenceCommand(rawCommand) {
     return { status: 'skipped', line: `Unknown action ${command.display}` };
   }
 
-  await sendCommand(command.payload || command.send, command.display);
-  if (!command.waitForAck) {
-    return { status: 'sent', line: `${command.display} sent without acknowledgement wait` };
+  const requestId = `req-${++sequenceRequestCounter}`;
+  const taggedDisplay = `[${requestId}] ${command.display}`;
+  const sent = await sendCommand(command.payload || command.send, taggedDisplay);
+  if (!sent) {
+    return { status: 'error', line: `${taggedDisplay} failed to write`, requestId, command };
   }
-  return waitForSequenceCommandResult(command);
+
+  if (!command.waitForAck) {
+    addLine(`[${requestId}] completed without terminal acknowledgement wait`, 'sys');
+    return { status: 'sent', line: `${taggedDisplay} sent without acknowledgement wait`, requestId, command };
+  }
+
+  addLine(`[${requestId}] awaiting terminal acknowledgement for ${command.display}`, 'sys');
+  return waitForSequenceCommandResult(command, requestId);
 }
 
 async function waitForStep(ms, token) {
@@ -1299,6 +1337,15 @@ async function waitForReadySignal(timeoutMs, token) {
   return { reason: 'cancelled', triggerLine: null };
 }
 
+function describeDtrState(asserted) {
+  return `DTR ${asserted ? 'asserted' : 'deasserted'} (dataTerminalReady=${asserted})`;
+}
+
+async function setDtrSignalState(asserted, label, detail) {
+  await port.setSignals({ dataTerminalReady: asserted });
+  addLine(`${label}: ${describeDtrState(asserted)}${detail ? ` ${detail}` : ''}`, 'sys');
+}
+
 async function applyDtrMode(mode, label = 'DTR action') {
   if (!port || !dtrSupported) {
     addLine('DTR control is not available for this connection', 'err');
@@ -1307,17 +1354,13 @@ async function applyDtrMode(mode, label = 'DTR action') {
 
   try {
     if (mode === 'low') {
-      await port.setSignals({ dataTerminalReady: false });
-      addLine(`${label}: DTR set low`, 'sys');
+      await setDtrSignalState(false, label, '(requested low)');
     } else if (mode === 'high') {
-      await port.setSignals({ dataTerminalReady: true });
-      addLine(`${label}: DTR set high`, 'sys');
+      await setDtrSignalState(true, label, '(requested high)');
     } else if (mode === 'pulse') {
-      await port.setSignals({ dataTerminalReady: false });
-      addLine(`${label}: DTR low`, 'sys');
+      await setDtrSignalState(false, label, '(pulse start)');
       await delay(200);
-      await port.setSignals({ dataTerminalReady: true });
-      addLine(`${label}: DTR high`, 'sys');
+      await setDtrSignalState(true, label, '(pulse end)');
     }
     return true;
   } catch (e) {
@@ -1489,7 +1532,7 @@ exportBtn.addEventListener('click', () => {
 
 function addLine(text, type = 'rx') {
   const now = new Date();
-  const time = now.toTimeString().slice(0,8);
+  const time = formatLogTimestamp(now);
   const arrows = { tx: '→', rx: '←', sys: '●', err: '✕' };
   const arrow = arrows[type] || '←';
 
@@ -1601,7 +1644,7 @@ function isPortBusyOpenError(error, stage) {
 }
 
 async function sendCommand(raw, displayOverride = null) {
-  if (!writer) return;
+  if (!writer) return false;
   let encoded;
   let display;
 
@@ -1618,9 +1661,11 @@ async function sendCommand(raw, displayOverride = null) {
   try {
     await writer.write(encoded);
     if (display.trim()) addLine(display, 'tx');
+    return true;
   } catch(e) {
     addLine('Write error: ' + e.message, 'err');
     markConnectionFault('Write fault');
+    return false;
   }
 }
 
@@ -1683,6 +1728,7 @@ connectBtn.addEventListener('click', async () => {
     stage = 'open';
     const baud = parseInt(baudSelect.value, 10);
     await port.open({ baudRate: baud });
+    addLine(`Port open completed at ${baud} baud`, 'sys');
 
     stage = 'writer';
     dtrSupported = typeof port.setSignals === 'function';
