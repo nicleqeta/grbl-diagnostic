@@ -485,6 +485,32 @@
   }
   .basic-confirm-run:hover { background: #0d9488; }
 
+  .var-row {
+    display: grid;
+    grid-template-columns: 1fr 80px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .var-row-label {
+    font-size: 12px;
+    color: var(--teal);
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .var-row input[type="text"] {
+    margin-bottom: 0;
+    font-family: var(--mono);
+    color: var(--amber);
+    border-color: #78350f;
+    background: #1a1200;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .var-row input[type="text"]:focus { border-color: var(--amber); }
+
   @media (max-width: 600px) {
     .sidebar { width: 220px; min-width: 220px; }
   }
@@ -547,9 +573,14 @@
         <span class="section-toggle-icon">▸</span>
       </summary>
       <div class="section-content">
-        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL…" title="Paste a forum post URL to load a grbl-config and grbl-basic script from that post.">
+        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL…" title="Paste a forum post URL to load a grbl-basic script from that post.">
         <button class="btn" id="basic-load-url-btn">Load from forum post</button>
         <div class="diag-box muted" id="basic-config-box">No script loaded.</div>
+        <div id="basic-vars-section" style="display:none;">
+          <div class="section-label" style="margin-bottom:6px;">Variables</div>
+          <div id="basic-vars-list"></div>
+          <button class="btn" id="basic-apply-vars-btn" style="margin-top:4px;">Apply variables to script</button>
+        </div>
         <textarea id="basic-script-input" placeholder="10 LET maxRPM = READ(&quot;$30&quot;)
 20 LET speed = 1000
 30 SEND &quot;M3 S&quot; &amp; STR(speed)
@@ -565,7 +596,7 @@
         </div>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF…THEN GOTO</code>, <code>END</code>.<br>
-          Load a script from a forum post that contains <code>[grbl-config]</code> and <code>[grbl-basic]</code> blocks.
+          Forum posts use a single code block with description text and <code>`key=value`</code> variables above <code>[grbl-basic]</code>.
         </div>
       </div>
     </details>
@@ -837,24 +868,63 @@ function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 // ── DISCOURSE FORUM SCRAPER ──
 // ════════════════════════════════════════════════
 
-function extractBlock(text, tag) {
-  const open = `[${tag}]`;
-  const close = `[/${tag}]`;
-  const start = text.indexOf(open);
-  const end = text.indexOf(close);
-  if (start === -1 || end === -1) return null;
-  return text.slice(start + open.length, end).trim();
-}
+// New format: everything inside one code block.
+// Config description lines come before [grbl-basic], variables
+// are inline as `key=value` backtick spans.
+//
+// Example post format:
+//
+//   This script ramps the spindle starting at `start=1000` RPM,
+//   in steps of `step=1000` RPM, waiting `wait_ms=2000` ms.
+//   [grbl-basic]
+//   10 LET maxRPM = READ("$30")
+//   ...
+//   [/grbl-basic]
 
-function parseConfigVars(configText) {
-  const vars = {};
-  const pattern = /(\w+)=([\d.]+)/g;
+function parseNewFormat(rawPostText) {
+  // Find the outermost code fence that contains [grbl-basic]
+  // Discourse raw uses ``` fences
+  const fencePattern = /```[\w]*\n([\s\S]*?)```/g;
+  let block = null;
   let m;
-  while ((m = pattern.exec(configText)) !== null) {
-    const num = parseFloat(m[2]);
-    vars[m[1]] = Number.isFinite(num) ? num : m[2];
+  while ((m = fencePattern.exec(rawPostText)) !== null) {
+    if (m[1].includes('[grbl-basic]')) {
+      block = m[1];
+      break;
+    }
   }
-  return vars;
+
+  // Also check without fences (plain [grbl-basic] in post body)
+  if (!block && rawPostText.includes('[grbl-basic]')) {
+    block = rawPostText;
+  }
+
+  if (!block) return null;
+
+  // Split on [grbl-basic] — everything before is config description,
+  // everything between tags is the BASIC program
+  const tagOpen  = '[grbl-basic]';
+  const tagClose = '[/grbl-basic]';
+  const openIdx  = block.indexOf(tagOpen);
+  const closeIdx = block.indexOf(tagClose);
+  if (openIdx === -1 || closeIdx === -1) return null;
+
+  const configText  = block.slice(0, openIdx).trim();
+  const programText = block.slice(openIdx + tagOpen.length, closeIdx).trim();
+
+  // Parse variables from inline backtick format: `key=value`
+  const vars = {};
+  const varPattern = /`(\w+)=([\d.]+)`/g;
+  let v;
+  while ((v = varPattern.exec(configText)) !== null) {
+    const num = parseFloat(v[2]);
+    vars[v[1]] = Number.isFinite(num) ? num : v[2];
+  }
+
+  // Build a clean description — strip backtick markers but keep the text
+  const cleanDescription = configText.replace(/`(\w+=[\d.]+)`/g, (_, inner) => inner);
+
+  return { configText: cleanDescription, programText, vars };
 }
 
 function substituteVars(program, vars) {
@@ -864,6 +934,60 @@ function substituteVars(program, vars) {
   }
   return result;
 }
+
+// Stored raw program template (before var substitution) so re-apply works
+let basicRawProgram = '';
+let basicLoadedVars = {};
+
+function renderVarEditor(vars) {
+  const section = document.getElementById('basic-vars-section');
+  const list    = document.getElementById('basic-vars-list');
+
+  if (!vars || Object.keys(vars).length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  list.innerHTML = '';
+  for (const [key, value] of Object.entries(vars)) {
+    const row = document.createElement('div');
+    row.className = 'var-row';
+
+    const label = document.createElement('span');
+    label.className = 'var-row-label';
+    label.textContent = key;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = value;
+    input.dataset.varName = key;
+    input.addEventListener('input', () => {
+      // Live update basicLoadedVars as user types
+      const num = parseFloat(input.value);
+      basicLoadedVars[key] = Number.isFinite(num) ? num : input.value;
+    });
+
+    row.appendChild(label);
+    row.appendChild(input);
+    list.appendChild(row);
+  }
+
+  section.style.display = 'block';
+}
+
+function applyVarsToScript() {
+  if (!basicRawProgram) return;
+  // Read current values from input fields
+  document.querySelectorAll('#basic-vars-list .var-row input').forEach(input => {
+    const key = input.dataset.varName;
+    const num = parseFloat(input.value);
+    basicLoadedVars[key] = Number.isFinite(num) ? num : input.value;
+  });
+  basicScriptInput.value = substituteVars(basicRawProgram, basicLoadedVars);
+  addLine(`Variables applied to script`, 'sys');
+}
+
+document.getElementById('basic-apply-vars-btn').addEventListener('click', applyVarsToScript);
 
 function parseDiscourseUrl(forumPostUrl) {
   const m = forumPostUrl.match(/\/t\/(?:[^/]+\/)?(\d+)(?:\/(\d+))?/);
@@ -878,7 +1002,6 @@ function parseDiscourseUrl(forumPostUrl) {
 
 async function fetchDiscoursePostRaw(origin, topicId, postNumber) {
   const discourseRawUrl = `${origin}/raw/${topicId}/${postNumber}`;
-  // Route through our same-origin /proxy to avoid CORS
   const proxyUrl = `/proxy?url=${encodeURIComponent(discourseRawUrl)}`;
   const resp = await fetch(proxyUrl);
   if (!resp.ok) throw new Error(`Fetch failed: HTTP ${resp.status}`);
@@ -907,31 +1030,33 @@ basicLoadUrlBtn.addEventListener('click', async () => {
 
   try {
     const raw = await fetchDiscoursePostRaw(parsed.origin, parsed.topicId, parsed.postNumber);
+    const result = parseNewFormat(raw);
 
-    const configText = extractBlock(raw, 'grbl-config');
-    const programText = extractBlock(raw, 'grbl-basic');
-
-    if (!programText) {
+    if (!result) {
       basicConfigBox.className = 'diag-box';
       basicConfigBox.textContent = 'No [grbl-basic] block found in that post.';
+      document.getElementById('basic-vars-section').style.display = 'none';
       return;
     }
 
-    const vars = configText ? parseConfigVars(configText) : {};
-    const finalProgram = substituteVars(programText, vars);
-    basicScriptInput.value = finalProgram;
+    const { configText, programText, vars } = result;
 
-    if (configText) {
-      basicConfigBox.className = 'diag-box';
-      const varSummary = Object.entries(vars).map(([k,v]) => `${k} = ${v}`).join('  |  ');
-      basicConfigBox.textContent = configText + (varSummary ? `\n\n── Variables: ${varSummary}` : '');
-    } else {
-      basicConfigBox.className = 'diag-box muted';
-      basicConfigBox.textContent = 'No [grbl-config] block found. Script loaded without variable substitution.';
-    }
+    // Store raw template for re-apply when vars change
+    basicRawProgram = programText;
+    basicLoadedVars = { ...vars };
+
+    // Apply vars and load into editor
+    basicScriptInput.value = substituteVars(programText, vars);
+
+    // Show description
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = configText || 'Script loaded.';
+
+    // Render editable variable fields
+    renderVarEditor(vars);
 
     basicRunBtn.disabled = !port;
-    addLine(`BASIC script loaded from forum post (${Object.keys(vars).length} variable(s) substituted)`, 'sys');
+    addLine(`BASIC script loaded (${Object.keys(vars).length} variable(s) found)`, 'sys');
 
   } catch(e) {
     basicConfigBox.className = 'diag-box';
