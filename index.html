@@ -987,7 +987,10 @@ function applyVarsToScript() {
   addLine(`Variables applied to script`, 'sys');
 }
 
-document.getElementById('basic-apply-vars-btn').addEventListener('click', applyVarsToScript);
+// Use event delegation — sidebar always exists even when details section is collapsed
+document.querySelector('.sidebar').addEventListener('click', e => {
+  if (e.target && e.target.id === 'basic-apply-vars-btn') applyVarsToScript();
+});
 
 function parseDiscourseUrl(forumPostUrl) {
   const m = forumPostUrl.match(/\/t\/(?:[^/]+\/)?(\d+)(?:\/(\d+))?/);
@@ -1244,9 +1247,9 @@ basicInputField.addEventListener('keydown', e => {
 async function runBasicScript(source) {
   if (basicRunning) return;
 
-  // Parse config block vars from config box for confirm dialog
+  // Use already-parsed vars and description from the loaded script
   const configText = basicConfigBox.textContent.startsWith('No ') ? '' : basicConfigBox.textContent;
-  const configVars = parseConfigVars(configText);
+  const configVars = basicLoadedVars || {};
 
   // Show confirm dialog
   const confirmed = await basicShowConfirm(configText || 'Run the loaded BASIC script on your connected machine?', configVars);
