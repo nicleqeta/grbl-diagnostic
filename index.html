@@ -865,13 +865,24 @@ function substituteVars(program, vars) {
   return result;
 }
 
-function buildDiscourseRawUrl(forumPostUrl) {
-  const m = forumPostUrl.match(/\/t\/[^/]+\/(\d+)(?:\/(\d+))?/);
+function parseDiscourseUrl(forumPostUrl) {
+  const m = forumPostUrl.match(/\/t\/(?:[^/]+\/)?(\d+)(?:\/(\d+))?/);
   if (!m) return null;
-  const topicId = m[1];
-  const postNum = m[2] || '1';
   const base = new URL(forumPostUrl);
-  return `${base.protocol}//${base.host}/raw/${topicId}/${postNum}`;
+  return {
+    origin: `${base.protocol}//${base.host}`,
+    topicId: m[1],
+    postNumber: m[2] ? parseInt(m[2], 10) : 1
+  };
+}
+
+async function fetchDiscoursePostRaw(origin, topicId, postNumber) {
+  const discourseRawUrl = `${origin}/raw/${topicId}/${postNumber}`;
+  // Route through our same-origin /proxy to avoid CORS
+  const proxyUrl = `/proxy?url=${encodeURIComponent(discourseRawUrl)}`;
+  const resp = await fetch(proxyUrl);
+  if (!resp.ok) throw new Error(`Fetch failed: HTTP ${resp.status}`);
+  return await resp.text();
 }
 
 basicLoadUrlBtn.addEventListener('click', async () => {
@@ -882,8 +893,8 @@ basicLoadUrlBtn.addEventListener('click', async () => {
     return;
   }
 
-  const rawUrl = buildDiscourseRawUrl(url);
-  if (!rawUrl) {
+  const parsed = parseDiscourseUrl(url);
+  if (!parsed) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = 'Could not parse that URL. Make sure it is a Discourse forum post URL.';
     return;
@@ -892,12 +903,10 @@ basicLoadUrlBtn.addEventListener('click', async () => {
   basicLoadUrlBtn.disabled = true;
   basicLoadUrlBtn.textContent = 'Loading…';
   basicConfigBox.className = 'diag-box muted';
-  basicConfigBox.textContent = `Fetching: ${rawUrl}`;
+  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}…`;
 
   try {
-    const resp = await fetch(rawUrl);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const raw = await resp.text();
+    const raw = await fetchDiscoursePostRaw(parsed.origin, parsed.topicId, parsed.postNumber);
 
     const configText = extractBlock(raw, 'grbl-config');
     const programText = extractBlock(raw, 'grbl-basic');
@@ -1657,11 +1666,7 @@ function updateUrlFromAdvancedDiagnostics() {
   const nextUrl = hasAdvancedDiagnosticsSelection(activeConfig)
     ? buildPresetUrl(activeConfig)
     : `${window.location.pathname}${window.location.hash}`;
-  try {
-    window.history.replaceState({}, '', nextUrl);
-  } catch {
-    // Suppressed in sandboxed iframe environments
-  }
+  try { window.history.replaceState({}, '', nextUrl); } catch { /* suppressed in sandboxed iframe environments */ }
 }
 
 function updateBannerWaitUi() {
@@ -1699,7 +1704,7 @@ function resetAdvancedDiagnostics() {
   builderNameInput.value = '';
   builderCommandsInput.value = '';
   if (window.location.search) {
-    window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+    try { window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`); } catch { /* suppressed in sandboxed iframe environments */ }
   }
   if (advancedSection) advancedSection.open = false;
   updateBannerWaitUi(); updateSequenceDelayUi(); updatePresetBox(); updateAdvancedDiagnosticsDirtyState();
