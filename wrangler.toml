@@ -5,3 +5,4 @@ compatibility_date = "2026-04-01"
 [assets]
 directory = "."
 not_found_handling = "single-page-application"
+exclude = [".git/*", ".wrangler/*", "wrangler.toml", "worker.js", "README.md"]
