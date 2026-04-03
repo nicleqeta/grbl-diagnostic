@@ -1148,20 +1148,17 @@ async function basicReadGrbl(settingStr) {
   const setting = settingStr.replace(/^["']|["']$/g, '').trim(); // strip quotes
   addLine(`READ ${setting}`, 'basic');
 
-  // Send $$ and wait for response lines
   return new Promise((resolve) => {
-    const collected = [];
     let done = false;
-    const origHandler = handleIncomingLine;
 
-    // Temporarily intercept incoming lines
+    // Temporarily intercept all incoming lines
     incomingLineInterceptor = (line) => {
-      collected.push(line);
-      // Match e.g. $30=10000
+      // Parse any $N=value line and cache it
       const m = line.match(/^\$(\d+)=([\d.]+)/);
       if (m) {
         basicGrblSettings[`$${m[1]}`] = parseFloat(m[2]);
       }
+      // When we see ok, the $$ dump is complete — resolve with the value
       if (/^ok$/i.test(line) && !done) {
         done = true;
         incomingLineInterceptor = null;
@@ -1169,29 +1166,41 @@ async function basicReadGrbl(settingStr) {
         if (val !== undefined) {
           resolve(val);
         } else {
-          addLine(`READ: ${setting} not found in response, defaulting to 0`, 'err');
+          addLine(`READ: ${setting} not found in $$ response, defaulting to 0`, 'err');
           resolve(0);
         }
       }
     };
 
-    // Send $$ to get all settings
-    sendCommand('$$\n').then(sent => {
-      if (!sent) {
+    // Write $$ directly to the serial port, bypassing the sequence handler
+    // so there's no conflict over who consumes the ok response
+    if (writer) {
+      const encoded = new TextEncoder().encode('$$\n');
+      writer.write(encoded).catch(() => {
         incomingLineInterceptor = null;
-        resolve(0);
-      }
-    });
+        if (!done) { done = true; resolve(0); }
+      });
+      addLine('$$', 'tx');
+    } else {
+      incomingLineInterceptor = null;
+      resolve(0);
+    }
 
-    // Timeout after 4s
+    // Timeout after 5s in case machine doesn't respond
     setTimeout(() => {
       if (!done) {
         done = true;
         incomingLineInterceptor = null;
         const val = basicGrblSettings[setting];
-        resolve(val !== undefined ? val : 0);
+        if (val !== undefined) {
+          addLine(`READ: timeout waiting for ok, using cached ${setting} = ${val}`, 'basic');
+          resolve(val);
+        } else {
+          addLine(`READ: timeout — ${setting} not found, defaulting to 0`, 'err');
+          resolve(0);
+        }
       }
-    }, 4000);
+    }, 5000);
   });
 }
 
