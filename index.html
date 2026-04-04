@@ -33,8 +33,10 @@
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
   header {
@@ -44,6 +46,7 @@
     align-items: center;
     gap: 12px;
     background: var(--surface);
+    flex-shrink: 0;
   }
   .logo {
     width: 28px; height: 28px;
@@ -300,6 +303,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     background: radial-gradient(circle at top, rgba(20,184,166,0.08), transparent 42%), linear-gradient(180deg, rgba(15,17,23,0.98), rgba(10,12,18,1));
   }
 
@@ -1022,12 +1026,25 @@ if (!('serial' in navigator)) {
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+let terminalFollowFrame = 0;
+let suppressTerminalScrollToggle = false;
+
 function isTerminalNearBottom(threshold = 20) {
-  return (terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight) <= threshold;
+  const effectiveThreshold = Math.max(threshold, Math.round(terminal.clientHeight * 0.12));
+  return (terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight) <= effectiveThreshold;
 }
 
 function scrollTerminalToBottom(force = false) {
-  if (force || autoScroll) terminal.scrollTop = terminal.scrollHeight;
+  if (!force && !autoScroll) return;
+  if (terminalFollowFrame) cancelAnimationFrame(terminalFollowFrame);
+  suppressTerminalScrollToggle = true;
+  terminalFollowFrame = requestAnimationFrame(() => {
+    terminal.scrollTop = terminal.scrollHeight;
+    terminalFollowFrame = 0;
+    requestAnimationFrame(() => {
+      suppressTerminalScrollToggle = false;
+    });
+  });
 }
 
 function syncAutoscrollUi() {
@@ -2437,6 +2454,7 @@ copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLinkBtn.addEventListener('click', copyBuilderLink);
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
 terminal.addEventListener('scroll', () => {
+  if (suppressTerminalScrollToggle) return;
   if (!autoScroll) return;
   if (!isTerminalNearBottom()) {
     autoScroll = false;
