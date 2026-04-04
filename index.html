@@ -475,7 +475,7 @@
     line-height: 1.5;
   }
 
-  /* ������ BASIC script inline input prompt ������ */
+  /* BASIC script inline input prompt */
   .basic-input-bar {
     display: flex;
     gap: 8px;
@@ -521,7 +521,7 @@
   }
   .basic-input-ok:hover { background: #1d4ed8; color: #fff; }
 
-  /* ������ BASIC confirm modal ������ */
+  /* BASIC confirm modal */
   .basic-confirm-overlay {
     position: fixed;
     inset: 0;
@@ -693,14 +693,14 @@
       </div>
     </div>
 
-    <!-- ������ BASIC Script section ������ -->
+    <!-- BASIC Script section -->
     <details class="section section-collapsible" id="basic-section">
       <summary class="section-toggle">
         <span class="section-label">BASIC Script</span>
-        <span class="section-toggle-icon">���</span>
+        <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
-        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL�Ǫ" title="Paste a forum post URL to load a grbl-basic script from that post.">
+        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL..." title="Paste a forum post URL to load a grbl-basic script from that post.">
         <button class="btn" id="basic-load-url-btn">Load from forum post</button>
         <div class="diag-box muted" id="basic-config-box">No script loaded.</div>
         <div id="basic-vars-section" style="display:none;">
@@ -722,7 +722,7 @@
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
         <div class="help-text">
-          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF�ǪTHEN GOTO</code>, <code>END</code>.<br>
+          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
           Forum posts use a single code block with description text and <code>`key=value`</code> variables above <code>[grbl-basic]</code>.
         </div>
       </div>
@@ -731,7 +731,7 @@
     <details class="section section-collapsible" id="advanced-section">
       <summary class="section-toggle">
         <span class="section-label">Advanced Diagnostics</span>
-        <span class="section-toggle-icon">���</span>
+        <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
       <select id="dtr-mode-select">
@@ -841,7 +841,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <span class="term-shell-prompt" id="cmd-prompt-label">OFFLINE&gt;</span>
         <span class="term-shell-display" aria-hidden="true">
           <span class="term-shell-text" id="cmd-display"></span>
-          <span class="term-shell-placeholder" id="cmd-placeholder">Connect to start typing…</span>
+          <span class="term-shell-placeholder" id="cmd-placeholder">Connect to start typing...</span>
           <span class="term-shell-cursor" id="cmd-cursor">_</span>
         </span>
         <input type="text" id="cmd-input" disabled autocomplete="off" spellcheck="false" aria-label="GRBL command input">
@@ -903,7 +903,7 @@ const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
 
-// ������ BASIC UI elements ������
+// BASIC UI elements
 const basicForumUrl    = document.getElementById('basic-forum-url');
 const basicLoadUrlBtn  = document.getElementById('basic-load-url-btn');
 const basicConfigBox   = document.getElementById('basic-config-box');
@@ -1007,7 +1007,7 @@ let currentRun = {
   startupResolved: 'not-run', startupReadyLine: null, startupBannerLine: null
 };
 
-// ������ BASIC interpreter state ������
+// BASIC interpreter state
 let basicRunning = false;
 let basicStopRequested = false;
 let basicInputResolver = null;
@@ -1043,16 +1043,14 @@ function syncCommandPrompt() {
 
   cmdPromptLabel.textContent = connected ? 'GRBL>' : 'OFFLINE>';
   cmdDisplay.textContent = cmdInput.value;
-  cmdPlaceholder.textContent = connected ? 'Type a command…' : 'Connect to start typing…';
+  cmdPlaceholder.textContent = connected ? 'Type a command...' : 'Connect to start typing...';
 
   termInputShell.classList.toggle('empty', !hasValue);
   termInputShell.classList.toggle('inactive', !connected);
   termInputShell.classList.toggle('focused', connected && document.activeElement === cmdInput);
 }
 
-// ������������������������������������������������������������������������������������������������������������������������������������������������
-// ������ DISCOURSE FORUM SCRAPER ������
-// ������������������������������������������������������������������������������������������������������������������������������������������������
+// DISCOURSE FORUM SCRAPER
 
 // New format: everything inside one code block.
 // Config description lines come before [grbl-basic], variables
@@ -1087,7 +1085,7 @@ function parseNewFormat(rawPostText) {
 
   if (!block) return null;
 
-  // Split on [grbl-basic] ��� everything before is config description,
+  // Split on [grbl-basic] - everything before is config description,
   // everything between tags is the BASIC program
   const tagOpen  = '[grbl-basic]';
   const tagClose = '[/grbl-basic]';
@@ -1107,7 +1105,7 @@ function parseNewFormat(rawPostText) {
     vars[v[1]] = Number.isFinite(num) ? num : v[2];
   }
 
-  // Build a clean description ��� strip backtick markers but keep the text
+  // Build a clean description - strip backtick markers but keep the text
   const cleanDescription = configText.replace(/`(\w+=[\d.]+)`/g, (_, inner) => inner);
 
   return { configText: cleanDescription, programText, vars };
@@ -1173,7 +1171,7 @@ function applyVarsToScript() {
   addLine(`Variables applied to script`, 'sys');
 }
 
-// Use event delegation ��� sidebar always exists even when details section is collapsed
+// Use event delegation - sidebar always exists even when details section is collapsed
 document.querySelector('.sidebar').addEventListener('click', e => {
   if (e.target && e.target.id === 'basic-apply-vars-btn') applyVarsToScript();
 });
@@ -1213,9 +1211,9 @@ basicLoadUrlBtn.addEventListener('click', async () => {
   }
 
   basicLoadUrlBtn.disabled = true;
-  basicLoadUrlBtn.textContent = 'Loading�Ǫ';
+  basicLoadUrlBtn.textContent = 'Loading...';
   basicConfigBox.className = 'diag-box muted';
-  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}�Ǫ`;
+  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}...`;
 
   try {
     const raw = await fetchDiscoursePostRaw(parsed.origin, parsed.topicId, parsed.postNumber);
@@ -1257,9 +1255,7 @@ basicLoadUrlBtn.addEventListener('click', async () => {
   }
 });
 
-// ������������������������������������������������������������������������������������������������������������������������������������������������
-// ������ BASIC INTERPRETER ������
-// ������������������������������������������������������������������������������������������������������������������������������������������������
+// BASIC INTERPRETER
 
 function basicParseLines(source) {
   const lines = {};
@@ -1294,7 +1290,7 @@ function basicEvalExpr(expr, vars) {
     s = s.replace(re, typeof v === 'string' ? JSON.stringify(v) : v);
   }
 
-  // Handle & string concatenation: "a" & "b" ��� "ab"
+  // Handle & string concatenation: "a" & "b" -> "ab"
   // Convert to + for eval but only between strings
   s = s.replace(/"([^"]*)"\s*&\s*"([^"]*)"/g, (_, a, b) => JSON.stringify(a + b));
   // Repeat for remaining & after first pass
@@ -1344,7 +1340,7 @@ async function basicReadGrbl(settingStr) {
       if (m) {
         basicGrblSettings[`$${m[1]}`] = parseFloat(m[2]);
       }
-      // When we see ok, the $$ dump is complete ��� resolve with the value
+      // When we see ok, the $$ dump is complete - resolve with the value
       if (/^ok$/i.test(line) && !done) {
         done = true;
         incomingLineInterceptor = null;
@@ -1382,7 +1378,7 @@ async function basicReadGrbl(settingStr) {
           addLine(`READ: timeout waiting for ok, using cached ${setting} = ${val}`, 'basic');
           resolve(val);
         } else {
-          addLine(`READ: timeout ��� ${setting} not found, defaulting to 0`, 'err');
+          addLine(`READ: timeout - ${setting} not found, defaulting to 0`, 'err');
           resolve(0);
         }
       }
@@ -1416,7 +1412,7 @@ function basicShowConfirm(configText, vars) {
       const lines = Object.entries(vars).map(([k, v]) =>
         `<span class="basic-confirm-var-name">${k}</span> = <span class="basic-confirm-var-val">${v}</span>`
       ).join('\n');
-      basicConfirmVars.innerHTML = '������ Variables ������\n' + lines;
+      basicConfirmVars.innerHTML = 'Variables\n' + lines;
       basicConfirmVars.style.display = 'block';
     } else {
       basicConfirmVars.style.display = 'none';
@@ -1465,7 +1461,7 @@ async function runBasicScript(source) {
   basicVars = {};
   basicRunBtn.disabled = true;
   basicStopBtn.disabled = false;
-  addLine('������ BASIC script started ������', 'basic');
+  addLine('--- BASIC script started ---', 'basic');
 
   const { lines, order } = basicParseLines(source);
   let pc = 0; // index into order[]
@@ -1473,14 +1469,14 @@ async function runBasicScript(source) {
   try {
     while (pc < order.length) {
       if (basicStopRequested) {
-        addLine('������ Script stopped by user ������', 'basic');
+        addLine('--- Script stopped by user ---', 'basic');
         break;
       }
 
       const lineNum = order[pc];
       const stmt = lines[lineNum];
 
-      // ������ READ (must come before generic LET so LET x = READ(...) is handled here) ������
+      // READ (must come before generic LET so LET x = READ(...) is handled here)
       if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
         // Handle both: LET x = READ("$30") and READ("$30") INTO x
         let varName = null;
@@ -1499,7 +1495,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ LET ������
+      // LET
       if (/^LET\s+/i.test(stmt)) {
         const body = stmt.replace(/^LET\s+/i, '');
         const eq = body.indexOf('=');
@@ -1512,7 +1508,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ SEND ������
+      // SEND
       if (/^SEND\s+/i.test(stmt)) {
         const arg = stmt.replace(/^SEND\s+/i, '').trim();
         const cmdStr = String(basicEvalExpr(arg, basicVars)).trim();
@@ -1523,7 +1519,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ WAIT ������
+      // WAIT
       if (/^WAIT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^WAIT\s+/i, '').trim();
         const ms = Math.round(parseFloat(basicEvalExpr(arg, basicVars)));
@@ -1533,7 +1529,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ PRINT ������
+      // PRINT
       if (/^PRINT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^PRINT\s+/i, '').trim();
         const msg = String(basicEvalExpr(arg, basicVars));
@@ -1542,7 +1538,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ INPUT ������
+      // INPUT
       if (/^(LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt)) {
         const inputLetM = stmt.match(/^(?:LET\s+)?(\w+)\s*=\s*INPUT\("([^"]*)"\)/i);
         if (inputLetM) {
@@ -1557,7 +1553,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ IF �Ǫ THEN GOTO ������
+      // IF ... THEN GOTO
       if (/^IF\s+/i.test(stmt)) {
         const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)/i);
         if (ifM) {
@@ -1574,7 +1570,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ������ GOTO ������
+      // GOTO
       if (/^GOTO\s+\d+/i.test(stmt)) {
         const target = parseInt(stmt.match(/^GOTO\s+(\d+)/i)[1], 10);
         const targetIdx = order.indexOf(target);
@@ -1583,13 +1579,13 @@ async function runBasicScript(source) {
         break;
       }
 
-      // ������ END ������
+      // END
       if (/^END$/i.test(stmt)) {
-        addLine('������ Script ended ������', 'basic');
+        addLine('--- Script ended ---', 'basic');
         break;
       }
 
-      // Unknown statement ��� skip with warning
+      // Unknown statement - skip with warning
       addLine(`Line ${lineNum}: unknown statement: ${stmt}`, 'err');
       pc++;
     }
@@ -1606,14 +1602,14 @@ async function runBasicScript(source) {
 
 basicRunBtn.addEventListener('click', () => {
   const src = basicScriptInput.value.trim();
-  if (!src) { addLine('No script to run ��� enter a BASIC script first', 'err'); return; }
+  if (!src) { addLine('No script to run - enter a BASIC script first', 'err'); return; }
   runBasicScript(src);
 });
 
 basicStopBtn.addEventListener('click', () => {
   basicStopRequested = true;
   if (basicInputResolver) basicInputResolver('');
-  addLine('Stop requested�Ǫ', 'sys');
+  addLine('Stop requested...', 'sys');
 });
 
 // Enable/disable run button based on connection and script content
@@ -1621,14 +1617,10 @@ basicScriptInput.addEventListener('input', () => {
   basicRunBtn.disabled = !port || !basicScriptInput.value.trim() || basicRunning;
 });
 
-// ������������������������������������������������������������������������������������������������������������������������������������������������
-// ������ INCOMING LINE INTERCEPTOR (for READ) ������
-// ������������������������������������������������������������������������������������������������������������������������������������������������
+// INCOMING LINE INTERCEPTOR (for READ)
 let incomingLineInterceptor = null;
 
-// ������������������������������������������������������������������������������������������������������������������������������������������������
-// ������ EXISTING SERIAL / DIAGNOSTIC CODE (unchanged) ������
-// ������������������������������������������������������������������������������������������������������������������������������������������������
+// EXISTING SERIAL / DIAGNOSTIC CODE
 
 function looksLikeGrblBanner(line) {
   return /^grbl\b/i.test(String(line || '').trim());
@@ -1717,7 +1709,7 @@ function formatPortInfo(info) {
   if (typeof info.usbVendorId === 'number') parts.push(`VID ${formatHex(info.usbVendorId)}`);
   if (typeof info.usbProductId === 'number') parts.push(`PID ${formatHex(info.usbProductId)}`);
   if (typeof info.bluetoothServiceClassId === 'string') parts.push(`BT ${info.bluetoothServiceClassId}`);
-  return parts.length ? parts.join(' -� ') : 'Port info unavailable';
+  return parts.length ? parts.join(' | ') : 'Port info unavailable';
 }
 
 function getCommandTokenDisplay(raw) {
@@ -1881,7 +1873,7 @@ function parseDiagnosticsPreset() {
   if (params.has('banner_timeout')) config.bannerTimeoutMs = parseNumberParam(params.get('banner_timeout'), DEFAULT_BANNER_TIMEOUT_MS);
   if (params.has('banner_wait') && params.get('banner_wait') === '0') config.bannerTimeoutMs = 0;
 
-  // ������ Load grbl-basic script from URL source param ������
+  // Load grbl-basic script from URL source param
   if (params.has('source')) {
     const sourceUrl = params.get('source');
     basicForumUrl.value = sourceUrl;
@@ -2399,7 +2391,7 @@ async function runStartupSequence(config, token) {
 
   if (!(await waitForStep(DEFAULT_READY_SETTLE_MS, token))) return;
 
-  addLine('Sending wake signal�Ǫ', 'sys');
+  addLine('Sending wake signal...', 'sys');
   await sendCommand('\n');
   if (!(await waitForStep(config.sequenceDelayMs || DEFAULT_STATUS_DELAY_MS, token))) return;
   await sendCommand('?');
@@ -2470,8 +2462,8 @@ exportBtn.addEventListener('click', () => { downloadTextFile(logLines.join('\n')
 function addLine(text, type = 'rx') {
   const now = new Date();
   const time = formatLogTimestamp(now);
-  const arrows = { tx: '���', rx: '���', sys: '���', err: 'ԣ�', basic: 'Լ�' };
-  const arrow = arrows[type] || '���';
+  const arrows = { tx: '\u2192', rx: '\u2190', sys: '\u25CF', err: '\u2715', basic: '\u2B21' };
+  const arrow = arrows[type] || '\u2190';
 
   if (type === 'rx') {
     recordReadySignal(text);
@@ -2574,7 +2566,7 @@ async function sendCommand(raw, displayOverride = null) {
     let cmd = raw;
     cmd = cmd.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\x18/g, '\x18');
     encoded = new TextEncoder().encode(cmd);
-    display = displayOverride || raw.replace(/\n/g,'���').replace(/\r/g,'').replace(/\x18/g,'^X');
+    display = displayOverride || raw.replace(/\n/g,'\u21B5').replace(/\r/g,'').replace(/\x18/g,'^X');
   }
 
   try {
