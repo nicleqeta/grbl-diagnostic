@@ -1292,20 +1292,7 @@ async function runBasicScript(source) {
       const lineNum = order[pc];
       const stmt = lines[lineNum];
 
-      // ── LET ──
-      if (/^LET\s+/i.test(stmt)) {
-        const body = stmt.replace(/^LET\s+/i, '');
-        const eq = body.indexOf('=');
-        if (eq !== -1) {
-          const varName = body.slice(0, eq).trim();
-          const valExpr = body.slice(eq + 1).trim();
-          basicVars[varName] = basicEvalExpr(valExpr, basicVars);
-        }
-        pc++;
-        continue;
-      }
-
-      // ── READ ──
+      // ── READ (must come before generic LET so LET x = READ(...) is handled here) ──
       if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
         // Handle both: LET x = READ("$30") and READ("$30") INTO x
         let varName = null;
@@ -1319,6 +1306,19 @@ async function runBasicScript(source) {
           const val = await basicReadGrbl(settingArg);
           basicVars[varName] = val;
           addLine(`${varName} = ${val}`, 'basic');
+        }
+        pc++;
+        continue;
+      }
+
+      // ── LET ──
+      if (/^LET\s+/i.test(stmt)) {
+        const body = stmt.replace(/^LET\s+/i, '');
+        const eq = body.indexOf('=');
+        if (eq !== -1) {
+          const varName = body.slice(0, eq).trim();
+          const valExpr = body.slice(eq + 1).trim();
+          basicVars[varName] = basicEvalExpr(valExpr, basicVars);
         }
         pc++;
         continue;
