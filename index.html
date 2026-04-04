@@ -1019,6 +1019,7 @@ let readySignalLine = null;
 let readySignalAt = null;
 let startupBannerLine = null;
 let sidebarResizeState = null;
+let startupBasicPostUrl = null;
 let currentRun = {
   name: 'manual', description: 'Manual connect', source: 'manual',
   baud: parseInt(baudSelect.value, 10), dtrMode: 'default',
@@ -1294,20 +1295,34 @@ async function fetchDiscoursePostRaw(origin, topicId, postNumber) {
   return await resp.text();
 }
 
-basicLoadUrlBtn.addEventListener('click', async () => {
-  const url = basicForumUrl.value.trim();
-  if (!url) {
+function parseStartupBasicPostUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const candidate = params.get('basic_post') || params.get('post') || params.get('scrape') || params.get('source') || '';
+  const value = candidate.trim();
+  return value || null;
+}
+
+async function loadBasicForumPost(url) {
+  const forumPostUrl = (url || '').trim();
+  basicForumUrl.value = forumPostUrl;
+
+  const varsSection = document.getElementById('basic-vars-section');
+
+  if (!forumPostUrl) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = 'Please enter a forum post URL first.';
-    return;
+    return false;
   }
 
-  const parsed = parseDiscourseUrl(url);
+  const parsed = parseDiscourseUrl(forumPostUrl);
   if (!parsed) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = 'Could not parse that URL. Make sure it is a Discourse forum post URL.';
-    return;
+    return false;
   }
+
+  startupBasicPostUrl = forumPostUrl;
+  updateUrlFromAdvancedDiagnostics();
 
   basicLoadUrlBtn.disabled = true;
   basicLoadUrlBtn.textContent = 'Loading...';
@@ -1321,33 +1336,43 @@ basicLoadUrlBtn.addEventListener('click', async () => {
     if (!result) {
       basicConfigBox.className = 'diag-box';
       basicConfigBox.textContent = 'No [grbl-basic] block found in that post.';
-      document.getElementById('basic-vars-section').style.display = 'none';
-      return;
+      varsSection.style.display = 'none';
+      return false;
     }
 
     const { rawConfigText, programText, vars } = result;
 
-    // Store raw template for re-apply when vars change
     basicRawProgram = programText;
     basicRawConfigText = rawConfigText;
     basicLoadedVars = { ...vars };
 
     refreshBasicVariableViews();
-
-    // Render editable variable fields
     renderVarEditor(vars);
 
-    basicRunBtn.disabled = !port;
+    updateBasicControlUi();
+    updateUrlFromAdvancedDiagnostics();
     addLine(`BASIC script loaded (${Object.keys(vars).length} variable(s) found)`, 'sys');
+    return true;
 
   } catch(e) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = `Load failed: ${e.message}`;
     addLine(`Forum script load failed: ${e.message}`, 'err');
+    return false;
   } finally {
     basicLoadUrlBtn.disabled = false;
     basicLoadUrlBtn.textContent = 'Load from forum post';
   }
+}
+
+basicLoadUrlBtn.addEventListener('click', async () => {
+  const url = basicForumUrl.value.trim();
+  if (!url) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = 'Please enter a forum post URL first.';
+    return;
+  }
+  await loadBasicForumPost(url);
 });
 
 // BASIC INTERPRETER
@@ -2027,14 +2052,6 @@ function parseDiagnosticsPreset() {
   if (params.has('banner_timeout')) config.bannerTimeoutMs = parseNumberParam(params.get('banner_timeout'), DEFAULT_BANNER_TIMEOUT_MS);
   if (params.has('banner_wait') && params.get('banner_wait') === '0') config.bannerTimeoutMs = 0;
 
-  // Load grbl-basic script from URL source param
-  if (params.has('source')) {
-    const sourceUrl = params.get('source');
-    basicForumUrl.value = sourceUrl;
-    // Auto-load after a tick so the page is fully ready
-    setTimeout(() => basicLoadUrlBtn.click(), 500);
-  }
-
   config.summary = buildPresetSummary(config);
   return config;
 }
@@ -2110,6 +2127,8 @@ function updatePresetBox() {
 }
 
 function applyPresetToUi() {
+  startupBasicPostUrl = parseStartupBasicPostUrl();
+  if (startupBasicPostUrl) basicForumUrl.value = startupBasicPostUrl;
   diagnosticsPreset = parseDiagnosticsPreset();
   if (!diagnosticsPreset) {
     updateBannerWaitUi(); updatePresetBox(); updateAdvancedDiagnosticsDirtyState(); updateUrlFromAdvancedDiagnostics();
@@ -2142,7 +2161,13 @@ function updateUrlFromAdvancedDiagnostics() {
   const activeConfig = getActiveAdvancedDiagnosticsConfig('builder');
   const nextUrl = hasAdvancedDiagnosticsSelection(activeConfig)
     ? buildPresetUrl(activeConfig)
-    : `${window.location.pathname}${window.location.hash}`;
+    : (() => {
+        const url = new URL(window.location.href);
+        url.search = '';
+        const forumPostUrl = (basicForumUrl.value || startupBasicPostUrl || '').trim();
+        if (forumPostUrl) url.searchParams.set('basic_post', forumPostUrl);
+        return `${url.pathname}${url.search}${url.hash}`;
+      })();
   try { window.history.replaceState({}, '', nextUrl); } catch { /* suppressed in sandboxed iframe environments */ }
 }
 
@@ -2180,9 +2205,7 @@ function resetAdvancedDiagnostics() {
   sequenceDelayInput.value = String(DEFAULT_SEQUENCE_DELAY_MS);
   builderNameInput.value = '';
   builderCommandsInput.value = '';
-  if (window.location.search) {
-    try { window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`); } catch { /* suppressed in sandboxed iframe environments */ }
-  }
+  updateUrlFromAdvancedDiagnostics();
   if (advancedSection) advancedSection.open = false;
   updateBannerWaitUi(); updateSequenceDelayUi(); updatePresetBox(); updateAdvancedDiagnosticsDirtyState();
   currentRun.bannerTimeoutMs = DEFAULT_BANNER_TIMEOUT_MS;
@@ -2250,6 +2273,8 @@ function getCurrentDiagnosticsConfig() {
 function buildPresetUrl(config) {
   const url = new URL(window.location.href);
   url.search = '';
+  const forumPostUrl = (basicForumUrl.value || startupBasicPostUrl || '').trim();
+  if (forumPostUrl) url.searchParams.set('basic_post', forumPostUrl);
   url.searchParams.set('name', config.name || 'custom-builder');
   url.searchParams.set('baud', String(baudSelect.value));
   url.searchParams.set('dtr', config.dtrMode || 'default');
@@ -2892,6 +2917,10 @@ addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
   addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');
+}
+if (startupBasicPostUrl) {
+  addLine('Loading BASIC script from shared forum post URL', 'sys');
+  queueMicrotask(() => { void loadBasicForumPost(startupBasicPostUrl); });
 }
 scrollTerminalToBottom(true);
 </script>
