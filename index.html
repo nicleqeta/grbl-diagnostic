@@ -24,6 +24,7 @@
     --blue: #3b82f6;
     --blue-dim: #1e3a5f;
     --teal: #14b8a6;
+    --sidebar-width: 260px;
     --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     --sans: 'Inter', system-ui, sans-serif;
   }
@@ -89,14 +90,44 @@
   main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
   .sidebar {
-    width: 260px;
-    min-width: 260px;
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    flex: 0 0 var(--sidebar-width);
     border-right: 1px solid var(--border);
     background: var(--surface);
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow-y: auto;
+  }
+
+  .sidebar-resizer {
+    position: relative;
+    flex: 0 0 10px;
+    min-width: 10px;
+    cursor: col-resize;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    touch-action: none;
+  }
+  .sidebar-resizer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: var(--border);
+    transition: background 0.15s ease;
+  }
+  .sidebar-resizer:hover::before,
+  body.sidebar-resizing .sidebar-resizer::before {
+    background: var(--teal);
+  }
+  body.sidebar-resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 
   .section {
@@ -628,11 +659,13 @@
     main { flex-direction: column; }
     .sidebar {
       width: 100%;
+      flex-basis: auto;
       min-width: 0;
       max-height: 42vh;
       border-right: 0;
       border-bottom: 1px solid var(--border);
     }
+    .sidebar-resizer { display: none; }
   }
 
   @media (max-width: 640px) {
@@ -662,7 +695,7 @@
 </header>
 
 <main>
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
 
     <div class="section" id="no-serial-section" style="display:none;">
       <div class="no-serial-warning">
@@ -784,6 +817,8 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
 
   </div>
 
+  <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+
   <div class="terminal-pane">
     <div class="term-header">
       <span class="term-header-label">Terminal output</span>
@@ -883,6 +918,8 @@ const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
+const sidebar = document.getElementById('sidebar');
+const sidebarResizer = document.getElementById('sidebar-resizer');
 
 // BASIC UI elements
 const basicForumUrl    = document.getElementById('basic-forum-url');
@@ -942,6 +979,9 @@ const DEFAULT_BANNER_TIMEOUT_MS = 3000;
 const DEFAULT_READY_SETTLE_MS = 150;
 const MAX_LOG_LINES = 5000;
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
+const SIDEBAR_WIDTH_KEY = 'grbl-diagnostic-sidebar-width';
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 480;
 
 const TRANSPORT_STATE_META = {
   disconnected: { label: 'Disconnected', className: 'status-pill disconnected' },
@@ -978,6 +1018,7 @@ let readySignalSeen = false;
 let readySignalLine = null;
 let readySignalAt = null;
 let startupBannerLine = null;
+let sidebarResizeState = null;
 let currentRun = {
   name: 'manual', description: 'Manual connect', source: 'manual',
   baud: parseInt(baudSelect.value, 10), dtrMode: 'default',
@@ -1002,6 +1043,53 @@ if (!('serial' in navigator)) {
 }
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function clampSidebarWidth(width) {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function isSidebarResizable() {
+  return window.innerWidth > 980;
+}
+
+function applySidebarWidth(width, persist = true) {
+  const clampedWidth = clampSidebarWidth(width);
+  document.documentElement.style.setProperty('--sidebar-width', `${clampedWidth}px`);
+  if (persist) {
+    try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clampedWidth)); } catch {}
+  }
+}
+
+function loadSidebarWidth() {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!stored) return;
+    const parsed = parseInt(stored, 10);
+    if (Number.isFinite(parsed)) applySidebarWidth(parsed, false);
+  } catch {}
+}
+
+function stopSidebarResize() {
+  if (!sidebarResizeState) return;
+  document.body.classList.remove('sidebar-resizing');
+  sidebarResizeState = null;
+}
+
+function updateSidebarResize(event) {
+  if (!sidebarResizeState || !isSidebarResizable()) return;
+  const nextWidth = sidebarResizeState.startWidth + (event.clientX - sidebarResizeState.startX);
+  applySidebarWidth(nextWidth);
+}
+
+function startSidebarResize(event) {
+  if (!isSidebarResizable()) return;
+  event.preventDefault();
+  sidebarResizeState = {
+    startX: event.clientX,
+    startWidth: sidebar.getBoundingClientRect().width
+  };
+  document.body.classList.add('sidebar-resizing');
+}
 
 let terminalFollowFrame = 0;
 let suppressTerminalScrollToggle = false;
@@ -2450,8 +2538,14 @@ terminal.addEventListener('scroll', () => {
   }
 });
 window.addEventListener('resize', () => {
+  if (!isSidebarResizable()) stopSidebarResize();
   if (autoScroll) scrollTerminalToBottom(true);
 });
+
+sidebarResizer.addEventListener('pointerdown', startSidebarResize);
+window.addEventListener('pointermove', updateSidebarResize);
+window.addEventListener('pointerup', stopSidebarResize);
+window.addEventListener('pointercancel', stopSidebarResize);
 
 [dtrModeSelect, observeToggle, showRequestResponseToggle, bannerWaitToggle, sequenceDelayToggle, waitMsInput, bannerWaitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
   control.addEventListener(control === observeToggle || control === showRequestResponseToggle || control === bannerWaitToggle || control === sequenceDelayToggle ? 'change' : 'input', () => {
@@ -2720,6 +2814,7 @@ cmdInput.addEventListener('focus', syncCommandPrompt);
 cmdInput.addEventListener('blur', syncCommandPrompt);
 
 applyPresetToUi();
+loadSidebarWidth();
 setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
 setTransportState('disconnected');
