@@ -1032,10 +1032,13 @@ let currentRun = {
 // BASIC interpreter state
 let basicRunning = false;
 let basicStopRequested = false;
+let basicPaused = false;
+let basicStopMessage = '--- Script stopped by user ---';
 let basicInputResolver = null;
 let basicConfirmResolver = null;
 let basicVars = {};
 let basicGrblSettings = {};   // cache of $N=value from READ
+const BASIC_CONTROL_POLL_MS = 50;
 
 if (!('serial' in navigator)) {
   noSerialSec.style.display = 'block';
@@ -1529,6 +1532,44 @@ basicInputField.addEventListener('keydown', e => {
   if (e.key === 'Enter' && basicInputResolver) basicInputResolver(basicInputField.value);
 });
 
+function updateBasicControlUi() {
+  basicRunBtn.disabled = !port || !basicScriptInput.value.trim() || basicRunning;
+  basicStopBtn.disabled = !basicRunning;
+}
+
+function setBasicPaused(paused) {
+  if (!basicRunning || basicPaused === paused) return;
+  basicPaused = paused;
+  addLine(paused ? '--- Script paused ---' : '--- Script resumed ---', 'basic');
+}
+
+function requestBasicStop(statusLine = 'Stop requested...', stopMessage = '--- Script stopped by user ---') {
+  if (!basicRunning) return;
+  basicStopRequested = true;
+  basicPaused = false;
+  basicStopMessage = stopMessage;
+  if (basicInputResolver) basicInputResolver('');
+  addLine(statusLine, 'sys');
+}
+
+async function basicWaitForResumeOrStop() {
+  while (basicPaused && !basicStopRequested) {
+    await delay(BASIC_CONTROL_POLL_MS);
+  }
+  return !basicStopRequested;
+}
+
+async function basicDelayWithControl(ms) {
+  const targetMs = Math.max(0, Math.round(Number(ms) || 0));
+  const endTime = Date.now() + targetMs;
+  while (Date.now() < endTime) {
+    if (!(await basicWaitForResumeOrStop())) return false;
+    const remaining = endTime - Date.now();
+    await delay(Math.min(BASIC_CONTROL_POLL_MS, Math.max(1, remaining)));
+  }
+  return basicWaitForResumeOrStop();
+}
+
 async function runBasicScript(source) {
   if (basicRunning) return;
 
@@ -1550,18 +1591,30 @@ async function runBasicScript(source) {
 
   basicRunning = true;
   basicStopRequested = false;
+  basicPaused = false;
+  basicStopMessage = '--- Script stopped by user ---';
   basicVars = {};
-  basicRunBtn.disabled = true;
-  basicStopBtn.disabled = false;
+  updateBasicControlUi();
   addLine('--- BASIC script started ---', 'basic');
 
   const { lines, order } = basicParseLines(source);
   let pc = 0; // index into order[]
+  let stopLogged = false;
+
+  const stopScript = () => {
+    if (stopLogged) return;
+    stopLogged = true;
+    addLine(basicStopMessage, 'basic');
+  };
 
   try {
     while (pc < order.length) {
       if (basicStopRequested) {
-        addLine('--- Script stopped by user ---', 'basic');
+        stopScript();
+        break;
+      }
+      if (!(await basicWaitForResumeOrStop())) {
+        stopScript();
         break;
       }
 
@@ -1606,7 +1659,10 @@ async function runBasicScript(source) {
         const cmdStr = String(basicEvalExpr(arg, basicVars)).trim();
         addLine(`SEND: ${cmdStr}`, 'basic');
         await sendCommand(cmdStr + '\n');
-        await delay(100);
+        if (!(await basicDelayWithControl(100))) {
+          stopScript();
+          break;
+        }
         pc++;
         continue;
       }
@@ -1616,7 +1672,10 @@ async function runBasicScript(source) {
         const arg = stmt.replace(/^WAIT\s+/i, '').trim();
         const ms = Math.round(parseFloat(basicEvalExpr(arg, basicVars)));
         addLine(`WAIT ${ms} ms`, 'basic');
-        await delay(ms);
+        if (!(await basicDelayWithControl(ms))) {
+          stopScript();
+          break;
+        }
         pc++;
         continue;
       }
@@ -1637,6 +1696,10 @@ async function runBasicScript(source) {
           const varName = inputLetM[1];
           const promptText = inputLetM[2];
           const val = await basicPromptInput(promptText);
+          if (basicStopRequested) {
+            stopScript();
+            break;
+          }
           const numVal = parseFloat(val);
           basicVars[varName] = Number.isFinite(numVal) ? numVal : val;
           addLine(`INPUT: ${varName} = ${basicVars[varName]}`, 'basic');
@@ -1686,9 +1749,10 @@ async function runBasicScript(source) {
   } finally {
     basicRunning = false;
     basicStopRequested = false;
+    basicPaused = false;
+    basicStopMessage = '--- Script stopped by user ---';
     basicInputBar.style.display = 'none';
-    basicRunBtn.disabled = !port;
-    basicStopBtn.disabled = true;
+    updateBasicControlUi();
   }
 }
 
@@ -1699,14 +1763,12 @@ basicRunBtn.addEventListener('click', () => {
 });
 
 basicStopBtn.addEventListener('click', () => {
-  basicStopRequested = true;
-  if (basicInputResolver) basicInputResolver('');
-  addLine('Stop requested...', 'sys');
+  requestBasicStop();
 });
 
 // Enable/disable run button based on connection and script content
 basicScriptInput.addEventListener('input', () => {
-  basicRunBtn.disabled = !port || !basicScriptInput.value.trim() || basicRunning;
+  updateBasicControlUi();
 });
 
 // INCOMING LINE INTERCEPTOR (for READ)
@@ -2163,8 +2225,7 @@ function setConnectionUi(mode = 'disconnected') {
   terminalRealtimeBtns.forEach(button => button.disabled = !isConnected);
 
   // BASIC run button follows connection state
-  basicRunBtn.disabled = !isConnected || !basicScriptInput.value.trim() || basicRunning;
-  basicStopBtn.disabled = !basicRunning;
+  updateBasicControlUi();
 
   updateBannerWaitUi(); updateSequenceDelayUi();
   syncCommandPrompt();
@@ -2340,6 +2401,11 @@ async function executeSequenceCommand(rawCommand) {
   const taggedDisplay = showRequestResponseCorrelation ? `[${requestId}] ${command.display}` : command.display;
   const sent = await sendCommand(command.payload || command.send, taggedDisplay);
   if (!sent) return { status: 'error', line: `${taggedDisplay} failed to write`, requestId, command };
+  if (basicRunning && command.send === '!') setBasicPaused(true);
+  if (basicRunning && command.send === '~') setBasicPaused(false);
+  if (basicRunning && command.send === '\x18') {
+    requestBasicStop('Soft reset sent; aborting BASIC script...', '--- Script aborted by soft reset ---');
+  }
   if (!command.waitForAck) {
     if (showRequestResponseCorrelation) addLine(`[${requestId}] completed without terminal acknowledgement wait`, 'sys');
     return { status: 'sent', line: `${taggedDisplay} sent without acknowledgement wait`, requestId, command };
