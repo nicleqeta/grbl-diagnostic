@@ -4,7 +4,7 @@ const SCRIPT_CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function generateId(length = 8) {
+function generateId(length = 6) {
   const alphabet = 'abcdefghijkmnopqrstuvwxyz23456789';
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let id = '';
