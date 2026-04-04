@@ -428,11 +428,12 @@
     white-space: pre;
   }
   .term-shell-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .term-shell-placeholder { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+  .term-shell-placeholder { display: none; }
   .term-input-shell.has-text .term-shell-placeholder,
   .term-input-shell.empty .term-shell-text { display: none; }
-  .term-shell-cursor { flex-shrink: 0; color: var(--green); animation: term-cursor-blink 1s steps(1) infinite; }
-  .term-input-shell.inactive .term-shell-cursor { animation: none; opacity: 0.25; }
+  .term-shell-cursor { flex-shrink: 0; color: var(--green); opacity: 0; }
+  .term-input-shell.focused .term-shell-cursor { opacity: 1; animation: term-cursor-blink 1s steps(1) infinite; }
+  .term-input-shell:not(.focused) .term-shell-cursor { animation: none; opacity: 0; }
   @keyframes term-cursor-blink {
     0%, 49% { opacity: 1; }
     50%, 100% { opacity: 0; }
@@ -845,7 +846,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <span class="term-shell-prompt" id="cmd-prompt-label">OFFLINE&gt;</span>
         <span class="term-shell-display" aria-hidden="true">
           <span class="term-shell-text" id="cmd-display"></span>
-          <span class="term-shell-placeholder" id="cmd-placeholder">Connect to start typing...</span>
+          <span class="term-shell-placeholder" id="cmd-placeholder"></span>
           <span class="term-shell-cursor" id="cmd-cursor">_</span>
         </span>
         <input type="text" id="cmd-input" disabled autocomplete="off" spellcheck="false" aria-label="GRBL command input">
@@ -1054,13 +1055,19 @@ function syncAutoscrollUi() {
   autoscrollBtn.title = autoScroll ? 'Disable terminal auto-follow' : 'Enable terminal auto-follow';
 }
 
+function enableAutoscrollFollow() {
+  autoScroll = true;
+  syncAutoscrollUi();
+  scrollTerminalToBottom(true);
+}
+
 function syncCommandPrompt() {
   const connected = !cmdInput.disabled;
   const hasValue = Boolean(cmdInput.value);
 
   cmdPromptLabel.textContent = connected ? 'GRBL>' : 'OFFLINE>';
   cmdDisplay.textContent = cmdInput.value;
-  cmdPlaceholder.textContent = connected ? 'Type a command...' : 'Connect to start typing...';
+  cmdPlaceholder.textContent = '';
 
   termInputShell.classList.toggle('empty', !hasValue);
   termInputShell.classList.toggle('inactive', !connected);
@@ -2259,6 +2266,7 @@ async function executeSequenceCommand(rawCommand) {
     return { status: 'skipped', line: `Unknown action ${command.display}` };
   }
 
+  enableAutoscrollFollow();
   const requestId = `req-${++sequenceRequestCounter}`;
   const showRequestResponseCorrelation = Boolean(currentRun.showRequestResponseCorrelation);
   const taggedDisplay = showRequestResponseCorrelation ? `[${requestId}] ${command.display}` : command.display;
