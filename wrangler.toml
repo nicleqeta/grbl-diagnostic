@@ -2,6 +2,10 @@ name = "grbl-diagnostic"
 main = "worker.js"
 compatibility_date = "2026-04-01"
 
+[[kv_namespaces]]
+binding = "GRBL_SCRIPTS"
+id = "1f7fdea060504215b6af409a1052788a"
+
 [assets]
 directory = "."
 not_found_handling = "single-page-application"
