@@ -83,7 +83,7 @@
   .status-pill.fault        { background: var(--red-dim);   color: #fca5a5;           border-color: #991b1b; }
   .status-pill.reset        { background: var(--blue-dim);  color: #93c5fd;           border-color: #1d4ed8; }
 
-  main { display: flex; flex: 1; overflow: hidden; }
+  main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
   .sidebar {
     width: 260px;
@@ -92,6 +92,7 @@
     background: var(--surface);
     display: flex;
     flex-direction: column;
+    min-height: 0;
     overflow-y: auto;
   }
 
@@ -255,7 +256,15 @@
 
   .help-text { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 
-  .terminal-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .terminal-pane {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+  }
 
   .term-header {
     padding: 10px 16px;
@@ -286,8 +295,17 @@
   .icon-btn.ready:hover { color: #bbf7d0; border-color: #15803d; background: #14532d; }
   #reset-advanced-btn { width: 100%; display: block; }
 
+  .terminal-window {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(circle at top, rgba(20,184,166,0.08), transparent 42%), linear-gradient(180deg, rgba(15,17,23,0.98), rgba(10,12,18,1));
+  }
+
   #terminal {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 12px 16px;
     font-family: var(--mono);
@@ -321,28 +339,116 @@
   .line-text .tok-ok     { color: var(--green); }
   .line-text .tok-error  { color: var(--red); }
 
+  .term-realtime-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(26,29,39,0.98), rgba(15,17,23,0.98));
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .term-rt-btn {
+    flex: 1 1 140px;
+    min-width: 0;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 9px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .term-rt-btn:hover { transform: translateY(-1px); }
+  .term-rt-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .term-rt-btn .cmd-label {
+    display: block;
+    font-family: var(--sans);
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .term-rt-btn.hold { background: var(--amber-dim); border-color: #8b5d14; color: #ffd37a; }
+  .term-rt-btn.hold:hover { background: #5a3d0c; border-color: #a56d17; }
+  .term-rt-btn.resume { background: var(--green-dim); border-color: #166534; color: #bbf7d0; }
+  .term-rt-btn.resume:hover { background: #14532d; border-color: #15803d; }
+  .term-rt-btn.reset { background: var(--red-dim); border-color: #7f1d1d; color: #fecaca; }
+  .term-rt-btn.reset:hover { background: #991b1b; border-color: #b91c1c; }
+
   .term-input-bar {
     display: flex;
     gap: 8px;
     padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
   }
-  #cmd-input {
+  .term-input-shell {
+    position: relative;
     flex: 1;
-    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 8px;
     border: 1px solid var(--border);
+    background: #0c1119;
+    overflow: hidden;
+  }
+  .term-input-shell:focus-within { border-color: var(--teal); box-shadow: 0 0 0 1px rgba(20,184,166,0.22); }
+  .term-input-shell.ready { border-color: #145b52; background: linear-gradient(180deg, rgba(9,19,22,0.98), rgba(12,17,25,1)); }
+  .term-input-shell.inactive { background: #11151e; opacity: 0.86; }
+  .term-shell-prompt {
+    flex-shrink: 0;
+    color: var(--green);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .term-input-shell.inactive .term-shell-prompt { color: var(--text-muted); }
+  .term-shell-display {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
     color: var(--text);
-    border-radius: 6px;
-    padding: 7px 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: pre;
+  }
+  .term-shell-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .term-shell-placeholder { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+  .term-input-shell.has-text .term-shell-placeholder,
+  .term-input-shell.empty .term-shell-text { display: none; }
+  .term-shell-cursor { flex-shrink: 0; color: var(--green); animation: term-cursor-blink 1s steps(1) infinite; }
+  .term-input-shell.inactive .term-shell-cursor { animation: none; opacity: 0.25; }
+  @keyframes term-cursor-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  #cmd-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: transparent;
+    caret-color: transparent;
+    border-radius: 0;
+    padding: 0;
     font-size: 13px;
     font-family: var(--mono);
     outline: none;
     margin-bottom: 0;
+    opacity: 0;
   }
-  #cmd-input:focus { border-color: var(--teal); }
-  #cmd-input::placeholder { color: var(--text-muted); }
   .send-btn {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -369,13 +475,13 @@
     line-height: 1.5;
   }
 
-  /* ── BASIC script inline input prompt ── */
+  /* ������ BASIC script inline input prompt ������ */
   .basic-input-bar {
     display: flex;
     gap: 8px;
     padding: 10px 16px;
     background: #0d1f3c;
-    border-bottom: 1px solid #1e3a5f;
+    border-top: 1px solid #1e3a5f;
     flex-shrink: 0;
     align-items: center;
   }
@@ -415,7 +521,7 @@
   }
   .basic-input-ok:hover { background: #1d4ed8; color: #fff; }
 
-  /* ── BASIC confirm modal ── */
+  /* ������ BASIC confirm modal ������ */
   .basic-confirm-overlay {
     position: fixed;
     inset: 0;
@@ -513,8 +619,27 @@
   }
   .var-row input[type="text"]:focus { border-color: var(--amber); }
 
-  @media (max-width: 600px) {
-    .sidebar { width: 220px; min-width: 220px; }
+  @media (max-width: 980px) {
+    main { flex-direction: column; }
+    .sidebar {
+      width: 100%;
+      min-width: 0;
+      max-height: 42vh;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .term-header,
+    .term-realtime-bar,
+    .term-input-bar,
+    .basic-input-bar { padding-left: 12px; padding-right: 12px; }
+    .term-header { align-items: flex-start; flex-direction: column; }
+    .term-header-actions { width: 100%; flex-wrap: wrap; }
+    .term-input-bar { flex-direction: column; }
+    .send-btn { width: 100%; }
+    .term-input-shell { min-height: 44px; }
   }
 </style>
 </head>
@@ -568,14 +693,14 @@
       </div>
     </div>
 
-    <!-- ── BASIC Script section ── -->
+    <!-- ������ BASIC Script section ������ -->
     <details class="section section-collapsible" id="basic-section">
       <summary class="section-toggle">
         <span class="section-label">BASIC Script</span>
-        <span class="section-toggle-icon">▸</span>
+        <span class="section-toggle-icon">���</span>
       </summary>
       <div class="section-content">
-        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL…" title="Paste a forum post URL to load a grbl-basic script from that post.">
+        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL�Ǫ" title="Paste a forum post URL to load a grbl-basic script from that post.">
         <button class="btn" id="basic-load-url-btn">Load from forum post</button>
         <div class="diag-box muted" id="basic-config-box">No script loaded.</div>
         <div id="basic-vars-section" style="display:none;">
@@ -597,7 +722,7 @@
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
         <div class="help-text">
-          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF…THEN GOTO</code>, <code>END</code>.<br>
+          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF�ǪTHEN GOTO</code>, <code>END</code>.<br>
           Forum posts use a single code block with description text and <code>`key=value`</code> variables above <code>[grbl-basic]</code>.
         </div>
       </div>
@@ -606,7 +731,7 @@
     <details class="section section-collapsible" id="advanced-section">
       <summary class="section-toggle">
         <span class="section-label">Advanced Diagnostics</span>
-        <span class="section-toggle-icon">▸</span>
+        <span class="section-toggle-icon">���</span>
       </summary>
       <div class="section-content">
       <select id="dtr-mode-select">
@@ -679,17 +804,6 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
   </div>
 
   <div class="terminal-pane">
-    <!-- BASIC inline input bar (hidden until INPUT statement hit) -->
-    <div class="basic-input-bar" id="basic-input-bar" style="display:none;">
-      <span class="basic-input-prompt" id="basic-input-prompt">?</span>
-      <input type="text" id="basic-input-field" autocomplete="off" spellcheck="false">
-      <button class="basic-input-ok" id="basic-input-ok">OK</button>
-    </div>
-
-    <div class="term-input-bar">
-      <input type="text" id="cmd-input" placeholder="Type command and press Enter…" disabled autocomplete="off" spellcheck="false">
-      <button class="send-btn" id="send-btn" disabled>Send</button>
-    </div>
     <div class="term-header">
       <span class="term-header-label">Terminal output</span>
       <div class="term-header-actions">
@@ -699,7 +813,41 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <button class="icon-btn" id="export-btn">Export</button>
       </div>
     </div>
-    <div id="terminal"></div>
+    <div class="terminal-window">
+      <div id="terminal"></div>
+    </div>
+
+    <div class="term-realtime-bar">
+      <button class="term-rt-btn hold" id="hold-btn" data-cmd="!" disabled title="Immediately send feed hold (!)">
+        <span class="cmd-label">Feed Hold</span>!
+      </button>
+      <button class="term-rt-btn resume" id="resume-btn" data-cmd="~" disabled title="Immediately send cycle start / resume (~)">
+        <span class="cmd-label">Start / Resume</span>~
+      </button>
+      <button class="term-rt-btn reset" id="soft-reset-btn" data-cmd="\x18" disabled title="Immediately send GRBL soft reset (Ctrl-X)">
+        <span class="cmd-label">Soft Reset</span>^X
+      </button>
+    </div>
+
+    <!-- BASIC inline input bar (hidden until INPUT statement hit) -->
+    <div class="basic-input-bar" id="basic-input-bar" style="display:none;">
+      <span class="basic-input-prompt" id="basic-input-prompt">?</span>
+      <input type="text" id="basic-input-field" autocomplete="off" spellcheck="false">
+      <button class="basic-input-ok" id="basic-input-ok">OK</button>
+    </div>
+
+    <div class="term-input-bar">
+      <label class="term-input-shell empty inactive" id="term-input-shell" for="cmd-input">
+        <span class="term-shell-prompt" id="cmd-prompt-label">OFFLINE&gt;</span>
+        <span class="term-shell-display" aria-hidden="true">
+          <span class="term-shell-text" id="cmd-display"></span>
+          <span class="term-shell-placeholder" id="cmd-placeholder">Connect to start typing…</span>
+          <span class="term-shell-cursor" id="cmd-cursor">_</span>
+        </span>
+        <input type="text" id="cmd-input" disabled autocomplete="off" spellcheck="false" aria-label="GRBL command input">
+      </label>
+      <button class="send-btn" id="send-btn" disabled>Send</button>
+    </div>
   </div>
 </main>
 
@@ -728,6 +876,13 @@ const clearBtn     = document.getElementById('clear-btn');
 const exportBtn    = document.getElementById('export-btn');
 const copyDiagBtn  = document.getElementById('copy-diag-btn');
 const autoscrollBtn= document.getElementById('autoscroll-btn');
+const holdBtn      = document.getElementById('hold-btn');
+const resumeBtn    = document.getElementById('resume-btn');
+const softResetBtn = document.getElementById('soft-reset-btn');
+const termInputShell = document.getElementById('term-input-shell');
+const cmdPromptLabel = document.getElementById('cmd-prompt-label');
+const cmdDisplay   = document.getElementById('cmd-display');
+const cmdPlaceholder = document.getElementById('cmd-placeholder');
 const baudSelect   = document.getElementById('baud-select');
 const advancedSection = document.getElementById('advanced-section');
 const dtrModeSelect= document.getElementById('dtr-mode-select');
@@ -745,9 +900,10 @@ const builderCommandsInput = document.getElementById('builder-commands-input');
 const copyLinkBtn  = document.getElementById('copy-link-btn');
 const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
+const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
 
-// ── BASIC UI elements ──
+// ������ BASIC UI elements ������
 const basicForumUrl    = document.getElementById('basic-forum-url');
 const basicLoadUrlBtn  = document.getElementById('basic-load-url-btn');
 const basicConfigBox   = document.getElementById('basic-config-box');
@@ -851,7 +1007,7 @@ let currentRun = {
   startupResolved: 'not-run', startupReadyLine: null, startupBannerLine: null
 };
 
-// ── BASIC interpreter state ──
+// ������ BASIC interpreter state ������
 let basicRunning = false;
 let basicStopRequested = false;
 let basicInputResolver = null;
@@ -866,9 +1022,37 @@ if (!('serial' in navigator)) {
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-// ════════════════════════════════════════════════
-// ── DISCOURSE FORUM SCRAPER ──
-// ════════════════════════════════════════════════
+function isTerminalNearBottom(threshold = 20) {
+  return (terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight) <= threshold;
+}
+
+function scrollTerminalToBottom(force = false) {
+  if (force || autoScroll) terminal.scrollTop = terminal.scrollHeight;
+}
+
+function syncAutoscrollUi() {
+  autoscrollBtn.style.color = autoScroll ? 'var(--teal)' : '';
+  autoscrollBtn.style.borderColor = autoScroll ? 'var(--teal)' : '';
+  autoscrollBtn.textContent = autoScroll ? '↓ Auto' : '↓ Hold';
+  autoscrollBtn.title = autoScroll ? 'Disable terminal auto-follow' : 'Enable terminal auto-follow';
+}
+
+function syncCommandPrompt() {
+  const connected = !cmdInput.disabled;
+  const hasValue = Boolean(cmdInput.value);
+
+  cmdPromptLabel.textContent = connected ? 'GRBL>' : 'OFFLINE>';
+  cmdDisplay.textContent = cmdInput.value;
+  cmdPlaceholder.textContent = connected ? 'Type a command…' : 'Connect to start typing…';
+
+  termInputShell.classList.toggle('empty', !hasValue);
+  termInputShell.classList.toggle('inactive', !connected);
+  termInputShell.classList.toggle('focused', connected && document.activeElement === cmdInput);
+}
+
+// ������������������������������������������������������������������������������������������������������������������������������������������������
+// ������ DISCOURSE FORUM SCRAPER ������
+// ������������������������������������������������������������������������������������������������������������������������������������������������
 
 // New format: everything inside one code block.
 // Config description lines come before [grbl-basic], variables
@@ -903,7 +1087,7 @@ function parseNewFormat(rawPostText) {
 
   if (!block) return null;
 
-  // Split on [grbl-basic] — everything before is config description,
+  // Split on [grbl-basic] ��� everything before is config description,
   // everything between tags is the BASIC program
   const tagOpen  = '[grbl-basic]';
   const tagClose = '[/grbl-basic]';
@@ -923,7 +1107,7 @@ function parseNewFormat(rawPostText) {
     vars[v[1]] = Number.isFinite(num) ? num : v[2];
   }
 
-  // Build a clean description — strip backtick markers but keep the text
+  // Build a clean description ��� strip backtick markers but keep the text
   const cleanDescription = configText.replace(/`(\w+=[\d.]+)`/g, (_, inner) => inner);
 
   return { configText: cleanDescription, programText, vars };
@@ -989,7 +1173,7 @@ function applyVarsToScript() {
   addLine(`Variables applied to script`, 'sys');
 }
 
-// Use event delegation — sidebar always exists even when details section is collapsed
+// Use event delegation ��� sidebar always exists even when details section is collapsed
 document.querySelector('.sidebar').addEventListener('click', e => {
   if (e.target && e.target.id === 'basic-apply-vars-btn') applyVarsToScript();
 });
@@ -1029,9 +1213,9 @@ basicLoadUrlBtn.addEventListener('click', async () => {
   }
 
   basicLoadUrlBtn.disabled = true;
-  basicLoadUrlBtn.textContent = 'Loading…';
+  basicLoadUrlBtn.textContent = 'Loading�Ǫ';
   basicConfigBox.className = 'diag-box muted';
-  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}…`;
+  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}�Ǫ`;
 
   try {
     const raw = await fetchDiscoursePostRaw(parsed.origin, parsed.topicId, parsed.postNumber);
@@ -1073,9 +1257,9 @@ basicLoadUrlBtn.addEventListener('click', async () => {
   }
 });
 
-// ════════════════════════════════════════════════
-// ── BASIC INTERPRETER ──
-// ════════════════════════════════════════════════
+// ������������������������������������������������������������������������������������������������������������������������������������������������
+// ������ BASIC INTERPRETER ������
+// ������������������������������������������������������������������������������������������������������������������������������������������������
 
 function basicParseLines(source) {
   const lines = {};
@@ -1110,7 +1294,7 @@ function basicEvalExpr(expr, vars) {
     s = s.replace(re, typeof v === 'string' ? JSON.stringify(v) : v);
   }
 
-  // Handle & string concatenation: "a" & "b" → "ab"
+  // Handle & string concatenation: "a" & "b" ��� "ab"
   // Convert to + for eval but only between strings
   s = s.replace(/"([^"]*)"\s*&\s*"([^"]*)"/g, (_, a, b) => JSON.stringify(a + b));
   // Repeat for remaining & after first pass
@@ -1160,7 +1344,7 @@ async function basicReadGrbl(settingStr) {
       if (m) {
         basicGrblSettings[`$${m[1]}`] = parseFloat(m[2]);
       }
-      // When we see ok, the $$ dump is complete — resolve with the value
+      // When we see ok, the $$ dump is complete ��� resolve with the value
       if (/^ok$/i.test(line) && !done) {
         done = true;
         incomingLineInterceptor = null;
@@ -1198,7 +1382,7 @@ async function basicReadGrbl(settingStr) {
           addLine(`READ: timeout waiting for ok, using cached ${setting} = ${val}`, 'basic');
           resolve(val);
         } else {
-          addLine(`READ: timeout — ${setting} not found, defaulting to 0`, 'err');
+          addLine(`READ: timeout ��� ${setting} not found, defaulting to 0`, 'err');
           resolve(0);
         }
       }
@@ -1212,9 +1396,11 @@ function basicPromptInput(promptText) {
     basicInputPrompt.textContent = promptText + ':';
     basicInputField.value = '';
     basicInputBar.style.display = 'flex';
+    scrollTerminalToBottom(true);
     basicInputField.focus();
     basicInputResolver = (val) => {
       basicInputBar.style.display = 'none';
+      scrollTerminalToBottom(true);
       basicInputResolver = null;
       resolve(val);
     };
@@ -1230,7 +1416,7 @@ function basicShowConfirm(configText, vars) {
       const lines = Object.entries(vars).map(([k, v]) =>
         `<span class="basic-confirm-var-name">${k}</span> = <span class="basic-confirm-var-val">${v}</span>`
       ).join('\n');
-      basicConfirmVars.innerHTML = '── Variables ──\n' + lines;
+      basicConfirmVars.innerHTML = '������ Variables ������\n' + lines;
       basicConfirmVars.style.display = 'block';
     } else {
       basicConfirmVars.style.display = 'none';
@@ -1279,7 +1465,7 @@ async function runBasicScript(source) {
   basicVars = {};
   basicRunBtn.disabled = true;
   basicStopBtn.disabled = false;
-  addLine('── BASIC script started ──', 'basic');
+  addLine('������ BASIC script started ������', 'basic');
 
   const { lines, order } = basicParseLines(source);
   let pc = 0; // index into order[]
@@ -1287,14 +1473,14 @@ async function runBasicScript(source) {
   try {
     while (pc < order.length) {
       if (basicStopRequested) {
-        addLine('── Script stopped by user ──', 'basic');
+        addLine('������ Script stopped by user ������', 'basic');
         break;
       }
 
       const lineNum = order[pc];
       const stmt = lines[lineNum];
 
-      // ── READ (must come before generic LET so LET x = READ(...) is handled here) ──
+      // ������ READ (must come before generic LET so LET x = READ(...) is handled here) ������
       if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
         // Handle both: LET x = READ("$30") and READ("$30") INTO x
         let varName = null;
@@ -1313,7 +1499,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── LET ──
+      // ������ LET ������
       if (/^LET\s+/i.test(stmt)) {
         const body = stmt.replace(/^LET\s+/i, '');
         const eq = body.indexOf('=');
@@ -1326,7 +1512,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── SEND ──
+      // ������ SEND ������
       if (/^SEND\s+/i.test(stmt)) {
         const arg = stmt.replace(/^SEND\s+/i, '').trim();
         const cmdStr = String(basicEvalExpr(arg, basicVars)).trim();
@@ -1337,7 +1523,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── WAIT ──
+      // ������ WAIT ������
       if (/^WAIT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^WAIT\s+/i, '').trim();
         const ms = Math.round(parseFloat(basicEvalExpr(arg, basicVars)));
@@ -1347,7 +1533,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── PRINT ──
+      // ������ PRINT ������
       if (/^PRINT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^PRINT\s+/i, '').trim();
         const msg = String(basicEvalExpr(arg, basicVars));
@@ -1356,7 +1542,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── INPUT ──
+      // ������ INPUT ������
       if (/^(LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt)) {
         const inputLetM = stmt.match(/^(?:LET\s+)?(\w+)\s*=\s*INPUT\("([^"]*)"\)/i);
         if (inputLetM) {
@@ -1371,7 +1557,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── IF … THEN GOTO ──
+      // ������ IF �Ǫ THEN GOTO ������
       if (/^IF\s+/i.test(stmt)) {
         const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)/i);
         if (ifM) {
@@ -1388,7 +1574,7 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // ── GOTO ──
+      // ������ GOTO ������
       if (/^GOTO\s+\d+/i.test(stmt)) {
         const target = parseInt(stmt.match(/^GOTO\s+(\d+)/i)[1], 10);
         const targetIdx = order.indexOf(target);
@@ -1397,13 +1583,13 @@ async function runBasicScript(source) {
         break;
       }
 
-      // ── END ──
+      // ������ END ������
       if (/^END$/i.test(stmt)) {
-        addLine('── Script ended ──', 'basic');
+        addLine('������ Script ended ������', 'basic');
         break;
       }
 
-      // Unknown statement — skip with warning
+      // Unknown statement ��� skip with warning
       addLine(`Line ${lineNum}: unknown statement: ${stmt}`, 'err');
       pc++;
     }
@@ -1420,14 +1606,14 @@ async function runBasicScript(source) {
 
 basicRunBtn.addEventListener('click', () => {
   const src = basicScriptInput.value.trim();
-  if (!src) { addLine('No script to run — enter a BASIC script first', 'err'); return; }
+  if (!src) { addLine('No script to run ��� enter a BASIC script first', 'err'); return; }
   runBasicScript(src);
 });
 
 basicStopBtn.addEventListener('click', () => {
   basicStopRequested = true;
   if (basicInputResolver) basicInputResolver('');
-  addLine('Stop requested…', 'sys');
+  addLine('Stop requested�Ǫ', 'sys');
 });
 
 // Enable/disable run button based on connection and script content
@@ -1435,14 +1621,14 @@ basicScriptInput.addEventListener('input', () => {
   basicRunBtn.disabled = !port || !basicScriptInput.value.trim() || basicRunning;
 });
 
-// ════════════════════════════════════════════════
-// ── INCOMING LINE INTERCEPTOR (for READ) ──
-// ════════════════════════════════════════════════
+// ������������������������������������������������������������������������������������������������������������������������������������������������
+// ������ INCOMING LINE INTERCEPTOR (for READ) ������
+// ������������������������������������������������������������������������������������������������������������������������������������������������
 let incomingLineInterceptor = null;
 
-// ════════════════════════════════════════════════
-// ── EXISTING SERIAL / DIAGNOSTIC CODE (unchanged) ──
-// ════════════════════════════════════════════════
+// ������������������������������������������������������������������������������������������������������������������������������������������������
+// ������ EXISTING SERIAL / DIAGNOSTIC CODE (unchanged) ������
+// ������������������������������������������������������������������������������������������������������������������������������������������������
 
 function looksLikeGrblBanner(line) {
   return /^grbl\b/i.test(String(line || '').trim());
@@ -1531,7 +1717,7 @@ function formatPortInfo(info) {
   if (typeof info.usbVendorId === 'number') parts.push(`VID ${formatHex(info.usbVendorId)}`);
   if (typeof info.usbProductId === 'number') parts.push(`PID ${formatHex(info.usbProductId)}`);
   if (typeof info.bluetoothServiceClassId === 'string') parts.push(`BT ${info.bluetoothServiceClassId}`);
-  return parts.length ? parts.join(' · ') : 'Port info unavailable';
+  return parts.length ? parts.join(' -� ') : 'Port info unavailable';
 }
 
 function getCommandTokenDisplay(raw) {
@@ -1587,6 +1773,12 @@ function normalizeCommandInput(raw) {
 
   if (/^\|(clip|copy|copy-log)$/i.test(text)) {
     return { input: text, send: text, display: '|clip', waitForAck: false, kind: 'action', action: 'clip' };
+  }
+  if (text === '!') {
+    return { input: text, send: '!', payload: Uint8Array.of(0x21), display: '!', waitForAck: false };
+  }
+  if (text === '~') {
+    return { input: text, send: '~', payload: Uint8Array.of(0x7E), display: '~', waitForAck: false };
   }
   if (text === '^X' || text === '\\x18') {
     return { input: text, send: '\x18', payload: Uint8Array.of(0x18), display: '^X', waitForAck: false };
@@ -1689,7 +1881,7 @@ function parseDiagnosticsPreset() {
   if (params.has('banner_timeout')) config.bannerTimeoutMs = parseNumberParam(params.get('banner_timeout'), DEFAULT_BANNER_TIMEOUT_MS);
   if (params.has('banner_wait') && params.get('banner_wait') === '0') config.bannerTimeoutMs = 0;
 
-  // ── Load grbl-basic script from URL source param ──
+  // ������ Load grbl-basic script from URL source param ������
   if (params.has('source')) {
     const sourceUrl = params.get('source');
     basicForumUrl.value = sourceUrl;
@@ -1884,12 +2076,15 @@ function setConnectionUi(mode = 'disconnected') {
   cmdInput.disabled = !isConnected;
   sendBtn.disabled = !isConnected;
   cmdBtns.forEach(button => button.disabled = !isConnected);
+  terminalRealtimeBtns.forEach(button => button.disabled = !isConnected);
 
   // BASIC run button follows connection state
   basicRunBtn.disabled = !isConnected || !basicScriptInput.value.trim() || basicRunning;
   basicStopBtn.disabled = !basicRunning;
 
   updateBannerWaitUi(); updateSequenceDelayUi();
+  syncCommandPrompt();
+  if (isConnected) queueMicrotask(() => cmdInput.focus());
 }
 
 function getCurrentDiagnosticsConfig() {
@@ -2204,7 +2399,7 @@ async function runStartupSequence(config, token) {
 
   if (!(await waitForStep(DEFAULT_READY_SETTLE_MS, token))) return;
 
-  addLine('Sending wake signal…', 'sys');
+  addLine('Sending wake signal�Ǫ', 'sys');
   await sendCommand('\n');
   if (!(await waitForStep(config.sequenceDelayMs || DEFAULT_STATUS_DELAY_MS, token))) return;
   await sendCommand('?');
@@ -2236,14 +2431,29 @@ async function disconnectPort(reason = 'Disconnected') {
 
 autoscrollBtn.addEventListener('click', () => {
   autoScroll = !autoScroll;
-  autoscrollBtn.style.color = autoScroll ? 'var(--teal)' : '';
-  autoscrollBtn.style.borderColor = autoScroll ? 'var(--teal)' : '';
+  syncAutoscrollUi();
+  if (autoScroll) scrollTerminalToBottom(true);
 });
 
-clearBtn.addEventListener('click', () => { terminal.innerHTML = ''; logLines = []; updateCopyLogState(); });
+clearBtn.addEventListener('click', () => {
+  terminal.innerHTML = '';
+  logLines = [];
+  updateCopyLogState();
+  scrollTerminalToBottom(true);
+});
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLinkBtn.addEventListener('click', copyBuilderLink);
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
+terminal.addEventListener('scroll', () => {
+  if (!autoScroll) return;
+  if (!isTerminalNearBottom()) {
+    autoScroll = false;
+    syncAutoscrollUi();
+  }
+});
+window.addEventListener('resize', () => {
+  if (autoScroll) scrollTerminalToBottom(true);
+});
 
 [dtrModeSelect, observeToggle, showRequestResponseToggle, bannerWaitToggle, sequenceDelayToggle, waitMsInput, bannerWaitMsInput, sequenceDelayInput, builderNameInput, builderCommandsInput].forEach(control => {
   control.addEventListener(control === observeToggle || control === showRequestResponseToggle || control === bannerWaitToggle || control === sequenceDelayToggle ? 'change' : 'input', () => {
@@ -2260,8 +2470,8 @@ exportBtn.addEventListener('click', () => { downloadTextFile(logLines.join('\n')
 function addLine(text, type = 'rx') {
   const now = new Date();
   const time = formatLogTimestamp(now);
-  const arrows = { tx: '→', rx: '←', sys: '●', err: '✕', basic: '⬡' };
-  const arrow = arrows[type] || '←';
+  const arrows = { tx: '���', rx: '���', sys: '���', err: 'ԣ�', basic: 'Լ�' };
+  const arrow = arrows[type] || '���';
 
   if (type === 'rx') {
     recordReadySignal(text);
@@ -2297,7 +2507,7 @@ function addLine(text, type = 'rx') {
   }
 
   updateCopyLogState();
-  if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
+  scrollTerminalToBottom();
   updateStatus(text);
 }
 
@@ -2364,7 +2574,7 @@ async function sendCommand(raw, displayOverride = null) {
     let cmd = raw;
     cmd = cmd.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\x18/g, '\x18');
     encoded = new TextEncoder().encode(cmd);
-    display = displayOverride || raw.replace(/\n/g,'↵').replace(/\r/g,'').replace(/\x18/g,'^X');
+    display = displayOverride || raw.replace(/\n/g,'���').replace(/\r/g,'').replace(/\x18/g,'^X');
   }
 
   try {
@@ -2473,6 +2683,14 @@ cmdBtns.forEach(btn => {
   btn.addEventListener('click', () => { void executeSequenceCommand(btn.dataset.cmd); });
 });
 
+terminalRealtimeBtns.forEach(btn => {
+  btn.addEventListener('click', () => { void executeSequenceCommand(btn.dataset.cmd); });
+});
+
+termInputShell.addEventListener('click', () => {
+  if (!cmdInput.disabled) cmdInput.focus();
+});
+
 sendBtn.addEventListener('click', () => {
   const val = cmdInput.value.trim();
   if (!val) return;
@@ -2480,6 +2698,7 @@ sendBtn.addEventListener('click', () => {
   if (cmdHistory.length > 50) cmdHistory.pop();
   historyIdx = -1;
   cmdInput.value = '';
+  syncCommandPrompt();
   void executeSequenceCommand(val);
 });
 
@@ -2488,13 +2707,19 @@ cmdInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowUp') {
     e.preventDefault();
     if (historyIdx < cmdHistory.length - 1) { historyIdx++; cmdInput.value = cmdHistory[historyIdx]; }
+    syncCommandPrompt();
   }
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     if (historyIdx > 0) { historyIdx--; cmdInput.value = cmdHistory[historyIdx]; }
     else { historyIdx = -1; cmdInput.value = ''; }
+    syncCommandPrompt();
   }
 });
+
+cmdInput.addEventListener('input', syncCommandPrompt);
+cmdInput.addEventListener('focus', syncCommandPrompt);
+cmdInput.addEventListener('blur', syncCommandPrompt);
 
 applyPresetToUi();
 setConnectionUi('disconnected');
@@ -2502,11 +2727,14 @@ updateAdvancedDiagnosticsDirtyState();
 setTransportState('disconnected');
 setMachineState('unknown');
 updateStartupBannerUi();
+syncAutoscrollUi();
+syncCommandPrompt();
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
   addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');
 }
+scrollTerminalToBottom(true);
 </script>
 </body>
 </html>
