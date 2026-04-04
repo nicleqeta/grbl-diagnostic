@@ -711,7 +711,6 @@
         <div id="basic-vars-section" style="display:none;">
           <div class="section-label" style="margin-bottom:6px;">Variables</div>
           <div id="basic-vars-list"></div>
-          <button class="btn" id="basic-apply-vars-btn" style="margin-top:4px;">Apply variables to script</button>
         </div>
         <textarea id="basic-script-input" placeholder="10 LET maxRPM = READ(&quot;$30&quot;)
 20 LET speed = 1000
@@ -1109,7 +1108,7 @@ function parseNewFormat(rawPostText) {
   // Build a clean description - strip backtick markers but keep the text
   const cleanDescription = configText.replace(/`(\w+=[\d.]+)`/g, (_, inner) => inner);
 
-  return { configText: cleanDescription, programText, vars };
+  return { configText: cleanDescription, rawConfigText: configText, programText, vars };
 }
 
 function substituteVars(program, vars) {
@@ -1122,13 +1121,38 @@ function substituteVars(program, vars) {
 
 // Stored raw program template (before var substitution) so re-apply works
 let basicRawProgram = '';
+let basicRawConfigText = '';
 let basicLoadedVars = {};
+
+function renderBasicConfigText(rawConfigText, vars) {
+  if (!rawConfigText) return 'Script loaded.';
+
+  let rendered = substituteVars(rawConfigText, vars);
+  rendered = rendered.replace(/`(\w+)=([^`]+)`/g, (_, key, originalValue) => {
+    const nextValue = Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : originalValue;
+    return `${key}=${nextValue}`;
+  });
+  rendered = rendered.replace(/`([^`]+)`/g, '$1').trim();
+
+  return rendered || 'Script loaded.';
+}
+
+function refreshBasicVariableViews() {
+  if (basicRawProgram) {
+    basicScriptInput.value = substituteVars(basicRawProgram, basicLoadedVars);
+  }
+  if (basicRawProgram || basicRawConfigText) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = renderBasicConfigText(basicRawConfigText, basicLoadedVars);
+  }
+}
 
 function renderVarEditor(vars) {
   const section = document.getElementById('basic-vars-section');
   const list    = document.getElementById('basic-vars-list');
 
   if (!vars || Object.keys(vars).length === 0) {
+    list.innerHTML = '';
     section.style.display = 'none';
     return;
   }
@@ -1147,9 +1171,9 @@ function renderVarEditor(vars) {
     input.value = value;
     input.dataset.varName = key;
     input.addEventListener('input', () => {
-      // Live update basicLoadedVars as user types
       const num = parseFloat(input.value);
       basicLoadedVars[key] = Number.isFinite(num) ? num : input.value;
+      refreshBasicVariableViews();
     });
 
     row.appendChild(label);
@@ -1159,23 +1183,6 @@ function renderVarEditor(vars) {
 
   section.style.display = 'block';
 }
-
-function applyVarsToScript() {
-  if (!basicRawProgram) return;
-  // Read current values from input fields
-  document.querySelectorAll('#basic-vars-list .var-row input').forEach(input => {
-    const key = input.dataset.varName;
-    const num = parseFloat(input.value);
-    basicLoadedVars[key] = Number.isFinite(num) ? num : input.value;
-  });
-  basicScriptInput.value = substituteVars(basicRawProgram, basicLoadedVars);
-  addLine(`Variables applied to script`, 'sys');
-}
-
-// Use event delegation - sidebar always exists even when details section is collapsed
-document.querySelector('.sidebar').addEventListener('click', e => {
-  if (e.target && e.target.id === 'basic-apply-vars-btn') applyVarsToScript();
-});
 
 function parseDiscourseUrl(forumPostUrl) {
   const m = forumPostUrl.match(/\/t\/(?:[^/]+\/)?(\d+)(?:\/(\d+))?/);
@@ -1227,18 +1234,14 @@ basicLoadUrlBtn.addEventListener('click', async () => {
       return;
     }
 
-    const { configText, programText, vars } = result;
+    const { rawConfigText, programText, vars } = result;
 
     // Store raw template for re-apply when vars change
     basicRawProgram = programText;
+    basicRawConfigText = rawConfigText;
     basicLoadedVars = { ...vars };
 
-    // Apply vars and load into editor
-    basicScriptInput.value = substituteVars(programText, vars);
-
-    // Show description
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = configText || 'Script loaded.';
+    refreshBasicVariableViews();
 
     // Render editable variable fields
     renderVarEditor(vars);
