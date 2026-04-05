@@ -830,7 +830,8 @@
           <button class="btn" id="basic-load-url-btn">Load from forum post</button>
         </details>
         <div class="help-text">
-          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
+          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
+          Optional SEND suffixes: <code>TIMEOUT expr</code> waits for an <code>ok</code>/<code>error</code>/<code>ALARM</code> reply up to the given limit, and <code>REQUIRE_OK</code> makes the command fail if no terminal acknowledgement arrives.<br>
           Save is blocked when syntax errors are present in the script or variable definitions.<br>
           Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
         </div>
@@ -1512,6 +1513,54 @@ function basicValidateConditionSyntax(condition, lineNum, definedParams, errors)
   basicValidateExpressionSyntax(match[3], lineNum, 'the right side of the IF condition', definedParams, errors);
 }
 
+function basicFindTrailingKeyword(text, keyword) {
+  const upperKeyword = String(keyword || '').toUpperCase();
+  let inString = false;
+  let matchIndex = -1;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (ch === '"' && text[index - 1] !== '\\') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (!/\s/.test(ch)) continue;
+
+    const rest = text.slice(index + 1);
+    if (!rest.toUpperCase().startsWith(upperKeyword)) continue;
+
+    const afterKeyword = rest[upperKeyword.length] || '';
+    if (afterKeyword && !/\s/.test(afterKeyword)) continue;
+    matchIndex = index + 1;
+  }
+
+  return matchIndex;
+}
+
+function basicParseSendOptions(sendBody) {
+  let body = String(sendBody || '').trim();
+  let requireOk = false;
+  let timeoutExpr = null;
+
+  if (/\s+REQUIRE_OK\s*$/i.test(body)) {
+    requireOk = true;
+    body = body.replace(/\s+REQUIRE_OK\s*$/i, '').trim();
+  }
+
+  const timeoutIndex = basicFindTrailingKeyword(body, 'TIMEOUT');
+  if (timeoutIndex !== -1) {
+    timeoutExpr = body.slice(timeoutIndex + 'TIMEOUT'.length).trim();
+    body = body.slice(0, timeoutIndex).trim();
+  }
+
+  return {
+    expression: body,
+    timeoutExpr,
+    requireOk
+  };
+}
+
 function basicValidateScript(source, paramNames = []) {
   const errors = [];
   const warnings = [];
@@ -1571,13 +1620,33 @@ function basicValidateScript(source, paramNames = []) {
 
     match = statement.match(/^SEND\s+(.+)$/i);
     if (match) {
-      basicValidateExpressionSyntax(match[1], lineNum, 'the SEND expression', definedParams, errors);
+      const sendSpec = basicParseSendOptions(match[1]);
+      if (!sendSpec.expression) {
+        errors.push(`Line ${lineNum}: the SEND expression is empty`);
+        return;
+      }
+      basicValidateExpressionSyntax(sendSpec.expression, lineNum, 'the SEND expression', definedParams, errors);
+      if (sendSpec.timeoutExpr != null) {
+        if (!sendSpec.timeoutExpr) {
+          errors.push(`Line ${lineNum}: the SEND TIMEOUT expression is empty`);
+          return;
+        }
+        basicValidateExpressionSyntax(sendSpec.timeoutExpr, lineNum, 'the SEND TIMEOUT expression', definedParams, errors);
+      }
       return;
     }
 
     match = statement.match(/^WAIT\s+(.+)$/i);
     if (match) {
       basicValidateExpressionSyntax(match[1], lineNum, 'the WAIT expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^WAIT_IDLE(?:\s+(.+))?$/i);
+    if (match) {
+      if (match[1]) {
+        basicValidateExpressionSyntax(match[1], lineNum, 'the WAIT_IDLE timeout expression', definedParams, errors);
+      }
       return;
     }
 
@@ -1607,6 +1676,8 @@ function basicValidateScript(source, paramNames = []) {
       jumpTargets.push({ fromLine: lineNum, target: parseInt(match[1], 10) });
       return;
     }
+
+    if (/^(HOLD|RESUME|STATUS|SOFT_RESET)$/i.test(statement)) return;
 
     if (/^END$/i.test(statement)) return;
 
@@ -2251,6 +2322,53 @@ async function basicDelayWithControl(ms) {
   return basicWaitForResumeOrStop();
 }
 
+async function basicSendRealtimeCommand(rawCommand, displayOverride = null) {
+  const command = normalizeCommandInput(rawCommand);
+  if (!command) return false;
+  return sendCommand(command.payload || command.send, displayOverride || command.display);
+}
+
+async function basicSendScriptCommand(commandText, { timeoutMs = null, requireOk = false } = {}) {
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  const result = await executeSequenceCommand(commandText, {
+    timeoutMs: normalizedTimeout,
+    requireAck: requireOk || normalizedTimeout != null
+  });
+
+  if (result.status === 'error') {
+    throw new Error(`Command failed: ${result.line}`);
+  }
+  if (result.status === 'alarm') {
+    throw new Error(`Machine alarm: ${result.line}`);
+  }
+  if (result.status === 'timeout') {
+    throw new Error(result.line);
+  }
+
+  return result;
+}
+
+async function basicWaitForIdle(timeoutMs = null) {
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+
+  while (true) {
+    if (!(await basicWaitForResumeOrStop())) return false;
+    if (!port) throw new Error('Serial connection lost while waiting for machine to become idle');
+    if (machineState === 'idle') return true;
+    if (machineState === 'alarm') throw new Error('Machine entered ALARM while waiting for idle');
+    if (transportState === 'fault' || transportState === 'disconnected') {
+      throw new Error('Connection fault while waiting for machine to become idle');
+    }
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      throw new Error(`WAIT_IDLE timed out after ${normalizedTimeout} ms`);
+    }
+
+    await basicSendRealtimeCommand('?');
+    if (!(await basicDelayWithControl(200))) return false;
+  }
+}
+
 async function runBasicScript(source) {
   if (basicRunning) return;
 
@@ -2350,10 +2468,11 @@ async function runBasicScript(source) {
 
       // SEND
       if (/^SEND\s+/i.test(stmt)) {
-        const arg = stmt.replace(/^SEND\s+/i, '').trim();
-        const cmdStr = String(basicEvalExpr(arg, basicVars)).trim();
+        const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
+        const cmdStr = String(basicEvalExpr(sendSpec.expression, basicVars)).trim();
+        const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(basicEvalExpr(sendSpec.timeoutExpr, basicVars)));
         addLine(`SEND: ${cmdStr}`, 'basic');
-        await sendCommand(cmdStr + '\n');
+        await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
         if (!(await basicDelayWithControl(100))) {
           stopScript();
           break;
@@ -2375,6 +2494,19 @@ async function runBasicScript(source) {
         continue;
       }
 
+      // WAIT_IDLE [timeoutMs]
+      if (/^WAIT_IDLE(?:\s+.+)?$/i.test(stmt)) {
+        const waitIdleM = stmt.match(/^WAIT_IDLE(?:\s+(.+))?$/i);
+        const timeoutMs = waitIdleM && waitIdleM[1] ? Math.round(Number(basicEvalExpr(waitIdleM[1], basicVars))) : null;
+        addLine(timeoutMs == null ? 'WAIT_IDLE' : `WAIT_IDLE ${timeoutMs} ms`, 'basic');
+        if (!(await basicWaitForIdle(timeoutMs))) {
+          stopScript();
+          break;
+        }
+        pc++;
+        continue;
+      }
+
       // PRINT
       if (/^PRINT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^PRINT\s+/i, '').trim();
@@ -2382,6 +2514,36 @@ async function runBasicScript(source) {
         addLine(`PRINT: ${msg}`, 'basic');
         pc++;
         continue;
+      }
+
+      // Realtime controller actions
+      if (/^HOLD$/i.test(stmt)) {
+        addLine('HOLD', 'basic');
+        await basicSendRealtimeCommand('!', '!');
+        pc++;
+        continue;
+      }
+
+      if (/^RESUME$/i.test(stmt)) {
+        addLine('RESUME', 'basic');
+        await basicSendRealtimeCommand('~', '~');
+        pc++;
+        continue;
+      }
+
+      if (/^STATUS$/i.test(stmt)) {
+        addLine('STATUS', 'basic');
+        await basicSendRealtimeCommand('?', '?');
+        pc++;
+        continue;
+      }
+
+      if (/^SOFT_RESET$/i.test(stmt)) {
+        addLine('SOFT_RESET', 'basic');
+        await basicSendRealtimeCommand('^X', '^X');
+        requestBasicStop('Soft reset sent; aborting BASIC script...', '--- Script aborted by soft reset ---');
+        stopScript();
+        break;
       }
 
       // INPUT
@@ -3197,14 +3359,14 @@ function waitForSequenceCommandResult(command, requestId, timeoutMs = 3500) {
   return new Promise(resolve => {
     const timeoutId = setTimeout(() => {
       if (pendingSequenceResponse?.timeoutId === timeoutId) {
-        settlePendingSequenceResponse({ status: 'timeout', line: `No terminal acknowledgement for ${command.display}`, requestId, command });
+        settlePendingSequenceResponse({ status: 'timeout', line: `No terminal acknowledgement for ${command.display} within ${timeoutMs} ms`, requestId, command });
       }
     }, timeoutMs);
     pendingSequenceResponse = { resolve, timeoutId, command, requestId };
   });
 }
 
-async function executeSequenceCommand(rawCommand) {
+async function executeSequenceCommand(rawCommand, options = {}) {
   const command = normalizeCommandInput(rawCommand);
   if (!command) return { status: 'skipped', line: 'Empty command' };
 
@@ -3227,12 +3389,14 @@ async function executeSequenceCommand(rawCommand) {
   if (basicRunning && command.send === '\x18') {
     requestBasicStop('Soft reset sent; aborting BASIC script...', '--- Script aborted by soft reset ---');
   }
-  if (!command.waitForAck) {
+  const timeoutMs = options.timeoutMs == null ? 3500 : Math.max(1, Math.round(Number(options.timeoutMs) || 0));
+  const shouldWaitForAck = Boolean(options.requireAck) || options.timeoutMs != null || command.waitForAck;
+  if (!shouldWaitForAck) {
     if (showRequestResponseCorrelation) addLine(`[${requestId}] completed without terminal acknowledgement wait`, 'sys');
     return { status: 'sent', line: `${taggedDisplay} sent without acknowledgement wait`, requestId, command };
   }
   if (showRequestResponseCorrelation) addLine(`[${requestId}] awaiting terminal acknowledgement for ${command.display}`, 'sys');
-  return waitForSequenceCommandResult(command, requestId);
+  return waitForSequenceCommandResult(command, requestId, timeoutMs);
 }
 
 async function waitForStep(ms, token) {
