@@ -3,6 +3,7 @@ const SCRIPT_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+const APP_TITLE = 'GRBL Serial Diagnostic';
 
 function generateId(length = 6) {
   const alphabet = 'abcdefghijkmnopqrstuvwxyz23456789';
@@ -12,6 +13,95 @@ function generateId(length = 6) {
     id += alphabet[value % alphabet.length];
   }
   return id;
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeScriptVars(vars) {
+  const next = {};
+  if (!isPlainObject(vars)) return next;
+  for (const [key, value] of Object.entries(vars)) {
+    const name = String(key || '').trim();
+    if (!name) continue;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      next[name] = value;
+      continue;
+    }
+    next[name] = String(value ?? '').trim();
+  }
+  return next;
+}
+
+function normalizeScriptPayload(payload) {
+  if (!isPlainObject(payload)) throw new Error('Script payload must be an object');
+
+  const title = String(payload.title || '').trim();
+  const programText = String(payload.programText || '').trim();
+  if (!title) throw new Error('Script title is required');
+  if (!programText) throw new Error('Script source is required');
+
+  return {
+    title,
+    version: String(payload.version || '').trim(),
+    author: String(payload.author || '').trim(),
+    description: String(payload.description || '').trim(),
+    programText,
+    vars: normalizeScriptVars(payload.vars),
+  };
+}
+
+function substituteScriptVars(text, vars) {
+  let result = String(text || '');
+  for (const [key, value] of Object.entries(vars || {})) {
+    result = result.replaceAll(`{${key}}`, value);
+  }
+  return result.trim();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildScriptDisplayName(script) {
+  let label = script.title || 'Saved Script';
+  if (script.version) label += ` v${script.version}`;
+  if (script.author) label += `::${script.author}`;
+  return `${APP_TITLE}::${label}`;
+}
+
+function buildScriptMetaDescription(script) {
+  const description = substituteScriptVars(script.description, script.vars);
+  if (description) return description.slice(0, 240);
+  return `Open ${script.title || 'this saved script'} in ${APP_TITLE}.`;
+}
+
+function injectScriptMetadata(html, requestUrl, script) {
+  const title = escapeHtml(buildScriptDisplayName(script));
+  const description = escapeHtml(buildScriptMetaDescription(script));
+  const canonicalUrl = escapeHtml(requestUrl.toString());
+  const metadata = [
+    `<meta name="description" content="${description}">`,
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${description}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:url" content="${canonicalUrl}">`
+  ].join('\n');
+
+  let nextHtml = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${title}</title>`);
+  if (!/<title>[\s\S]*?<\/title>/i.test(nextHtml)) {
+    nextHtml = nextHtml.replace(/<head>/i, `<head>\n<title>${title}</title>`);
+  }
+  if (!/meta\s+property="og:title"/i.test(nextHtml)) {
+    nextHtml = nextHtml.replace(/<\/head>/i, `${metadata}\n</head>`);
+  }
+  return nextHtml;
 }
 
 export default {
@@ -37,20 +127,21 @@ export default {
       if (url.pathname === '/script' && request.method === 'POST') {
         let data;
         try {
-          data = await request.json();
-        } catch {
-          return new Response('Invalid JSON body', {
+          data = normalizeScriptPayload(await request.json());
+        } catch (error) {
+          return new Response(error.message || 'Invalid JSON body', {
             status: 400,
             headers: SCRIPT_CORS_HEADERS,
           });
         }
 
         const id = generateId();
-        await env.GRBL_SCRIPTS.put(id, JSON.stringify({
+        const record = {
           ...data,
           id,
           created: new Date().toISOString(),
-        }));
+        };
+        await env.GRBL_SCRIPTS.put(id, JSON.stringify(record));
 
         return new Response(JSON.stringify({ id, url: `${url.origin}/?script=${id}` }), {
           headers: {
@@ -89,6 +180,33 @@ export default {
         status: 405,
         headers: SCRIPT_CORS_HEADERS,
       });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/' && url.searchParams.has('script') && env.GRBL_SCRIPTS) {
+      const scriptId = (url.searchParams.get('script') || '').trim();
+      if (scriptId) {
+        const stored = await env.GRBL_SCRIPTS.get(scriptId);
+        if (stored) {
+          try {
+            const script = normalizeScriptPayload(JSON.parse(stored));
+            const assetResponse = await env.ASSETS.fetch(request);
+            const contentType = assetResponse.headers.get('content-type') || '';
+            if (assetResponse.ok && contentType.includes('text/html')) {
+              const html = await assetResponse.text();
+              const headers = new Headers(assetResponse.headers);
+              headers.set('Content-Type', 'text/html; charset=utf-8');
+              headers.delete('Content-Length');
+              return new Response(injectScriptMetadata(html, url, script), {
+                status: assetResponse.status,
+                headers,
+              });
+            }
+            return assetResponse;
+          } catch {
+            // Fall through to the normal asset response if metadata injection fails.
+          }
+        }
+      }
     }
 
     // ── Proxy route — fetches Discourse raw post content server-side ──

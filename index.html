@@ -287,6 +287,33 @@
   .diag-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
   .diag-actions.two-up { grid-template-columns: 1fr 1fr; }
   .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .basic-meta-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); gap: 6px; }
+  .basic-meta-grid.three-up { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1fr); }
+  .basic-preview-title { color: var(--text); font-weight: 600; }
+  .basic-preview-meta { color: var(--text-muted); }
+  .basic-share-url {
+    display: block;
+    margin-top: 6px;
+    color: var(--teal);
+    word-break: break-all;
+  }
+  .basic-empty-vars {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .basic-legacy-import {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .basic-legacy-import summary {
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .basic-legacy-import[open] summary { color: var(--text-dim); }
 
   .help-text { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 
@@ -631,21 +658,25 @@
 
   .var-row {
     display: grid;
-    grid-template-columns: 1fr 80px;
+    grid-template-columns: minmax(0, 1fr) 110px 32px;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
   }
-  .var-row-label {
-    font-size: 12px;
-    color: var(--teal);
-    font-family: var(--mono);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .var-row input[type="text"] {
+  .var-row .var-key-input,
+  .var-row .var-value-input {
     margin-bottom: 0;
+    font-family: var(--mono);
+  }
+  .var-row .var-key-input {
+    color: var(--teal);
+    background: #08151a;
+    border-color: #145b52;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .var-row .var-key-input:focus { border-color: var(--teal); }
+  .var-row .var-value-input {
     font-family: var(--mono);
     color: var(--amber);
     border-color: #78350f;
@@ -653,7 +684,21 @@
     padding: 5px 8px;
     font-size: 12px;
   }
-  .var-row input[type="text"]:focus { border-color: var(--amber); }
+  .var-row .var-value-input:focus { border-color: var(--amber); }
+  .var-row-remove {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin-bottom: 0;
+    border-radius: 6px;
+    border: 1px solid #7f1d1d;
+    background: var(--red-dim);
+    color: #fecaca;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .var-row-remove:hover { background: #991b1b; border-color: #b91c1c; }
 
   @media (max-width: 980px) {
     main { flex-direction: column; }
@@ -738,29 +783,44 @@
         <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
-        <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL..." title="Paste a forum post URL to load a grbl-basic script from that post.">
-        <button class="btn" id="basic-load-url-btn">Load from forum post</button>
-        <div class="diag-box muted" id="basic-config-box">No script loaded.</div>
-        <div id="basic-vars-section" style="display:none;">
+        <div class="basic-meta-grid three-up">
+          <input type="text" id="basic-title-input" placeholder="Script title, e.g. Ramp Test" title="Required title for the saved script and share preview.">
+          <input type="text" id="basic-version-input" placeholder="Version" title="Optional version such as 1.2.">
+          <input type="text" id="basic-author-input" placeholder="Author" title="Optional author name for the generated share preview.">
+        </div>
+        <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post." style="min-height:88px;"></textarea>
+        <div class="diag-box muted" id="basic-config-box">Write a title, description, variables, and script to create a shareable program.</div>
+        <div id="basic-vars-section">
           <div class="section-label" style="margin-bottom:6px;">Variables</div>
           <div id="basic-vars-list"></div>
+          <button class="btn" id="basic-add-var-btn">Add Variable</button>
         </div>
         <textarea id="basic-script-input" placeholder="10 LET maxRPM = READ(&quot;$30&quot;)
-20 LET speed = 1000
+20 LET speed = {start}
 30 SEND &quot;M3 S&quot; &amp; STR(speed)
-40 WAIT 2000
+40 WAIT {wait_ms}
 50 PRINT &quot;Running at &quot; &amp; STR(speed) &amp; &quot; RPM&quot;
-60 LET speed = speed + 1000
+60 LET speed = speed + {step}
 70 IF speed &lt;= maxRPM THEN GOTO 30
 80 SEND &quot;M5&quot;
 90 END" style="min-height:140px;"></textarea>
+        <div class="diag-actions" style="margin-bottom:8px;">
+          <button class="btn success" id="basic-save-btn">Save Script</button>
+          <button class="btn" id="basic-copy-share-btn" disabled>Copy Share Link</button>
+          <button class="btn" id="basic-copy-forum-btn" disabled>Copy Forum Post</button>
+        </div>
         <div class="diag-actions two-up" style="margin-bottom:8px;">
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
+        <details class="basic-legacy-import">
+          <summary>Legacy forum import</summary>
+          <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL..." title="Compatibility path for loading a grbl-basic script from an existing forum post.">
+          <button class="btn" id="basic-load-url-btn">Load from forum post</button>
+        </details>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
-          Forum posts use a single code block with description text and <code>`key=value`</code> variables above <code>[grbl-basic]</code>.
+          Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
         </div>
       </div>
     </details>
@@ -900,6 +960,7 @@ const cmdPromptLabel = document.getElementById('cmd-prompt-label');
 const cmdDisplay   = document.getElementById('cmd-display');
 const cmdPlaceholder = document.getElementById('cmd-placeholder');
 const baudSelect   = document.getElementById('baud-select');
+const basicSection = document.getElementById('basic-section');
 const advancedSection = document.getElementById('advanced-section');
 const dtrModeSelect= document.getElementById('dtr-mode-select');
 const observeToggle= document.getElementById('observe-toggle');
@@ -922,10 +983,19 @@ const sidebar = document.getElementById('sidebar');
 const sidebarResizer = document.getElementById('sidebar-resizer');
 
 // BASIC UI elements
+const basicTitleInput  = document.getElementById('basic-title-input');
+const basicVersionInput= document.getElementById('basic-version-input');
+const basicAuthorInput = document.getElementById('basic-author-input');
+const basicDescriptionInput = document.getElementById('basic-description-input');
 const basicForumUrl    = document.getElementById('basic-forum-url');
 const basicLoadUrlBtn  = document.getElementById('basic-load-url-btn');
 const basicConfigBox   = document.getElementById('basic-config-box');
+const basicVarsList    = document.getElementById('basic-vars-list');
+const basicAddVarBtn   = document.getElementById('basic-add-var-btn');
 const basicScriptInput = document.getElementById('basic-script-input');
+const basicSaveBtn     = document.getElementById('basic-save-btn');
+const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
+const basicCopyForumBtn= document.getElementById('basic-copy-forum-btn');
 const basicRunBtn      = document.getElementById('basic-run-btn');
 const basicStopBtn     = document.getElementById('basic-stop-btn');
 const basicInputBar    = document.getElementById('basic-input-bar');
@@ -978,10 +1048,16 @@ const DEFAULT_STATUS_DELAY_MS = 600;
 const DEFAULT_BANNER_TIMEOUT_MS = 3000;
 const DEFAULT_READY_SETTLE_MS = 150;
 const MAX_LOG_LINES = 5000;
+const APP_TITLE = 'GRBL Serial Diagnostic';
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 const SIDEBAR_WIDTH_KEY = 'grbl-diagnostic-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 480;
+const RESERVED_SCRIPT_QUERY_KEYS = new Set([
+  'script', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
+  'delay', 'banner_timeout', 'banner_wait', 'show_req_resp', 'source', 'scrape',
+  'post', 'basic_post'
+]);
 
 const TRANSPORT_STATE_META = {
   disconnected: { label: 'Disconnected', className: 'status-pill disconnected' },
@@ -1019,7 +1095,7 @@ let readySignalLine = null;
 let readySignalAt = null;
 let startupBannerLine = null;
 let sidebarResizeState = null;
-let startupBasicPostUrl = null;
+let startupScriptRequest = null;
 let currentRun = {
   name: 'manual', description: 'Manual connect', source: 'manual',
   baud: parseInt(baudSelect.value, 10), dtrMode: 'default',
@@ -1215,65 +1291,222 @@ function substituteVars(program, vars) {
 let basicRawProgram = '';
 let basicRawConfigText = '';
 let basicLoadedVars = {};
+let basicBaseVars = {};
+let basicSourceId = '';
 
-function renderBasicConfigText(rawConfigText, vars) {
-  if (!rawConfigText) return 'Script loaded.';
+function basicParseValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const text = String(value ?? '').trim();
+  if (/^-?(?:\d+\.\d+|\d+|\.\d+)$/.test(text)) return Number(text);
+  return text;
+}
 
-  let rendered = substituteVars(rawConfigText, vars);
-  rendered = rendered.replace(/`(\w+)=([^`]+)`/g, (_, key, originalValue) => {
-    const nextValue = Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : originalValue;
-    return `${key}=${nextValue}`;
+function normalizeBasicVars(vars) {
+  const source = vars && typeof vars === 'object' ? vars : {};
+  const next = {};
+  for (const [key, value] of Object.entries(source)) {
+    const name = String(key || '').trim();
+    if (!name) continue;
+    next[name] = basicParseValue(value);
+  }
+  return next;
+}
+
+function getBasicScriptMeta() {
+  return {
+    title: basicTitleInput.value.trim(),
+    version: basicVersionInput.value.trim(),
+    author: basicAuthorInput.value.trim(),
+    description: basicDescriptionInput.value.trim()
+  };
+}
+
+function setBasicScriptMeta(meta = {}) {
+  basicTitleInput.value = meta.title || '';
+  basicVersionInput.value = meta.version || '';
+  basicAuthorInput.value = meta.author || '';
+  basicDescriptionInput.value = meta.description || '';
+  basicRawConfigText = basicDescriptionInput.value.trim();
+}
+
+function buildBasicDisplayName(meta = getBasicScriptMeta()) {
+  const title = (meta.title || '').trim();
+  if (!title) return '';
+  const version = (meta.version || '').trim();
+  const author = (meta.author || '').trim();
+  let label = title;
+  if (version) label += ` v${version}`;
+  if (author) label += ` :: ${author}`;
+  return label;
+}
+
+function buildBasicPageTitle(meta = getBasicScriptMeta()) {
+  const label = buildBasicDisplayName(meta);
+  return label ? `${APP_TITLE}::${label}` : APP_TITLE;
+}
+
+function updateBasicDocumentTitle() {
+  document.title = buildBasicPageTitle();
+}
+
+function getBasicRenderedDescription() {
+  return basicRawConfigText ? substituteVars(basicRawConfigText, basicLoadedVars).trim() : '';
+}
+
+function buildBasicOverrideEntries() {
+  if (!basicSourceId) return [];
+  const overrides = [];
+  for (const [key, value] of Object.entries(basicLoadedVars)) {
+    if (!Object.prototype.hasOwnProperty.call(basicBaseVars, key)) continue;
+    if (String(value) !== String(basicBaseVars[key])) overrides.push([key, String(value)]);
+  }
+  return overrides;
+}
+
+function buildBasicShareUrl() {
+  if (!basicSourceId) return '';
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('script', basicSourceId);
+  buildBasicOverrideEntries().forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
+function buildBasicPreviewText(includeShareUrl = true) {
+  const meta = getBasicScriptMeta();
+  const lines = [];
+  const label = buildBasicDisplayName(meta);
+  const description = getBasicRenderedDescription();
+
+  if (label) lines.push(label);
+  if (description) lines.push(description);
+  if (includeShareUrl && basicSourceId) lines.push(`Share URL:\n${buildBasicShareUrl()}`);
+
+  if (!lines.length && basicRawProgram.trim()) return 'Script ready.';
+  if (!lines.length) return 'Write a title, description, variables, and script to create a shareable program.';
+  return lines.join('\n\n');
+}
+
+function collectBasicVarsFromEditor() {
+  const next = {};
+  basicVarsList.querySelectorAll('.var-row').forEach(row => {
+    const nameInput = row.querySelector('.var-key-input');
+    const valueInput = row.querySelector('.var-value-input');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!name) return;
+    next[name] = basicParseValue(valueInput ? valueInput.value : '');
   });
-  rendered = rendered.replace(/`([^`]+)`/g, '$1').trim();
-
-  return rendered || 'Script loaded.';
+  return next;
 }
 
-function refreshBasicVariableViews() {
-  if (basicRawProgram) {
-    basicScriptInput.value = substituteVars(basicRawProgram, basicLoadedVars);
-  }
-  if (basicRawProgram || basicRawConfigText) {
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = renderBasicConfigText(basicRawConfigText, basicLoadedVars);
-  }
+function getNextBasicVarName() {
+  let index = 1;
+  while (Object.prototype.hasOwnProperty.call(basicLoadedVars, `var${index}`)) index += 1;
+  return `var${index}`;
 }
 
-function renderVarEditor(vars) {
-  const section = document.getElementById('basic-vars-section');
-  const list    = document.getElementById('basic-vars-list');
+function refreshBasicVariableViews(syncUrl = true) {
+  basicRawConfigText = basicDescriptionInput.value.trim();
+  basicRawProgram = basicScriptInput.value.trim();
+  basicConfigBox.className = basicRawProgram || basicRawConfigText || getBasicScriptMeta().title ? 'diag-box' : 'diag-box muted';
+  basicConfigBox.textContent = buildBasicPreviewText(true);
+  updateBasicDocumentTitle();
+  updateBasicControlUi();
+  if (syncUrl) updateUrlFromAdvancedDiagnostics();
+}
 
-  if (!vars || Object.keys(vars).length === 0) {
-    list.innerHTML = '';
-    section.style.display = 'none';
+function markBasicScriptStructuralDirty() {
+  startupScriptRequest = null;
+  basicSourceId = '';
+  refreshBasicVariableViews();
+}
+
+function renderVarEditor(vars = basicLoadedVars) {
+  const nextVars = normalizeBasicVars(vars);
+  basicLoadedVars = { ...nextVars };
+  basicVarsList.innerHTML = '';
+
+  const entries = Object.entries(nextVars);
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'basic-empty-vars';
+    empty.textContent = 'No variables defined yet. Add defaults that can be overridden in shared links.';
+    basicVarsList.appendChild(empty);
     return;
   }
 
-  list.innerHTML = '';
-  for (const [key, value] of Object.entries(vars)) {
+  entries.forEach(([key, value]) => {
     const row = document.createElement('div');
     row.className = 'var-row';
 
-    const label = document.createElement('span');
-    label.className = 'var-row-label';
-    label.textContent = key;
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'var-key-input';
+    nameInput.value = key;
+    nameInput.placeholder = 'name';
+    nameInput.addEventListener('input', () => {
+      basicLoadedVars = collectBasicVarsFromEditor();
+      markBasicScriptStructuralDirty();
+    });
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = value;
-    input.dataset.varName = key;
-    input.addEventListener('input', () => {
-      const num = parseFloat(input.value);
-      basicLoadedVars[key] = Number.isFinite(num) ? num : input.value;
+    const valueInput = document.createElement('input');
+    valueInput.type = 'text';
+    valueInput.className = 'var-value-input';
+    valueInput.value = value;
+    valueInput.placeholder = 'value';
+    valueInput.addEventListener('input', () => {
+      basicLoadedVars = collectBasicVarsFromEditor();
       refreshBasicVariableViews();
     });
 
-    row.appendChild(label);
-    row.appendChild(input);
-    list.appendChild(row);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'var-row-remove';
+    removeBtn.title = `Remove variable ${key}`;
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      delete basicLoadedVars[key];
+      markBasicScriptStructuralDirty();
+      renderVarEditor(basicLoadedVars);
+    });
+
+    row.appendChild(nameInput);
+    row.appendChild(valueInput);
+    row.appendChild(removeBtn);
+    basicVarsList.appendChild(row);
+  });
+}
+
+function applyBasicScriptPackage(script, { sourceId = '', overrides = null, updateHistory = true } = {}) {
+  const normalized = {
+    title: String(script?.title || '').trim(),
+    version: String(script?.version || '').trim(),
+    author: String(script?.author || '').trim(),
+    description: String(script?.description || '').trim(),
+    programText: String(script?.programText || '').trim(),
+    vars: normalizeBasicVars(script?.vars || {})
+  };
+
+  setBasicScriptMeta(normalized);
+  basicRawProgram = normalized.programText;
+  basicScriptInput.value = normalized.programText;
+  basicBaseVars = { ...normalized.vars };
+  basicLoadedVars = { ...normalized.vars };
+
+  if (overrides && typeof overrides === 'object') {
+    for (const [key, value] of Object.entries(overrides)) {
+      if (Object.prototype.hasOwnProperty.call(basicLoadedVars, key)) {
+        basicLoadedVars[key] = basicParseValue(value);
+      }
+    }
   }
 
-  section.style.display = 'block';
+  startupScriptRequest = null;
+  basicSourceId = sourceId || '';
+  renderVarEditor(basicLoadedVars);
+  refreshBasicVariableViews(updateHistory);
+  if (basicSection) basicSection.open = true;
 }
 
 function parseDiscourseUrl(forumPostUrl) {
@@ -1295,34 +1528,72 @@ async function fetchDiscoursePostRaw(origin, topicId, postNumber) {
   return await resp.text();
 }
 
-function parseStartupBasicPostUrl() {
+function parseStartupScriptRequest() {
   const params = new URLSearchParams(window.location.search);
-  const candidate = params.get('basic_post') || params.get('post') || params.get('scrape') || params.get('source') || '';
-  const value = candidate.trim();
-  return value || null;
+  const scriptId = (params.get('script') || '').trim();
+  if (!scriptId) return null;
+
+  const overrides = {};
+  params.forEach((value, key) => {
+    if (RESERVED_SCRIPT_QUERY_KEYS.has(key)) return;
+    overrides[key] = value;
+  });
+
+  return { id: scriptId, overrides };
 }
 
-async function loadBasicForumPost(url) {
-  const forumPostUrl = (url || '').trim();
-  basicForumUrl.value = forumPostUrl;
+function normalizeSavedScriptPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Saved script payload is invalid');
+  }
+  const programText = String(payload.programText || '').trim();
+  if (!programText) throw new Error('Saved script is missing programText');
+  return {
+    title: String(payload.title || '').trim(),
+    version: String(payload.version || '').trim(),
+    author: String(payload.author || '').trim(),
+    description: String(payload.description || '').trim(),
+    programText,
+    vars: normalizeBasicVars(payload.vars || {})
+  };
+}
 
-  const varsSection = document.getElementById('basic-vars-section');
+async function loadBasicScriptFromId(id, overrides = {}) {
+  const scriptId = String(id || '').trim();
+  if (!scriptId) return false;
 
-  if (!forumPostUrl) {
+  basicConfigBox.className = 'diag-box muted';
+  basicConfigBox.textContent = `Loading saved script ${scriptId}...`;
+
+  try {
+    const response = await fetch(`/script/${encodeURIComponent(scriptId)}`);
+    if (!response.ok) throw new Error(`Load failed: HTTP ${response.status}`);
+    const payload = normalizeSavedScriptPayload(await response.json());
+    applyBasicScriptPackage(payload, { sourceId: scriptId, overrides });
+    addLine(`Saved script loaded: ${payload.title || scriptId}`, 'sys');
+    return true;
+  } catch (error) {
     basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = 'Please enter a forum post URL first.';
+    basicConfigBox.textContent = `Load failed: ${error.message}`;
+    addLine(`Saved script load failed: ${error.message}`, 'err');
     return false;
   }
+}
 
-  const parsed = parseDiscourseUrl(forumPostUrl);
+basicLoadUrlBtn.addEventListener('click', async () => {
+  const url = basicForumUrl.value.trim();
+  if (!url) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = 'Please enter a forum post URL first.';
+    return;
+  }
+
+  const parsed = parseDiscourseUrl(url);
   if (!parsed) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = 'Could not parse that URL. Make sure it is a Discourse forum post URL.';
-    return false;
+    return;
   }
-
-  startupBasicPostUrl = forumPostUrl;
-  updateUrlFromAdvancedDiagnostics();
 
   basicLoadUrlBtn.disabled = true;
   basicLoadUrlBtn.textContent = 'Loading...';
@@ -1336,43 +1607,30 @@ async function loadBasicForumPost(url) {
     if (!result) {
       basicConfigBox.className = 'diag-box';
       basicConfigBox.textContent = 'No [grbl-basic] block found in that post.';
-      varsSection.style.display = 'none';
-      return false;
+      renderVarEditor({});
+      return;
     }
 
     const { rawConfigText, programText, vars } = result;
 
-    basicRawProgram = programText;
-    basicRawConfigText = rawConfigText;
-    basicLoadedVars = { ...vars };
-
-    refreshBasicVariableViews();
-    renderVarEditor(vars);
-
-    updateBasicControlUi();
-    updateUrlFromAdvancedDiagnostics();
+    applyBasicScriptPackage({
+      title: '',
+      version: '',
+      author: '',
+      description: rawConfigText,
+      programText,
+      vars
+    }, { sourceId: '' });
     addLine(`BASIC script loaded (${Object.keys(vars).length} variable(s) found)`, 'sys');
-    return true;
 
   } catch(e) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = `Load failed: ${e.message}`;
     addLine(`Forum script load failed: ${e.message}`, 'err');
-    return false;
   } finally {
     basicLoadUrlBtn.disabled = false;
     basicLoadUrlBtn.textContent = 'Load from forum post';
   }
-}
-
-basicLoadUrlBtn.addEventListener('click', async () => {
-  const url = basicForumUrl.value.trim();
-  if (!url) {
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = 'Please enter a forum post URL first.';
-    return;
-  }
-  await loadBasicForumPost(url);
 });
 
 // BASIC INTERPRETER
@@ -1558,7 +1816,12 @@ basicInputField.addEventListener('keydown', e => {
 });
 
 function updateBasicControlUi() {
-  basicRunBtn.disabled = !port || !basicScriptInput.value.trim() || basicRunning;
+  const hasScript = Boolean(basicScriptInput.value.trim());
+  const hasTitle = Boolean(basicTitleInput.value.trim());
+  basicSaveBtn.disabled = !hasTitle || !hasScript || basicRunning;
+  basicCopyShareBtn.disabled = !basicSourceId;
+  basicCopyForumBtn.disabled = !basicSourceId;
+  basicRunBtn.disabled = !port || !hasScript || basicRunning;
   basicStopBtn.disabled = !basicRunning;
 }
 
@@ -1598,8 +1861,8 @@ async function basicDelayWithControl(ms) {
 async function runBasicScript(source) {
   if (basicRunning) return;
 
-  // Use already-parsed vars and description from the loaded script
-  const configText = basicConfigBox.textContent.startsWith('No ') ? '' : basicConfigBox.textContent;
+  const scriptSource = substituteVars(source, basicLoadedVars);
+  const configText = buildBasicPreviewText(false);
   const configVars = basicLoadedVars || {};
 
   // Show confirm dialog
@@ -1622,7 +1885,7 @@ async function runBasicScript(source) {
   updateBasicControlUi();
   addLine('--- BASIC script started ---', 'basic');
 
-  const { lines, order } = basicParseLines(source);
+  const { lines, order } = basicParseLines(scriptSource);
   let pc = 0; // index into order[]
   let stopLogged = false;
 
@@ -1793,7 +2056,19 @@ basicStopBtn.addEventListener('click', () => {
 
 // Enable/disable run button based on connection and script content
 basicScriptInput.addEventListener('input', () => {
-  updateBasicControlUi();
+  markBasicScriptStructuralDirty();
+});
+
+[basicTitleInput, basicVersionInput, basicAuthorInput, basicDescriptionInput].forEach(control => {
+  control.addEventListener('input', () => {
+    markBasicScriptStructuralDirty();
+  });
+});
+
+basicAddVarBtn.addEventListener('click', () => {
+  basicLoadedVars = { ...basicLoadedVars, [getNextBasicVarName()]: 0 };
+  markBasicScriptStructuralDirty();
+  renderVarEditor(basicLoadedVars);
 });
 
 // INCOMING LINE INTERCEPTOR (for READ)
@@ -2007,6 +2282,7 @@ function buildPresetSummary(config) {
 
 function parseDiagnosticsPreset() {
   const params = new URLSearchParams(window.location.search);
+  if (params.has('script')) return null;
   const hasPresetParams = ['preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait', 'delay', 'banner_timeout', 'banner_wait', 'show_req_resp'].some(key => params.has(key));
   if (!hasPresetParams) return null;
 
@@ -2127,8 +2403,7 @@ function updatePresetBox() {
 }
 
 function applyPresetToUi() {
-  startupBasicPostUrl = parseStartupBasicPostUrl();
-  if (startupBasicPostUrl) basicForumUrl.value = startupBasicPostUrl;
+  startupScriptRequest = parseStartupScriptRequest();
   diagnosticsPreset = parseDiagnosticsPreset();
   if (!diagnosticsPreset) {
     updateBannerWaitUi(); updatePresetBox(); updateAdvancedDiagnosticsDirtyState(); updateUrlFromAdvancedDiagnostics();
@@ -2158,16 +2433,23 @@ function updateAdvancedDiagnosticsDirtyState() {
 }
 
 function updateUrlFromAdvancedDiagnostics() {
+  if (basicSourceId) {
+    try { window.history.replaceState({}, '', buildBasicShareUrl()); } catch { /* suppressed in sandboxed iframe environments */ }
+    return;
+  }
+  if (startupScriptRequest) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('script', startupScriptRequest.id);
+    Object.entries(startupScriptRequest.overrides || {}).forEach(([key, value]) => url.searchParams.set(key, value));
+    try { window.history.replaceState({}, '', url.toString()); } catch { /* suppressed in sandboxed iframe environments */ }
+    return;
+  }
   const activeConfig = getActiveAdvancedDiagnosticsConfig('builder');
   const nextUrl = hasAdvancedDiagnosticsSelection(activeConfig)
     ? buildPresetUrl(activeConfig)
-    : (() => {
-        const url = new URL(window.location.href);
-        url.search = '';
-        const forumPostUrl = (basicForumUrl.value || startupBasicPostUrl || '').trim();
-        if (forumPostUrl) url.searchParams.set('basic_post', forumPostUrl);
-        return `${url.pathname}${url.search}${url.hash}`;
-      })();
+    : `${window.location.pathname}${window.location.hash}`;
   try { window.history.replaceState({}, '', nextUrl); } catch { /* suppressed in sandboxed iframe environments */ }
 }
 
@@ -2273,8 +2555,6 @@ function getCurrentDiagnosticsConfig() {
 function buildPresetUrl(config) {
   const url = new URL(window.location.href);
   url.search = '';
-  const forumPostUrl = (basicForumUrl.value || startupBasicPostUrl || '').trim();
-  if (forumPostUrl) url.searchParams.set('basic_post', forumPostUrl);
   url.searchParams.set('name', config.name || 'custom-builder');
   url.searchParams.set('baud', String(baudSelect.value));
   url.searchParams.set('dtr', config.dtrMode || 'default');
@@ -2335,6 +2615,103 @@ function downloadTextFile(text, filenamePrefix = 'grbl-diagnostic') {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+async function copyTextPayload(text, successMessage, filenamePrefix) {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API not available in this browser context');
+    await navigator.clipboard.writeText(text);
+    addLine(successMessage, 'sys');
+    return true;
+  } catch (error) {
+    try {
+      downloadTextFile(text, filenamePrefix);
+      addLine(`Clipboard copy unavailable (${error.message}); downloaded ${filenamePrefix} instead`, 'sys');
+      return true;
+    } catch (downloadError) {
+      addLine(`Copy failed: ${downloadError.message}`, 'err');
+      return false;
+    }
+  }
+}
+
+function collectBasicScriptPayload() {
+  basicLoadedVars = collectBasicVarsFromEditor();
+  basicRawConfigText = basicDescriptionInput.value.trim();
+  basicRawProgram = basicScriptInput.value.trim();
+
+  const meta = getBasicScriptMeta();
+  if (!meta.title) throw new Error('Script title is required');
+  if (!basicRawProgram) throw new Error('Script source is required');
+
+  return {
+    title: meta.title,
+    version: meta.version,
+    author: meta.author,
+    description: basicRawConfigText,
+    programText: basicRawProgram,
+    vars: { ...basicLoadedVars }
+  };
+}
+
+function buildBasicForumPost() {
+  if (!basicSourceId) throw new Error('Save the script before copying a forum post');
+
+  const description = getBasicRenderedDescription();
+  const shareUrl = buildBasicShareUrl();
+  const codeBlock = basicScriptInput.value.trim();
+  const intro = description || 'Open the link below to load this GRBL script in the web app.';
+
+  return `${intro}\n\n[details="Expand to read script detail"]\n\`\`\`\n${codeBlock}\n\`\`\`\n[/details]\n\nTo run, first close any existing connection to the machine then follow the link below using a Chrome or Edge browser:\n\n${shareUrl}`;
+}
+
+async function saveBasicScript() {
+  const payload = collectBasicScriptPayload();
+  basicSaveBtn.disabled = true;
+  basicSaveBtn.textContent = 'Saving...';
+
+  try {
+    const response = await fetch('/script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Save failed: HTTP ${response.status}`);
+
+    const result = await response.json();
+    const id = String(result?.id || '').trim();
+    if (!id) throw new Error('Save succeeded but no script ID was returned');
+
+    basicBaseVars = { ...payload.vars };
+    basicLoadedVars = { ...payload.vars };
+    basicSourceId = id;
+    renderVarEditor(basicLoadedVars);
+    refreshBasicVariableViews();
+    addLine(`Saved script snapshot ${id}`, 'sys');
+    return true;
+  } catch (error) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = `Save failed: ${error.message}`;
+    addLine(`Save script failed: ${error.message}`, 'err');
+    return false;
+  } finally {
+    basicSaveBtn.textContent = 'Save Script';
+    updateBasicControlUi();
+  }
+}
+
+basicSaveBtn.addEventListener('click', () => { void saveBasicScript(); });
+basicCopyShareBtn.addEventListener('click', () => {
+  const shareUrl = buildBasicShareUrl();
+  if (!shareUrl) return;
+  void copyTextPayload(shareUrl, 'Saved script link copied to clipboard', 'grbl-script-link');
+});
+basicCopyForumBtn.addEventListener('click', () => {
+  try {
+    void copyTextPayload(buildBasicForumPost(), 'Forum post copy prepared', 'grbl-script-post');
+  } catch (error) {
+    addLine(error.message, 'err');
+  }
+});
 
 async function copyDiagnosticsLog() {
   const payload = buildDiscoursePayload();
@@ -2918,9 +3295,9 @@ addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 
 if (diagnosticsPreset) {
   addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');
 }
-if (startupBasicPostUrl) {
-  addLine('Loading BASIC script from shared forum post URL', 'sys');
-  queueMicrotask(() => { void loadBasicForumPost(startupBasicPostUrl); });
+if (startupScriptRequest) {
+  addLine(`Loading saved script ${startupScriptRequest.id}`, 'sys');
+  queueMicrotask(() => { void loadBasicScriptFromId(startupScriptRequest.id, startupScriptRequest.overrides); });
 }
 scrollTerminalToBottom(true);
 </script>
