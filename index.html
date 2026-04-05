@@ -312,18 +312,6 @@
     color: var(--text-muted);
     margin-bottom: 8px;
   }
-  .basic-legacy-import {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--border);
-  }
-  .basic-legacy-import summary {
-    cursor: pointer;
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }
-  .basic-legacy-import[open] summary { color: var(--text-dim); }
 
   .help-text { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 
@@ -824,11 +812,6 @@
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
-        <details class="basic-legacy-import">
-          <summary>Legacy forum import</summary>
-          <input type="text" id="basic-forum-url" placeholder="Paste Discourse forum post URL..." title="Compatibility path for loading a grbl-basic script from an existing forum post.">
-          <button class="btn" id="basic-load-url-btn">Load from forum post</button>
-        </details>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SETTING</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>WAIT_STATE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>CONFIRM</code>, <code>PAUSE</code>, <code>RESULT</code>, <code>REPORT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>GOSUB</code>, <code>RETURN</code>, <code>END</code>.<br>
           INPUT forms: <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>, or shorthand <code>INPUT name</code> (optional prompt: <code>INPUT name, "Prompt"</code>).<br>
@@ -1002,8 +985,6 @@ const basicTitleInput  = document.getElementById('basic-title-input');
 const basicVersionInput= document.getElementById('basic-version-input');
 const basicAuthorInput = document.getElementById('basic-author-input');
 const basicDescriptionInput = document.getElementById('basic-description-input');
-const basicForumUrl    = document.getElementById('basic-forum-url');
-const basicLoadUrlBtn  = document.getElementById('basic-load-url-btn');
 const basicConfigBox   = document.getElementById('basic-config-box');
 const basicValidationBox = document.getElementById('basic-validation-box');
 const basicVarsList    = document.getElementById('basic-vars-list');
@@ -1237,67 +1218,6 @@ function syncCommandPrompt() {
   termInputShell.classList.toggle('empty', !hasValue);
   termInputShell.classList.toggle('inactive', !connected);
   termInputShell.classList.toggle('focused', connected && document.activeElement === cmdInput);
-}
-
-// DISCOURSE FORUM SCRAPER
-
-// New format: everything inside one code block.
-// Config description lines come before [grbl-basic], variables
-// are inline as `key=value` backtick spans.
-//
-// Example post format:
-//
-//   This script ramps the spindle starting at `start=1000` RPM,
-//   in steps of `step=1000` RPM, waiting `wait_ms=2000` ms.
-//   [grbl-basic]
-//   10 LET maxRPM = READ("$30")
-//   ...
-//   [/grbl-basic]
-
-function parseNewFormat(rawPostText) {
-  // Find the outermost code fence that contains [grbl-basic]
-  // Discourse raw uses ``` fences
-  const fencePattern = /```[\w]*\n([\s\S]*?)```/g;
-  let block = null;
-  let m;
-  while ((m = fencePattern.exec(rawPostText)) !== null) {
-    if (m[1].includes('[grbl-basic]')) {
-      block = m[1];
-      break;
-    }
-  }
-
-  // Also check without fences (plain [grbl-basic] in post body)
-  if (!block && rawPostText.includes('[grbl-basic]')) {
-    block = rawPostText;
-  }
-
-  if (!block) return null;
-
-  // Split on [grbl-basic] - everything before is config description,
-  // everything between tags is the BASIC program
-  const tagOpen  = '[grbl-basic]';
-  const tagClose = '[/grbl-basic]';
-  const openIdx  = block.indexOf(tagOpen);
-  const closeIdx = block.indexOf(tagClose);
-  if (openIdx === -1 || closeIdx === -1) return null;
-
-  const configText  = block.slice(0, openIdx).trim();
-  const programText = block.slice(openIdx + tagOpen.length, closeIdx).trim();
-
-  // Parse variables from inline backtick format: `key=value`
-  const vars = {};
-  const varPattern = /`(\w+)=([\d.]+)`/g;
-  let v;
-  while ((v = varPattern.exec(configText)) !== null) {
-    const num = parseFloat(v[2]);
-    vars[v[1]] = Number.isFinite(num) ? num : v[2];
-  }
-
-  // Build a clean description - strip backtick markers but keep the text
-  const cleanDescription = configText.replace(/`(\w+=[\d.]+)`/g, (_, inner) => inner);
-
-  return { configText: cleanDescription, rawConfigText: configText, programText, vars };
 }
 
 function substituteVars(program, vars) {
@@ -1971,25 +1891,6 @@ function applyBasicScriptPackage(script, { sourceId = '', overrides = null, upda
   if (basicSection) basicSection.open = true;
 }
 
-function parseDiscourseUrl(forumPostUrl) {
-  const m = forumPostUrl.match(/\/t\/(?:[^/]+\/)?(\d+)(?:\/(\d+))?/);
-  if (!m) return null;
-  const base = new URL(forumPostUrl);
-  return {
-    origin: `${base.protocol}//${base.host}`,
-    topicId: m[1],
-    postNumber: m[2] ? parseInt(m[2], 10) : 1
-  };
-}
-
-async function fetchDiscoursePostRaw(origin, topicId, postNumber) {
-  const discourseRawUrl = `${origin}/raw/${topicId}/${postNumber}`;
-  const proxyUrl = `/proxy?url=${encodeURIComponent(discourseRawUrl)}`;
-  const resp = await fetch(proxyUrl);
-  if (!resp.ok) throw new Error(`Fetch failed: HTTP ${resp.status}`);
-  return await resp.text();
-}
-
 function parseStartupScriptRequest() {
   const params = new URLSearchParams(window.location.search);
   const scriptId = (params.get('script') || '').trim();
@@ -2041,59 +1942,6 @@ async function loadBasicScriptFromId(id, overrides = {}) {
     return false;
   }
 }
-
-basicLoadUrlBtn.addEventListener('click', async () => {
-  const url = basicForumUrl.value.trim();
-  if (!url) {
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = 'Please enter a forum post URL first.';
-    return;
-  }
-
-  const parsed = parseDiscourseUrl(url);
-  if (!parsed) {
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = 'Could not parse that URL. Make sure it is a Discourse forum post URL.';
-    return;
-  }
-
-  basicLoadUrlBtn.disabled = true;
-  basicLoadUrlBtn.textContent = 'Loading...';
-  basicConfigBox.className = 'diag-box muted';
-  basicConfigBox.textContent = `Fetching post ${parsed.postNumber} from topic ${parsed.topicId}...`;
-
-  try {
-    const raw = await fetchDiscoursePostRaw(parsed.origin, parsed.topicId, parsed.postNumber);
-    const result = parseNewFormat(raw);
-
-    if (!result) {
-      basicConfigBox.className = 'diag-box';
-      basicConfigBox.textContent = 'No [grbl-basic] block found in that post.';
-      renderVarEditor({});
-      return;
-    }
-
-    const { rawConfigText, programText, vars } = result;
-
-    applyBasicScriptPackage({
-      title: '',
-      version: '',
-      author: '',
-      description: rawConfigText,
-      programText,
-      vars
-    }, { sourceId: '' });
-    addLine(`BASIC script loaded (${Object.keys(vars).length} variable(s) found)`, 'sys');
-
-  } catch(e) {
-    basicConfigBox.className = 'diag-box';
-    basicConfigBox.textContent = `Load failed: ${e.message}`;
-    addLine(`Forum script load failed: ${e.message}`, 'err');
-  } finally {
-    basicLoadUrlBtn.disabled = false;
-    basicLoadUrlBtn.textContent = 'Load from forum post';
-  }
-});
 
 // BASIC INTERPRETER
 
