@@ -1481,9 +1481,11 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
   }
 
   normalized = normalized
-    .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '"text"')
+    .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '__string__')
     .replace(/\bSTR\s*\(/gi, '__str__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => token === '__str__' ? token : '__value__')
+    .replace(/\bABS\s*\(/gi, '__abs__(')
+    .replace(/\bINT\s*\(/gi, '__int__(')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__str__', '__abs__', '__int__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1493,7 +1495,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __str__ = value => String(value); return (${normalized});`);
+    Function(`"use strict"; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
