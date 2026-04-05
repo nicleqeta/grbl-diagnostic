@@ -831,6 +831,7 @@
         </details>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SETTING</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>WAIT_STATE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>CONFIRM</code>, <code>PAUSE</code>, <code>RESULT</code>, <code>REPORT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>GOSUB</code>, <code>RETURN</code>, <code>END</code>.<br>
+            Built-in expression functions: <code>STR(expr)</code>, <code>ABS(expr)</code>, <code>INT(expr)</code>, <code>RND(max)</code>, <code>STATE()</code>.<br>
           Optional SEND suffixes: <code>TIMEOUT expr</code> waits for an <code>ok</code>/<code>error</code>/<code>ALARM</code> reply up to the given limit, and <code>REQUIRE_OK</code> makes the command fail if no terminal acknowledgement arrives.<br>
           Save is blocked when syntax errors are present in the script or variable definitions.<br>
           Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
@@ -1492,7 +1493,8 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bSTR\s*\(/gi, '__str__(')
     .replace(/\bABS\s*\(/gi, '__abs__(')
     .replace(/\bINT\s*\(/gi, '__int__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__str__', '__abs__', '__int__'].includes(token) ? token : '__value__')
+    .replace(/\bRND\s*\(/gi, '__rnd__(')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__str__', '__abs__', '__int__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1502,7 +1504,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); return (${normalized});`);
+    Function(`"use strict"; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -2240,6 +2242,13 @@ function basicEvalExpr(expr, vars) {
         const inner = parseExpr();
         expect('OP', ')');
         return Math.trunc(Number(inner));
+      }
+      if (name === 'RND') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        const upper = Math.max(1, Math.trunc(Number(inner) || 0));
+        return Math.floor(Math.random() * upper) + 1;
       }
       if (name === 'STATE') {
         if (peek() && peek().type === 'OP' && peek().value === '(') {
