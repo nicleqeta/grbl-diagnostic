@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRBL BASIC Command Help</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --teal: #14b8a6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: radial-gradient(1000px 600px at 20% -10%, rgba(20, 184, 166, 0.14), transparent 55%),
+                radial-gradient(900px 500px at 120% 20%, rgba(245, 158, 11, 0.12), transparent 55%),
+                var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 24px 16px 56px;
+  }
+
+  .hero {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(34, 38, 58, 0.75), rgba(26, 29, 39, 0.75));
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+  }
+
+  .subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 12px;
+  }
+
+  h2 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    color: var(--teal);
+  }
+
+  h3 {
+    margin: 12px 0 6px;
+    font-size: 14px;
+    color: var(--amber);
+  }
+
+  p { margin: 0 0 8px; }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li { margin-bottom: 6px; }
+
+  code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+    color: #c7d2fe;
+  }
+
+  pre {
+    margin: 8px 0 0;
+    padding: 10px;
+    background: #0d1118;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-x: auto;
+  }
+
+  pre code {
+    border: 0;
+    background: transparent;
+    color: #dbeafe;
+    padding: 0;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .chip {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .ok { color: var(--green); }
+  .warn { color: var(--amber); }
+  .err { color: var(--red); }
+</style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>GRBL BASIC Command Summary</h1>
+      <p class="subtitle">One-page reference for the BASIC runner in this app, grouped by job type.</p>
+      <div class="chip-row">
+        <span class="chip">Line-numbered scripts</span>
+        <span class="chip">Case-insensitive commands</span>
+        <span class="chip">Numbers + strings</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>1. Data And Variables</h2>
+      <ul>
+        <li><code>LET name = expr</code>: Assign expression result to a variable.</li>
+        <li><code>READ("$30") INTO name</code> or <code>LET name = READ("$30")</code>: Read a GRBL setting from <code>$$</code>.</li>
+        <li><code>SETTING("$30") INTO name</code> or <code>LET name = SETTING("$30")</code>: Alias for <code>READ</code>.</li>
+        <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input.</li>
+      </ul>
+      <pre><code>10 LET max = READ("$30")
+20 INPUT speed, "Enter speed"
+30 LET pct = INT((speed / max) * 100)</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>2. Machine I/O Commands</h2>
+      <ul>
+        <li><code>SEND expr</code>: Send a command string to GRBL. Expression is converted to text.</li>
+        <li><code>SEND expr TIMEOUT expr</code>: Wait for terminal acknowledgement up to timeout ms.</li>
+        <li><code>SEND expr REQUIRE_OK</code>: Fail statement if no <code>ok/error/ALARM</code> acknowledgement arrives.</li>
+        <li><code>SEND expr TIMEOUT expr REQUIRE_OK</code>: Use both options together.</li>
+        <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
+      </ul>
+      <pre><code>10 SEND "M3 S" & STR(speed) TIMEOUT 1200 REQUIRE_OK
+20 STATUS
+30 HOLD
+40 WAIT 500
+50 RESUME</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>3. Timing And State Waiting</h2>
+      <ul>
+        <li><code>WAIT expr</code>: Delay for N ms.</li>
+        <li><code>WAIT_IDLE</code> or <code>WAIT_IDLE timeoutMs</code>: Wait until machine is idle.</li>
+        <li><code>WAIT_STATE target</code> or <code>WAIT_STATE target TIMEOUT timeoutMs</code>: Wait for specific state.</li>
+      </ul>
+      <pre><code>10 SEND "G0 X0 Y0" TIMEOUT 1500 REQUIRE_OK
+20 WAIT_IDLE 20000
+30 WAIT_STATE "idle" TIMEOUT 5000</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>4. User Messaging And Results</h2>
+      <ul>
+        <li><code>PRINT expr</code>: Log a message to terminal.</li>
+        <li><code>CONFIRM expr</code>: Show confirmation dialog. If canceled, script stops.</li>
+        <li><code>PAUSE</code>: Pause script until resumed.</li>
+        <li><code>RESULT name, expr</code>: Save a named result value.</li>
+        <li><code>REPORT</code>: Print all saved results.</li>
+      </ul>
+      <pre><code>10 PRINT "Starting run"
+20 RESULT "target_speed", speed
+30 CONFIRM "Run with speed " & STR(speed) & "?"
+40 REPORT</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>5. Program Flow</h2>
+      <ul>
+        <li><code>IF condition THEN GOTO line</code>: Conditional jump.</li>
+        <li><code>GOTO line</code>: Unconditional jump.</li>
+        <li><code>GOSUB line</code> and <code>RETURN</code>: Subroutine call/return.</li>
+        <li><code>END</code>: Stop script.</li>
+      </ul>
+      <pre><code>10 LET n = RND(10)
+20 INPUT guess, "Guess 1-10"
+30 IF guess = n THEN GOTO 80
+40 PRINT "Try again"
+50 GOTO 20
+80 PRINT "Correct"
+90 END</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>6. Expression Functions</h2>
+      <ul>
+        <li><code>STR(expr)</code>: Convert value to string.</li>
+        <li><code>ABS(expr)</code>: Absolute value.</li>
+        <li><code>INT(expr)</code>: Integer truncation.</li>
+        <li><code>RND(max)</code>: Random integer from 1 to max.</li>
+        <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
+      </ul>
+      <pre><code>10 LET choice = RND(3)
+20 IF choice = 1 THEN GOTO 100
+30 PRINT "State: " & STATE()</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>7. Authoring Rules In This App</h2>
+      <ul>
+        <li><span class="warn">Validation:</span> save is blocked while syntax errors exist.</li>
+        <li><span class="ok">Sharing:</span> saved scripts are loaded by <code>?script=...</code>.</li>
+        <li><span class="ok">Overrides:</span> matching query params override saved variable defaults.</li>
+        <li><span class="err">Safety:</span> runtime has instruction/time limits and stop controls.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
