@@ -812,14 +812,7 @@
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
-        <div class="help-text">
-          Supports: <code>LET</code>, <code>READ</code>, <code>SETTING</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>WAIT_STATE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>CONFIRM</code>, <code>PAUSE</code>, <code>RESULT</code>, <code>REPORT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>GOSUB</code>, <code>RETURN</code>, <code>END</code>.<br>
-          INPUT forms: <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>, or shorthand <code>INPUT name</code> (optional prompt: <code>INPUT name, "Prompt"</code>).<br>
-            Built-in expression functions: <code>STR(expr)</code>, <code>ABS(expr)</code>, <code>INT(expr)</code>, <code>RND(max)</code>, <code>STATE()</code>.<br>
-          Optional SEND suffixes: <code>TIMEOUT expr</code> waits for an <code>ok</code>/<code>error</code>/<code>ALARM</code> reply up to the given limit, and <code>REQUIRE_OK</code> makes the command fail if no terminal acknowledgement arrives.<br>
-          Save is blocked when syntax errors are present in the script or variable definitions.<br>
-          Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
-        </div>
+        <button class="btn" id="basic-help-btn" type="button" style="margin-bottom:8px;">BASIC Help</button>
       </div>
     </details>
 
@@ -995,6 +988,7 @@ const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
 const basicCopyForumBtn= document.getElementById('basic-copy-forum-btn');
 const basicRunBtn      = document.getElementById('basic-run-btn');
 const basicStopBtn     = document.getElementById('basic-stop-btn');
+const basicHelpBtn     = document.getElementById('basic-help-btn');
 const basicInputBar    = document.getElementById('basic-input-bar');
 const basicInputPrompt = document.getElementById('basic-input-prompt');
 const basicInputField  = document.getElementById('basic-input-field');
@@ -2264,6 +2258,22 @@ function basicShowConfirm(configText, vars) {
 
 basicConfirmCancel.addEventListener('click', () => { if (basicConfirmResolver) basicConfirmResolver(false); });
 basicConfirmRun.addEventListener('click',    () => { if (basicConfirmResolver) basicConfirmResolver(true);  });
+
+basicHelpBtn?.addEventListener('click', () => {
+  const width = 980;
+  const height = 760;
+  const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+  const features = [
+    `width=${width}`,
+    `height=${height}`,
+    `left=${left}`,
+    `top=${top}`,
+    'resizable=yes',
+    'scrollbars=yes'
+  ].join(',');
+  window.open('basic-help.html', 'grbl-basic-help-window', features);
+});
 
 basicInputOk.addEventListener('click', () => {
   if (basicInputResolver) basicInputResolver(basicInputField.value);
