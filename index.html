@@ -756,6 +756,55 @@
         <option value="38400">38400 baud</option>
         <option value="19200">19200 baud</option>
       </select>
+      <details class="section-collapsible" id="advanced-section" style="margin-bottom:8px; border:1px solid var(--border); border-radius:6px;">
+        <summary class="section-toggle" style="padding:10px 12px;">
+          <span class="section-label" style="margin-bottom:0;">Advanced Connection</span>
+          <span class="section-toggle-icon">&#9656;</span>
+        </summary>
+        <div class="section-content" style="padding:0 12px 12px;">
+          <select id="dtr-mode-select">
+            <option value="default" selected>DTR: Browser default</option>
+            <option value="low">DTR: Disable after open (Low)</option>
+            <option value="high">DTR: Enable after open (High)</option>
+            <option value="pulse">DTR: Pulse after open (Low to High)</option>
+          </select>
+          <label class="check-row">
+            <input type="checkbox" id="observe-toggle">
+            <span>Observe only. Skip default wake and status traffic.</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="show-request-response-toggle">
+            <span>Show request/response correlation</span>
+          </label>
+          <div class="label-input-row">
+            <span class="label-input-row-label">Start wait:</span>
+            <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="0" title="Wait after opening the port and applying any DTR action before sending startup commands.">
+          </div>
+          <div class="check-input-row">
+            <label class="check-row">
+              <input type="checkbox" id="banner-wait-toggle" checked>
+              <span>Banner wait</span>
+            </label>
+            <input type="number" id="banner-wait-ms-input" min="1" max="10000" step="100" value="3000" placeholder="3000" title="Milliseconds to wait for startup text before proceeding.">
+          </div>
+          <div class="check-input-row">
+            <label class="check-row">
+              <input type="checkbox" id="sequence-delay-toggle">
+              <span>Extra sequence delay</span>
+            </label>
+            <input type="number" id="sequence-delay-input" min="1" max="10000" step="50" value="450" placeholder="450" title="Extra delay between diagnostic sequence commands.">
+          </div>
+          <div class="diag-box muted" id="preset-box">No preset loaded. Shareable test links can prefill diagnostics and safe command sequences.</div>
+          <input type="text" id="builder-name-input" placeholder="Builder name, e.g. settings-and-build-info" title="Optional label for this advanced diagnostic setup and the generated support link.">
+          <textarea id="builder-commands-input" placeholder="One GRBL command per line. Up to 10 commands. Example:
+$$
+$#
+$I" title="Enter up to 10 commands, one per line."></textarea>
+          <button class="btn" id="copy-link-btn">Copy Link</button>
+          <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Connection</button>
+          <div class="help-text">These commands run one at a time in order, and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use <code>hex:18</code> for a raw byte like <code>0x18</code>. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
+        </div>
+      </details>
       <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
@@ -815,56 +864,6 @@
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
         <button class="btn" id="basic-help-btn" type="button" style="margin-bottom:8px;">BASIC Help</button>
-      </div>
-    </details>
-
-    <details class="section section-collapsible" id="advanced-section">
-      <summary class="section-toggle">
-        <span class="section-label">Advanced Diagnostics</span>
-        <span class="section-toggle-icon">&#9656;</span>
-      </summary>
-      <div class="section-content">
-      <select id="dtr-mode-select">
-        <option value="default" selected>DTR: Browser default</option>
-        <option value="low">DTR: Disable after open (Low)</option>
-        <option value="high">DTR: Enable after open (High)</option>
-        <option value="pulse">DTR: Pulse after open (Low to High)</option>
-      </select>
-      <label class="check-row">
-        <input type="checkbox" id="observe-toggle">
-        <span>Observe only. Skip default wake and status traffic.</span>
-      </label>
-      <label class="check-row">
-        <input type="checkbox" id="show-request-response-toggle">
-        <span>Show request/response correlation</span>
-      </label>
-      <div class="label-input-row">
-        <span class="label-input-row-label">Start wait:</span>
-        <input type="number" id="wait-ms-input" min="0" max="10000" step="100" value="0" placeholder="0" title="Wait after opening the port and applying any DTR action before sending startup commands.">
-      </div>
-      <div class="check-input-row">
-        <label class="check-row">
-          <input type="checkbox" id="banner-wait-toggle" checked>
-          <span>Banner wait</span>
-        </label>
-        <input type="number" id="banner-wait-ms-input" min="1" max="10000" step="100" value="3000" placeholder="3000" title="Milliseconds to wait for startup text before proceeding.">
-      </div>
-      <div class="check-input-row">
-        <label class="check-row">
-          <input type="checkbox" id="sequence-delay-toggle">
-          <span>Extra sequence delay</span>
-        </label>
-        <input type="number" id="sequence-delay-input" min="1" max="10000" step="50" value="450" placeholder="450" title="Extra delay between diagnostic sequence commands.">
-      </div>
-      <div class="diag-box muted" id="preset-box">No preset loaded. Shareable test links can prefill diagnostics and safe command sequences.</div>
-      <input type="text" id="builder-name-input" placeholder="Builder name, e.g. settings-and-build-info" title="Optional label for this advanced diagnostic setup and the generated support link.">
-      <textarea id="builder-commands-input" placeholder="One GRBL command per line. Up to 10 commands. Example:
-$$
-$#
-$I" title="Enter up to 10 commands, one per line."></textarea>
-      <button class="btn" id="copy-link-btn">Copy Link</button>
-      <button class="icon-btn" id="reset-advanced-btn" title="Reset all advanced diagnostic fields to their default values and clear any loaded preset.">Reset Advanced Diagnostics</button>
-      <div class="help-text">These commands run one at a time in order, and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use <code>hex:18</code> for a raw byte like <code>0x18</code>. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
       </div>
     </details>
 
