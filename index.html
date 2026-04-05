@@ -830,7 +830,7 @@
           <button class="btn" id="basic-load-url-btn">Load from forum post</button>
         </details>
         <div class="help-text">
-          Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
+          Supports: <code>LET</code>, <code>READ</code>, <code>SETTING</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>WAIT_STATE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>CONFIRM</code>, <code>PAUSE</code>, <code>RESULT</code>, <code>REPORT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>GOSUB</code>, <code>RETURN</code>, <code>END</code>.<br>
           Optional SEND suffixes: <code>TIMEOUT expr</code> waits for an <code>ok</code>/<code>error</code>/<code>ALARM</code> reply up to the given limit, and <code>REQUIRE_OK</code> makes the command fail if no terminal acknowledgement arrives.<br>
           Save is blocked when syntax errors are present in the script or variable definitions.<br>
           Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
@@ -1128,7 +1128,9 @@ let basicStopMessage = '--- Script stopped by user ---';
 let basicInputResolver = null;
 let basicConfirmResolver = null;
 let basicVars = {};
-let basicGrblSettings = {};   // cache of $N=value from READ
+let basicResults = new Map();
+let basicCallStack = [];
+let basicGrblSettings = {};   // cache of $N=value from READ/SETTING
 const BASIC_CONTROL_POLL_MS = 50;
 const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
 const BASIC_TIMEOUT_MS      = 60_000;    // hard wall-clock limit per run (ms)
@@ -1317,6 +1319,10 @@ function basicParseValue(value) {
   const text = String(value ?? '').trim();
   if (/^-?(?:\d+\.\d+|\d+|\.\d+)$/.test(text)) return Number(text);
   return text;
+}
+
+function basicNormalizeRuntimeVarName(name) {
+  return String(name || '').trim().toUpperCase();
 }
 
 function normalizeBasicVars(vars) {
@@ -1561,6 +1567,63 @@ function basicParseSendOptions(sendBody) {
   };
 }
 
+function basicParseWaitStateOptions(waitStateBody) {
+  const body = String(waitStateBody || '').trim();
+  const timeoutIndex = basicFindTrailingKeyword(body, 'TIMEOUT');
+  if (timeoutIndex === -1) {
+    return {
+      targetExpr: body,
+      timeoutExpr: null
+    };
+  }
+
+  return {
+    targetExpr: body.slice(0, timeoutIndex).trim(),
+    timeoutExpr: body.slice(timeoutIndex + 'TIMEOUT'.length).trim()
+  };
+}
+
+function basicFindTopLevelComma(text) {
+  let inString = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (ch === '"' && text[index - 1] !== '\\') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === ',') return index;
+  }
+  return -1;
+}
+
+function basicParseResultOptions(resultBody) {
+  const body = String(resultBody || '').trim();
+  const commaIndex = basicFindTopLevelComma(body);
+  if (commaIndex === -1) {
+    return { key: null, valueExpr: '', error: 'RESULT requires "name, expression" format' };
+  }
+
+  const keyToken = body.slice(0, commaIndex).trim();
+  const valueExpr = body.slice(commaIndex + 1).trim();
+  let key = null;
+
+  const quoted = keyToken.match(/^"([^"]+)"$/);
+  if (quoted) {
+    key = quoted[1].trim();
+  } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(keyToken)) {
+    key = keyToken;
+  }
+
+  if (!key) {
+    return { key: null, valueExpr, error: 'RESULT key must be a quoted string or identifier' };
+  }
+  if (!valueExpr) {
+    return { key: null, valueExpr, error: 'RESULT value expression is empty' };
+  }
+
+  return { key, valueExpr, error: null };
+}
+
 function basicValidateScript(source, paramNames = []) {
   const errors = [];
   const warnings = [];
@@ -1607,8 +1670,19 @@ function basicValidateScript(source, paramNames = []) {
     match = statement.match(/^READ\("([^"]+)"\)\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
     if (match) return;
 
+    match = statement.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*SETTING\("([^"]+)"\)$/i);
+    if (match) return;
+
+    match = statement.match(/^SETTING\("([^"]+)"\)\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+    if (match) return;
+
     if (/\bREAD\s*\(/i.test(statement)) {
       errors.push(`Line ${lineNum}: READ must be written as LET name = READ("$30") or READ("$30") INTO name`);
+      return;
+    }
+
+    if (/\bSETTING\s*\(/i.test(statement)) {
+      errors.push(`Line ${lineNum}: SETTING must be written as LET name = SETTING("$30") or SETTING("$30") INTO name`);
       return;
     }
 
@@ -1650,11 +1724,50 @@ function basicValidateScript(source, paramNames = []) {
       return;
     }
 
+    match = statement.match(/^WAIT_STATE\s+(.+)$/i);
+    if (match) {
+      const waitStateSpec = basicParseWaitStateOptions(match[1]);
+      if (!waitStateSpec.targetExpr) {
+        errors.push(`Line ${lineNum}: the WAIT_STATE target expression is empty`);
+        return;
+      }
+      basicValidateExpressionSyntax(waitStateSpec.targetExpr, lineNum, 'the WAIT_STATE target expression', definedParams, errors);
+      if (waitStateSpec.timeoutExpr != null) {
+        if (!waitStateSpec.timeoutExpr) {
+          errors.push(`Line ${lineNum}: the WAIT_STATE TIMEOUT expression is empty`);
+          return;
+        }
+        basicValidateExpressionSyntax(waitStateSpec.timeoutExpr, lineNum, 'the WAIT_STATE TIMEOUT expression', definedParams, errors);
+      }
+      return;
+    }
+
     match = statement.match(/^PRINT\s+(.+)$/i);
     if (match) {
       basicValidateExpressionSyntax(match[1], lineNum, 'the PRINT expression', definedParams, errors);
       return;
     }
+
+    match = statement.match(/^CONFIRM\s+(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[1], lineNum, 'the CONFIRM message expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^RESULT\s+(.+)$/i);
+    if (match) {
+      const resultSpec = basicParseResultOptions(match[1]);
+      if (resultSpec.error) {
+        errors.push(`Line ${lineNum}: ${resultSpec.error}`);
+        return;
+      }
+      basicValidateExpressionSyntax(resultSpec.valueExpr, lineNum, 'the RESULT value expression', definedParams, errors);
+      return;
+    }
+
+    if (/^REPORT$/i.test(statement)) return;
+
+    if (/^PAUSE$/i.test(statement)) return;
 
     match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\("([^"]*)"\)$/i);
     if (match) return;
@@ -1676,6 +1789,14 @@ function basicValidateScript(source, paramNames = []) {
       jumpTargets.push({ fromLine: lineNum, target: parseInt(match[1], 10) });
       return;
     }
+
+    match = statement.match(/^GOSUB\s+(\d+)$/i);
+    if (match) {
+      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[1], 10) });
+      return;
+    }
+
+    if (/^RETURN$/i.test(statement)) return;
 
     if (/^(HOLD|RESUME|STATUS|SOFT_RESET)$/i.test(statement)) return;
 
@@ -2120,8 +2241,16 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         return Math.trunc(Number(inner));
       }
+      if (name === 'STATE') {
+        if (peek() && peek().type === 'OP' && peek().value === '(') {
+          consume();
+          expect('OP', ')');
+        }
+        return String(machineState || 'unknown');
+      }
       // Variable lookup
-      if (Object.prototype.hasOwnProperty.call(vars, name)) return vars[name];
+      const normalizedName = basicNormalizeRuntimeVarName(name);
+      if (Object.prototype.hasOwnProperty.call(vars, normalizedName)) return vars[normalizedName];
       throw new Error(`Undefined variable: ${name}`);
     }
     if (t.type === 'OP' && t.value === '(') {
@@ -2166,9 +2295,9 @@ function basicParseCondition(condStr, vars) {
 }
 
 // Ask GRBL for a setting value, e.g. READ("$30") returns 10000
-async function basicReadGrbl(settingStr) {
+async function basicReadGrbl(settingStr, modeLabel = 'READ') {
   const setting = settingStr.replace(/^["']|["']$/g, '').trim(); // strip quotes
-  addLine(`READ ${setting}`, 'basic');
+  addLine(`${modeLabel} ${setting}`, 'basic');
 
   return new Promise((resolve) => {
     let done = false;
@@ -2188,7 +2317,7 @@ async function basicReadGrbl(settingStr) {
         if (val !== undefined) {
           resolve(val);
         } else {
-          addLine(`READ: ${setting} not found in $$ response, defaulting to 0`, 'err');
+          addLine(`${modeLabel}: ${setting} not found in $$ response, defaulting to 0`, 'err');
           resolve(0);
         }
       }
@@ -2215,10 +2344,10 @@ async function basicReadGrbl(settingStr) {
         incomingLineInterceptor = null;
         const val = basicGrblSettings[setting];
         if (val !== undefined) {
-          addLine(`READ: timeout waiting for ok, using cached ${setting} = ${val}`, 'basic');
+          addLine(`${modeLabel}: timeout waiting for ok, using cached ${setting} = ${val}`, 'basic');
           resolve(val);
         } else {
-          addLine(`READ: timeout - ${setting} not found, defaulting to 0`, 'err');
+          addLine(`${modeLabel}: timeout - ${setting} not found, defaulting to 0`, 'err');
           resolve(0);
         }
       }
@@ -2369,6 +2498,42 @@ async function basicWaitForIdle(timeoutMs = null) {
   }
 }
 
+function basicNormalizeMachineState(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'idle') return 'idle';
+  if (['run', 'hold', 'jog', 'home', 'busy'].includes(normalized)) return 'busy';
+  if (normalized === 'alarm') return 'alarm';
+  if (normalized === 'reset') return 'reset';
+  if (normalized === 'unknown') return 'unknown';
+  return null;
+}
+
+async function basicWaitForMachineState(targetState, timeoutMs = null) {
+  const normalizedTarget = basicNormalizeMachineState(targetState);
+  if (!normalizedTarget) {
+    throw new Error(`WAIT_STATE target is not supported: ${targetState}`);
+  }
+
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+
+  while (true) {
+    if (!(await basicWaitForResumeOrStop())) return false;
+    if (!port) throw new Error('Serial connection lost while waiting for machine state');
+    if (machineState === normalizedTarget) return true;
+    if (transportState === 'fault' || transportState === 'disconnected') {
+      throw new Error('Connection fault while waiting for machine state');
+    }
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      throw new Error(`WAIT_STATE timed out after ${normalizedTimeout} ms`);
+    }
+
+    await basicSendRealtimeCommand('?');
+    if (!(await basicDelayWithControl(200))) return false;
+  }
+}
+
 async function runBasicScript(source) {
   if (basicRunning) return;
 
@@ -2393,6 +2558,8 @@ async function runBasicScript(source) {
   basicPaused = false;
   basicStopMessage = '--- Script stopped by user ---';
   basicVars = {};
+  basicResults = new Map();
+  basicCallStack = [];
   updateBasicControlUi();
   addLine('--- BASIC script started ---', 'basic');
 
@@ -2434,7 +2601,7 @@ async function runBasicScript(source) {
       const lineNum = order[pc];
       const stmt = lines[lineNum];
 
-      // READ (must come before generic LET so LET x = READ(...) is handled here)
+      // READ/SETTING (must come before generic LET so LET x = READ(...) is handled here)
       if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
         // Handle both: LET x = READ("$30") and READ("$30") INTO x
         let varName = null;
@@ -2445,8 +2612,26 @@ async function runBasicScript(source) {
         if (readIntoM) { settingArg = readIntoM[1]; varName = readIntoM[2]; }
 
         if (varName && settingArg) {
-          const val = await basicReadGrbl(settingArg);
-          basicVars[varName] = val;
+          const val = await basicReadGrbl(settingArg, 'READ');
+          basicVars[basicNormalizeRuntimeVarName(varName)] = val;
+          addLine(`${varName} = ${val}`, 'basic');
+        }
+        pc++;
+        continue;
+      }
+
+      if (/^LET\s+\w+\s*=\s*SETTING\(/i.test(stmt) || /^SETTING\(/i.test(stmt)) {
+        // Handle both: LET x = SETTING("$30") and SETTING("$30") INTO x
+        let varName = null;
+        let settingArg = null;
+        const letSettingM = stmt.match(/^LET\s+(\w+)\s*=\s*SETTING\("([^"]+)"\)/i);
+        if (letSettingM) { varName = letSettingM[1]; settingArg = letSettingM[2]; }
+        const settingIntoM = stmt.match(/^SETTING\("([^"]+)"\)\s+INTO\s+(\w+)/i);
+        if (settingIntoM) { settingArg = settingIntoM[1]; varName = settingIntoM[2]; }
+
+        if (varName && settingArg) {
+          const val = await basicReadGrbl(settingArg, 'SETTING');
+          basicVars[basicNormalizeRuntimeVarName(varName)] = val;
           addLine(`${varName} = ${val}`, 'basic');
         }
         pc++;
@@ -2460,7 +2645,7 @@ async function runBasicScript(source) {
         if (eq !== -1) {
           const varName = body.slice(0, eq).trim();
           const valExpr = body.slice(eq + 1).trim();
-          basicVars[varName] = basicEvalExpr(valExpr, basicVars);
+          basicVars[basicNormalizeRuntimeVarName(varName)] = basicEvalExpr(valExpr, basicVars);
         }
         pc++;
         continue;
@@ -2507,11 +2692,80 @@ async function runBasicScript(source) {
         continue;
       }
 
+      // WAIT_STATE <target> [TIMEOUT timeoutMs]
+      if (/^WAIT_STATE\s+.+$/i.test(stmt)) {
+        const waitStateSpec = basicParseWaitStateOptions(stmt.replace(/^WAIT_STATE\s+/i, '').trim());
+        const targetState = String(basicEvalExpr(waitStateSpec.targetExpr, basicVars)).trim();
+        const timeoutMs = waitStateSpec.timeoutExpr == null ? null : Math.round(Number(basicEvalExpr(waitStateSpec.timeoutExpr, basicVars)));
+        addLine(timeoutMs == null
+          ? `WAIT_STATE ${targetState}`
+          : `WAIT_STATE ${targetState} TIMEOUT ${timeoutMs} ms`, 'basic');
+        if (!(await basicWaitForMachineState(targetState, timeoutMs))) {
+          stopScript();
+          break;
+        }
+        pc++;
+        continue;
+      }
+
       // PRINT
       if (/^PRINT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^PRINT\s+/i, '').trim();
         const msg = String(basicEvalExpr(arg, basicVars));
         addLine(`PRINT: ${msg}`, 'basic');
+        pc++;
+        continue;
+      }
+
+      // CONFIRM <messageExpr>
+      if (/^CONFIRM\s+/i.test(stmt)) {
+        const arg = stmt.replace(/^CONFIRM\s+/i, '').trim();
+        const message = String(basicEvalExpr(arg, basicVars));
+        addLine(`CONFIRM: ${message}`, 'basic');
+        const confirmed = await basicShowConfirm(message, basicVars || {});
+        if (!confirmed) {
+          requestBasicStop('Confirm declined; stopping script...', '--- Script stopped: confirmation declined ---');
+          stopScript();
+          break;
+        }
+        pc++;
+        continue;
+      }
+
+      // PAUSE (manual resume via realtime controls)
+      if (/^PAUSE$/i.test(stmt)) {
+        addLine('PAUSE: waiting for resume', 'basic');
+        setBasicPaused(true);
+        if (!(await basicWaitForResumeOrStop())) {
+          stopScript();
+          break;
+        }
+        pc++;
+        continue;
+      }
+
+      // RESULT <name>, <valueExpr>
+      if (/^RESULT\s+/i.test(stmt)) {
+        const resultSpec = basicParseResultOptions(stmt.replace(/^RESULT\s+/i, '').trim());
+        if (resultSpec.error) throw new Error(resultSpec.error);
+        const value = basicEvalExpr(resultSpec.valueExpr, basicVars);
+        basicResults.set(resultSpec.key, value);
+        addLine(`RESULT: ${resultSpec.key} = ${value}`, 'basic');
+        pc++;
+        continue;
+      }
+
+      // REPORT
+      if (/^REPORT$/i.test(stmt)) {
+        if (!basicResults.size) {
+          addLine('REPORT: no results recorded', 'basic');
+        } else {
+          addLine('--- Results ---', 'basic');
+          for (const [name, value] of basicResults.entries()) {
+            addLine(`${name}: ${value}`, 'basic');
+          }
+          addLine('--- End Results ---', 'basic');
+        }
         pc++;
         continue;
       }
@@ -2558,8 +2812,9 @@ async function runBasicScript(source) {
             break;
           }
           const numVal = parseFloat(val);
-          basicVars[varName] = Number.isFinite(numVal) ? numVal : val;
-          addLine(`INPUT: ${varName} = ${basicVars[varName]}`, 'basic');
+          const normalizedVarName = basicNormalizeRuntimeVarName(varName);
+          basicVars[normalizedVarName] = Number.isFinite(numVal) ? numVal : val;
+          addLine(`INPUT: ${varName} = ${basicVars[normalizedVarName]}`, 'basic');
         }
         pc++;
         continue;
@@ -2589,6 +2844,30 @@ async function runBasicScript(source) {
         if (targetIdx !== -1) { pc = targetIdx; continue; }
         addLine(`GOTO ${target}: line not found`, 'err');
         break;
+      }
+
+      // GOSUB
+      if (/^GOSUB\s+\d+/i.test(stmt)) {
+        const target = parseInt(stmt.match(/^GOSUB\s+(\d+)/i)[1], 10);
+        const targetIdx = order.indexOf(target);
+        if (targetIdx !== -1) {
+          basicCallStack.push(pc + 1);
+          pc = targetIdx;
+          continue;
+        }
+        addLine(`GOSUB ${target}: line not found`, 'err');
+        break;
+      }
+
+      // RETURN
+      if (/^RETURN$/i.test(stmt)) {
+        if (!basicCallStack.length) {
+          addLine(`Line ${lineNum}: RETURN with empty call stack`, 'err');
+          break;
+        }
+        const returnPc = basicCallStack.pop();
+        pc = returnPc;
+        continue;
       }
 
       // END
