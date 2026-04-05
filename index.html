@@ -1727,6 +1727,8 @@ function basicValidateScript(source, paramNames = []) {
 
     if (/^END$/i.test(statement)) return;
 
+   if (/^REM\b/i.test(statement)) return;
+
     errors.push(`Line ${lineNum}: unknown or unsupported statement`);
   });
 
@@ -2476,6 +2478,12 @@ async function runBasicScript(source) {
 
       const lineNum = order[pc];
       const stmt = lines[lineNum];
+
+       // REM (comment)
+       if (/^REM\b/i.test(stmt)) {
+         pc++;
+         continue;
+       }
 
       // READ/SETTING (must come before generic LET so LET x = READ(...) is handled here)
       if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
