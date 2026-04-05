@@ -1405,11 +1405,18 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   normalized = normalized
     .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '__string__')
+    .replace(/\bPI\b/gi, '__pi__')
     .replace(/\bSTR\s*\(/gi, '__str__(')
     .replace(/\bABS\s*\(/gi, '__abs__(')
     .replace(/\bINT\s*\(/gi, '__int__(')
+    .replace(/\bSIN\s*\(/gi, '__sin__(')
+    .replace(/\bCOS\s*\(/gi, '__cos__(')
+    .replace(/\bTAN\s*\(/gi, '__tan__(')
+    .replace(/\bASIN\s*\(/gi, '__asin__(')
+    .replace(/\bACOS\s*\(/gi, '__acos__(')
+    .replace(/\bATAN\s*\(/gi, '__atan__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__str__', '__abs__', '__int__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1419,7 +1426,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -2096,12 +2103,51 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         return Math.trunc(Number(inner));
       }
+      if (name === 'SIN') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.sin((Number(inner) * Math.PI) / 180);
+      }
+      if (name === 'COS') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.cos((Number(inner) * Math.PI) / 180);
+      }
+      if (name === 'TAN') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.tan((Number(inner) * Math.PI) / 180);
+      }
+      if (name === 'ASIN') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return (Math.asin(Number(inner)) * 180) / Math.PI;
+      }
+      if (name === 'ACOS') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return (Math.acos(Number(inner)) * 180) / Math.PI;
+      }
+      if (name === 'ATAN') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return (Math.atan(Number(inner)) * 180) / Math.PI;
+      }
       if (name === 'RND') {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         const upper = Math.max(1, Math.trunc(Number(inner) || 0));
         return Math.floor(Math.random() * upper) + 1;
+      }
+      if (name === 'PI') {
+        return Math.PI;
       }
       if (name === 'STATE') {
         if (peek() && peek().type === 'OP' && peek().value === '(') {

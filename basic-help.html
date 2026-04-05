@@ -217,15 +217,24 @@
     <section class="card">
       <h2>6. Expression Functions</h2>
       <ul>
+        <li><code>PI</code>: Circle constant (3.141592653589793).</li>
         <li><code>STR(expr)</code>: Convert value to string.</li>
         <li><code>ABS(expr)</code>: Absolute value.</li>
         <li><code>INT(expr)</code>: Integer truncation.</li>
+        <li><code>SIN(angleDeg)</code>: Sine of an angle in degrees.</li>
+        <li><code>COS(angleDeg)</code>: Cosine of an angle in degrees.</li>
+        <li><code>TAN(angleDeg)</code>: Tangent of an angle in degrees.</li>
+        <li><code>ASIN(value)</code>: Inverse sine, returns degrees.</li>
+        <li><code>ACOS(value)</code>: Inverse cosine, returns degrees.</li>
+        <li><code>ATAN(value)</code>: Inverse tangent, returns degrees.</li>
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
       </ul>
-      <pre><code>10 LET choice = RND(3)
-20 IF choice = 1 THEN GOTO 100
-30 PRINT "State: " & STATE()</code></pre>
+      <pre><code>10 LET angle = ATAN(1)
+20 LET x = 10 * COS(angle)
+30 LET y = 10 * SIN(angle)
+40 LET circumference = 2 * PI * 10
+50 PRINT "State: " & STATE()</code></pre>
     </section>
 
     <section class="card">
