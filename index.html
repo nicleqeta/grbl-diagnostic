@@ -831,6 +831,7 @@
         </details>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SETTING</code>, <code>SEND</code>, <code>WAIT</code>, <code>WAIT_IDLE</code>, <code>WAIT_STATE</code>, <code>PRINT</code>, <code>INPUT</code>, <code>CONFIRM</code>, <code>PAUSE</code>, <code>RESULT</code>, <code>REPORT</code>, <code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>, <code>IF...THEN GOTO</code>, <code>GOSUB</code>, <code>RETURN</code>, <code>END</code>.<br>
+          INPUT forms: <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>, or shorthand <code>INPUT name</code> (optional prompt: <code>INPUT name, "Prompt"</code>).<br>
             Built-in expression functions: <code>STR(expr)</code>, <code>ABS(expr)</code>, <code>INT(expr)</code>, <code>RND(max)</code>, <code>STATE()</code>.<br>
           Optional SEND suffixes: <code>TIMEOUT expr</code> waits for an <code>ok</code>/<code>error</code>/<code>ALARM</code> reply up to the given limit, and <code>REQUIRE_OK</code> makes the command fail if no terminal acknowledgement arrives.<br>
           Save is blocked when syntax errors are present in the script or variable definitions.<br>
@@ -1774,8 +1775,16 @@ function basicValidateScript(source, paramNames = []) {
     match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\("([^"]*)"\)$/i);
     if (match) return;
 
+    match = statement.match(/^INPUT\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*(.+))?$/i);
+    if (match) {
+      if (match[2]) {
+        basicValidateExpressionSyntax(match[2], lineNum, 'the INPUT prompt expression', definedParams, errors);
+      }
+      return;
+    }
+
     if (/\bINPUT\s*\(/i.test(statement)) {
-      errors.push(`Line ${lineNum}: INPUT must be written as name = INPUT("Prompt")`);
+      errors.push(`Line ${lineNum}: INPUT must be written as name = INPUT("Prompt"), LET name = INPUT("Prompt"), or INPUT name`);
       return;
     }
 
@@ -2648,7 +2657,7 @@ async function runBasicScript(source) {
       }
 
       // LET
-      if (/^LET\s+/i.test(stmt)) {
+      if (/^LET\s+/i.test(stmt) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(stmt)) {
         const body = stmt.replace(/^LET\s+/i, '');
         const eq = body.indexOf('=');
         if (eq !== -1) {
@@ -2812,9 +2821,25 @@ async function runBasicScript(source) {
       // INPUT
       if (/^(LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt)) {
         const inputLetM = stmt.match(/^(?:LET\s+)?(\w+)\s*=\s*INPUT\("([^"]*)"\)/i);
+        const inputShortM = stmt.match(/^INPUT\s+(\w+)(?:\s*,\s*(.+))?$/i);
         if (inputLetM) {
           const varName = inputLetM[1];
           const promptText = inputLetM[2];
+          const val = await basicPromptInput(promptText);
+          if (basicStopRequested) {
+            stopScript();
+            break;
+          }
+          const numVal = parseFloat(val);
+          const normalizedVarName = basicNormalizeRuntimeVarName(varName);
+          basicVars[normalizedVarName] = Number.isFinite(numVal) ? numVal : val;
+          addLine(`INPUT: ${varName} = ${basicVars[normalizedVarName]}`, 'basic');
+        } else if (inputShortM) {
+          const varName = inputShortM[1];
+          const promptExpr = inputShortM[2];
+          const promptText = promptExpr
+            ? String(basicEvalExpr(promptExpr, basicVars))
+            : `Enter ${varName}`;
           const val = await basicPromptInput(promptText);
           if (basicStopRequested) {
             stopScript();
