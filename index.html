@@ -283,6 +283,16 @@
   }
   .diag-box strong { color: var(--text); font-weight: 600; }
   .diag-box.muted { color: var(--text-muted); }
+  .diag-box.error {
+    color: #fecaca;
+    background: var(--red-dim);
+    border-color: #7f1d1d;
+  }
+  .diag-box.success {
+    color: #bbf7d0;
+    background: #0d2214;
+    border-color: #166534;
+  }
 
   .diag-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
   .diag-actions.two-up { grid-template-columns: 1fr 1fr; }
@@ -804,6 +814,7 @@
 70 IF speed &lt;= maxRPM THEN GOTO 30
 80 SEND &quot;M5&quot;
 90 END" style="min-height:140px;"></textarea>
+  <div class="diag-box muted" id="basic-validation-box">Syntax check: enter a script to validate before saving.</div>
         <div class="diag-actions" style="margin-bottom:8px;">
           <button class="btn success" id="basic-save-btn">Save Script</button>
           <button class="btn" id="basic-copy-share-btn" disabled>Copy Share Link</button>
@@ -820,6 +831,7 @@
         </details>
         <div class="help-text">
           Supports: <code>LET</code>, <code>READ</code>, <code>SEND</code>, <code>WAIT</code>, <code>PRINT</code>, <code>INPUT</code>, <code>IF...THEN GOTO</code>, <code>END</code>.<br>
+          Save is blocked when syntax errors are present in the script or variable definitions.<br>
           Saved scripts use the title, description, variables, and source in this panel. Share links load via <code>?script=...</code>, and matching query params override saved variable defaults.
         </div>
       </div>
@@ -990,6 +1002,7 @@ const basicDescriptionInput = document.getElementById('basic-description-input')
 const basicForumUrl    = document.getElementById('basic-forum-url');
 const basicLoadUrlBtn  = document.getElementById('basic-load-url-btn');
 const basicConfigBox   = document.getElementById('basic-config-box');
+const basicValidationBox = document.getElementById('basic-validation-box');
 const basicVarsList    = document.getElementById('basic-vars-list');
 const basicAddVarBtn   = document.getElementById('basic-add-var-btn');
 const basicScriptInput = document.getElementById('basic-script-input');
@@ -1116,6 +1129,9 @@ let basicConfirmResolver = null;
 let basicVars = {};
 let basicGrblSettings = {};   // cache of $N=value from READ
 const BASIC_CONTROL_POLL_MS = 50;
+const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
+const BASIC_TIMEOUT_MS      = 60_000;    // hard wall-clock limit per run (ms)
+const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 
 if (!('serial' in navigator)) {
   noSerialSec.style.display = 'block';
@@ -1293,6 +1309,7 @@ let basicRawConfigText = '';
 let basicLoadedVars = {};
 let basicBaseVars = {};
 let basicSourceId = '';
+let basicValidationState = { errors: [], warnings: [], lines: {}, order: [] };
 
 function basicParseValue(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -1406,11 +1423,251 @@ function getNextBasicVarName() {
   return `var${index}`;
 }
 
+function basicBuildValidationState(errors = [], warnings = [], lines = {}, order = []) {
+  return { errors, warnings, lines, order };
+}
+
+function basicValidateVariableDefinitions() {
+  const errors = [];
+  const names = [];
+  const seen = new Set();
+
+  basicVarsList.querySelectorAll('.var-row').forEach((row, index) => {
+    const nameInput = row.querySelector('.var-key-input');
+    const name = String(nameInput ? nameInput.value : '').trim();
+
+    if (!name) {
+      errors.push(`Variable row ${index + 1}: name is required`);
+      return;
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      errors.push(`Variable ${name} must start with a letter or underscore and contain only letters, digits, or underscores`);
+      return;
+    }
+    if (seen.has(name)) {
+      errors.push(`Variable ${name} is defined more than once`);
+      return;
+    }
+
+    seen.add(name);
+    names.push(name);
+  });
+
+  return { errors, names };
+}
+
+function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParams, errors) {
+  const text = String(expr || '').trim();
+  if (!text) {
+    errors.push(`Line ${lineNum}: ${contextLabel} is empty`);
+    return;
+  }
+
+  const referencedParams = new Set();
+  let normalized = text.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => {
+    referencedParams.add(name);
+    return '__param__';
+  });
+
+  referencedParams.forEach(name => {
+    if (!definedParams.has(name)) {
+      errors.push(`Line ${lineNum}: ${contextLabel} references unknown variable {${name}}`);
+    }
+  });
+
+  if (/[{}]/.test(normalized)) {
+    errors.push(`Line ${lineNum}: ${contextLabel} has invalid placeholder syntax`);
+    return;
+  }
+
+  normalized = normalized
+    .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '"text"')
+    .replace(/\bSTR\s*\(/gi, '__str__(')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => token === '__str__' ? token : '__value__')
+    .replace(/&/g, '+');
+
+  if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
+    errors.push(`Line ${lineNum}: ${contextLabel} contains unsupported characters`);
+    return;
+  }
+
+  try {
+    // eslint-disable-next-line no-new-func
+    Function(`"use strict"; const __str__ = value => String(value); return (${normalized});`);
+  } catch {
+    errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
+  }
+}
+
+function basicValidateConditionSyntax(condition, lineNum, definedParams, errors) {
+  const match = String(condition || '').trim().match(/^(.+?)\s*(<=|>=|<>|=|<|>)\s*(.+)$/);
+  if (!match) {
+    errors.push(`Line ${lineNum}: IF condition must compare a left and right expression`);
+    return;
+  }
+
+  basicValidateExpressionSyntax(match[1], lineNum, 'the left side of the IF condition', definedParams, errors);
+  basicValidateExpressionSyntax(match[3], lineNum, 'the right side of the IF condition', definedParams, errors);
+}
+
+function basicValidateScript(source, paramNames = []) {
+  const errors = [];
+  const warnings = [];
+  const lines = {};
+  const order = [];
+  const jumpTargets = [];
+  const definedParams = new Set(paramNames);
+
+  source.split('\n').forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    if (!trimmed) return;
+
+    const match = trimmed.match(/^(\d+)\s+(.*)$/);
+    if (!match) {
+      errors.push(`Source line ${index + 1}: expected "<line-number> <statement>"`);
+      return;
+    }
+
+    const lineNum = parseInt(match[1], 10);
+    const statement = match[2].trim();
+
+    if (!statement) {
+      errors.push(`Line ${lineNum}: statement is empty`);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(lines, lineNum)) {
+      errors.push(`Line ${lineNum}: duplicate line number`);
+      return;
+    }
+
+    lines[lineNum] = statement;
+    order.push(lineNum);
+  });
+
+  order.sort((a, b) => a - b);
+
+  order.forEach(lineNum => {
+    const statement = lines[lineNum];
+    let match;
+
+    match = statement.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*READ\("([^"]+)"\)$/i);
+    if (match) return;
+
+    match = statement.match(/^READ\("([^"]+)"\)\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)$/i);
+    if (match) return;
+
+    if (/\bREAD\s*\(/i.test(statement)) {
+      errors.push(`Line ${lineNum}: READ must be written as LET name = READ("$30") or READ("$30") INTO name`);
+      return;
+    }
+
+    match = statement.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[2], lineNum, `the LET expression for ${match[1]}`, definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^SEND\s+(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[1], lineNum, 'the SEND expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^WAIT\s+(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[1], lineNum, 'the WAIT expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^PRINT\s+(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[1], lineNum, 'the PRINT expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\("([^"]*)"\)$/i);
+    if (match) return;
+
+    if (/\bINPUT\s*\(/i.test(statement)) {
+      errors.push(`Line ${lineNum}: INPUT must be written as name = INPUT("Prompt")`);
+      return;
+    }
+
+    match = statement.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
+    if (match) {
+      basicValidateConditionSyntax(match[1], lineNum, definedParams, errors);
+      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[2], 10) });
+      return;
+    }
+
+    match = statement.match(/^GOTO\s+(\d+)$/i);
+    if (match) {
+      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[1], 10) });
+      return;
+    }
+
+    if (/^END$/i.test(statement)) return;
+
+    errors.push(`Line ${lineNum}: unknown or unsupported statement`);
+  });
+
+  jumpTargets.forEach(({ fromLine, target }) => {
+    if (!Object.prototype.hasOwnProperty.call(lines, target)) {
+      errors.push(`Line ${fromLine}: jump target ${target} does not exist`);
+    }
+  });
+
+  if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
+    warnings.push('The script does not end with END; execution will stop after the last line.');
+  }
+
+  return basicBuildValidationState(errors, warnings, lines, order);
+}
+
+function basicValidateDraft() {
+  const variableValidation = basicValidateVariableDefinitions();
+  const scriptValidation = basicValidateScript(basicScriptInput.value, variableValidation.names);
+  return basicBuildValidationState(
+    [...variableValidation.errors, ...scriptValidation.errors],
+    [...scriptValidation.warnings],
+    scriptValidation.lines,
+    scriptValidation.order
+  );
+}
+
+function updateBasicValidationUi() {
+  if (!basicValidationBox) return;
+
+  const source = basicScriptInput.value.trim();
+  if (!source) {
+    basicValidationBox.className = 'diag-box muted';
+    basicValidationBox.textContent = 'Syntax check: enter a script to validate before saving.';
+    return;
+  }
+
+  if (basicValidationState.errors.length) {
+    basicValidationBox.className = 'diag-box error';
+    basicValidationBox.textContent = ['Syntax errors:', ...basicValidationState.errors].join('\n');
+    return;
+  }
+
+  if (basicValidationState.warnings.length) {
+    basicValidationBox.className = 'diag-box';
+    basicValidationBox.textContent = ['Syntax check passed with warnings:', ...basicValidationState.warnings].join('\n');
+    return;
+  }
+
+  basicValidationBox.className = 'diag-box success';
+  basicValidationBox.textContent = 'Syntax check passed. The script is ready to save.';
+}
+
 function refreshBasicVariableViews(syncUrl = true) {
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
+  basicValidationState = basicValidateDraft();
   basicConfigBox.className = basicRawProgram || basicRawConfigText || getBasicScriptMeta().title ? 'diag-box' : 'diag-box muted';
   basicConfigBox.textContent = buildBasicPreviewText(true);
+  updateBasicValidationUi();
   updateBasicDocumentTitle();
   updateBasicControlUi();
   if (syncUrl) updateUrlFromAdvancedDiagnostics();
@@ -1651,56 +1908,188 @@ function basicParseLines(source) {
   return { lines, order };
 }
 
+// ─── BASIC Expression Evaluator (no eval) ───────────────────────────────────
+// Values: JS number (float64) or JS string.
+// Operators: + - * /  (numeric); & (string concat); STR(x) ABS(x) INT(x).
+// Throws on undefined variable, division by zero, or parse error.
+
+function basicTokenize(expr) {
+  const tokens = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (/\s/.test(ch)) { i++; continue; }
+    // String literal
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < expr.length && expr[j] !== '"') j++;
+      tokens.push({ type: 'STRING', value: expr.slice(i + 1, j) });
+      i = j + 1;
+      continue;
+    }
+    // Number literal
+    if (/\d/.test(ch) || (ch === '.' && /\d/.test(expr[i + 1] || ''))) {
+      let j = i;
+      while (j < expr.length && /[\d.]/.test(expr[j])) j++;
+      tokens.push({ type: 'NUMBER', value: parseFloat(expr.slice(i, j)) });
+      i = j;
+      continue;
+    }
+    // Identifier or keyword (STR, ABS, INT)
+    if (/[A-Za-z_]/.test(ch)) {
+      let j = i;
+      while (j < expr.length && /[\w]/.test(expr[j])) j++;
+      tokens.push({ type: 'IDENT', value: expr.slice(i, j).toUpperCase() });
+      i = j;
+      continue;
+    }
+    // Two-char operators
+    if (i + 1 < expr.length) {
+      const two = expr.slice(i, i + 2);
+      if (['<=', '>=', '<>'].includes(two)) {
+        tokens.push({ type: 'OP', value: two });
+        i += 2;
+        continue;
+      }
+    }
+    // Single-char operators and punctuation
+    if ('+-*/()&<>='.includes(ch)) {
+      tokens.push({ type: 'OP', value: ch });
+      i++;
+      continue;
+    }
+    throw new Error(`Unexpected character in expression: '${ch}'`);
+  }
+  return tokens;
+}
+
 function basicEvalExpr(expr, vars) {
-  // Replace variable names with their values
-  // Also handle STR(), string concatenation &
-  let s = expr.trim();
-
-  // Replace STR(x) with string value
-  s = s.replace(/STR\(([^)]+)\)/gi, (_, inner) => {
-    const v = basicEvalExpr(inner, vars);
-    return JSON.stringify(String(v));
-  });
-
-  // Replace known variable names (word boundaries)
-  for (const [k, v] of Object.entries(vars)) {
-    const re = new RegExp(`\\b${k}\\b`, 'g');
-    s = s.replace(re, typeof v === 'string' ? JSON.stringify(v) : v);
+  const tokens = basicTokenize(String(expr).trim());
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const consume = () => tokens[pos++];
+  function expect(type, value) {
+    const t = consume();
+    if (!t || t.type !== type || (value !== undefined && t.value !== value))
+      throw new Error(`Expected ${type}${value !== undefined ? ' ' + value : ''} in expression`);
+    return t;
   }
 
-  // Handle & string concatenation: "a" & "b" -> "ab"
-  // Convert to + for eval but only between strings
-  s = s.replace(/"([^"]*)"\s*&\s*"([^"]*)"/g, (_, a, b) => JSON.stringify(a + b));
-  // Repeat for remaining & after first pass
-  s = s.replace(/"([^"]*)"\s*&\s*"([^"]*)"/g, (_, a, b) => JSON.stringify(a + b));
-
-  // Final eval in a safe-ish context
-  try {
-    // eslint-disable-next-line no-new-func
-    return Function('"use strict"; return (' + s + ')')();
-  } catch {
-    return s;
+  function parseExpr() {
+    let left = parseTerm();
+    while (peek() && peek().type === 'OP' && ['+', '-', '&'].includes(peek().value)) {
+      const op = consume().value;
+      const right = parseTerm();
+      if (op === '&') {
+        left = String(left) + String(right);
+      } else if (op === '+') {
+        left = (typeof left === 'string' || typeof right === 'string')
+          ? String(left) + String(right)
+          : left + right;
+      } else {
+        left = left - right;
+      }
+    }
+    return left;
   }
+
+  function parseTerm() {
+    let left = parseUnary();
+    while (peek() && peek().type === 'OP' && ['*', '/'].includes(peek().value)) {
+      const op = consume().value;
+      const right = parseUnary();
+      if (op === '/') {
+        if (right === 0) throw new Error('Division by zero');
+        left = left / right;
+      } else {
+        left = left * right;
+      }
+    }
+    return left;
+  }
+
+  function parseUnary() {
+    if (peek() && peek().type === 'OP' && peek().value === '-') {
+      consume();
+      return -Number(parsePrimary());
+    }
+    if (peek() && peek().type === 'OP' && peek().value === '+') {
+      consume();
+      return Number(parsePrimary());
+    }
+    return parsePrimary();
+  }
+
+  function parsePrimary() {
+    const t = peek();
+    if (!t) throw new Error('Unexpected end of expression');
+    if (t.type === 'NUMBER') { consume(); return t.value; }
+    if (t.type === 'STRING') { consume(); return t.value; }
+    if (t.type === 'IDENT') {
+      consume();
+      const name = t.value;
+      // Built-in functions
+      if (name === 'STR') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return String(inner);
+      }
+      if (name === 'ABS') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.abs(Number(inner));
+      }
+      if (name === 'INT') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.trunc(Number(inner));
+      }
+      // Variable lookup
+      if (Object.prototype.hasOwnProperty.call(vars, name)) return vars[name];
+      throw new Error(`Undefined variable: ${name}`);
+    }
+    if (t.type === 'OP' && t.value === '(') {
+      consume();
+      const v = parseExpr();
+      expect('OP', ')');
+      return v;
+    }
+    throw new Error(`Unexpected token: ${JSON.stringify(t)}`);
+  }
+
+  const result = parseExpr();
+  if (pos !== tokens.length)
+    throw new Error(`Unexpected token after expression: ${tokens[pos].value}`);
+  return result;
 }
 
 function basicParseCondition(condStr, vars) {
-  // supports: a <= b, a >= b, a < b, a > b, a = b, a <> b
-  const ops = ['<=', '>=', '<>', '<', '>', '='];
-  for (const op of ops) {
-    const idx = condStr.indexOf(op);
-    if (idx === -1) continue;
-    const left  = basicEvalExpr(condStr.slice(0, idx).trim(), vars);
-    const right = basicEvalExpr(condStr.slice(idx + op.length).trim(), vars);
-    const l = parseFloat(left);
-    const r = parseFloat(right);
-    if (op === '<=') return l <= r;
-    if (op === '>=') return l >= r;
-    if (op === '<>') return l !== r;
-    if (op === '<')  return l < r;
-    if (op === '>')  return l > r;
-    if (op === '=')  return l === r || left === right;
+  // Find comparison operator at top level (respects string literals)
+  const condOps = ['<=', '>=', '<>', '<', '>', '='];
+  let inStr = false;
+  for (let i = 0; i < condStr.length; i++) {
+    if (condStr[i] === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    for (const op of condOps) {
+      if (condStr.slice(i, i + op.length) === op) {
+        const left  = basicEvalExpr(condStr.slice(0, i).trim(), vars);
+        const right = basicEvalExpr(condStr.slice(i + op.length).trim(), vars);
+        const lNum  = typeof left  === 'number' ? left  : parseFloat(left);
+        const rNum  = typeof right === 'number' ? right : parseFloat(right);
+        const num   = Number.isFinite(lNum) && Number.isFinite(rNum);
+        if (op === '<=') return num ? lNum <= rNum : String(left) <= String(right);
+        if (op === '>=') return num ? lNum >= rNum : String(left) >= String(right);
+        if (op === '<>') return num ? lNum !== rNum : left !== right;
+        if (op === '<')  return num ? lNum  < rNum : String(left)  < String(right);
+        if (op === '>')  return num ? lNum  > rNum : String(left)  > String(right);
+        if (op === '=')  return num ? lNum === rNum : left === right;
+      }
+    }
   }
-  return false;
+  throw new Error(`No comparison operator in condition: ${condStr}`);
 }
 
 // Ask GRBL for a setting value, e.g. READ("$30") returns 10000
@@ -1818,10 +2207,12 @@ basicInputField.addEventListener('keydown', e => {
 function updateBasicControlUi() {
   const hasScript = Boolean(basicScriptInput.value.trim());
   const hasTitle = Boolean(basicTitleInput.value.trim());
-  basicSaveBtn.disabled = !hasTitle || !hasScript || basicRunning;
+  const hasSyntaxErrors = basicValidationState.errors.length > 0;
+  basicSaveBtn.disabled = !hasTitle || !hasScript || basicRunning || hasSyntaxErrors;
+  basicSaveBtn.title = hasSyntaxErrors ? 'Fix BASIC syntax errors before saving' : '';
   basicCopyShareBtn.disabled = !basicSourceId;
   basicCopyForumBtn.disabled = !basicSourceId;
-  basicRunBtn.disabled = !port || !hasScript || basicRunning;
+  basicRunBtn.disabled = !port || !hasScript || basicRunning || hasSyntaxErrors;
   basicStopBtn.disabled = !basicRunning;
 }
 
@@ -1888,6 +2279,8 @@ async function runBasicScript(source) {
   const { lines, order } = basicParseLines(scriptSource);
   let pc = 0; // index into order[]
   let stopLogged = false;
+  let instrCount = 0;
+  const startTime = Date.now();
 
   const stopScript = () => {
     if (stopLogged) return;
@@ -1905,6 +2298,18 @@ async function runBasicScript(source) {
         stopScript();
         break;
       }
+
+      // Runtime guardrails: instruction limit, wall-clock timeout, cooperative yield
+      instrCount++;
+      if (instrCount > BASIC_MAX_INSTRS) {
+        addLine(`Script aborted: exceeded ${BASIC_MAX_INSTRS.toLocaleString()} instruction limit`, 'err');
+        break;
+      }
+      if (Date.now() - startTime > BASIC_TIMEOUT_MS) {
+        addLine(`Script aborted: exceeded ${BASIC_TIMEOUT_MS / 1000}s run-time limit`, 'err');
+        break;
+      }
+      if (instrCount % BASIC_YIELD_EVERY === 0) await delay(0);
 
       const lineNum = order[pc];
       const stmt = lines[lineNum];
@@ -2047,6 +2452,14 @@ async function runBasicScript(source) {
 basicRunBtn.addEventListener('click', () => {
   const src = basicScriptInput.value.trim();
   if (!src) { addLine('No script to run - enter a BASIC script first', 'err'); return; }
+  basicValidationState = basicValidateDraft();
+  updateBasicValidationUi();
+  updateBasicControlUi();
+  if (basicValidationState.errors.length) {
+    if (basicSection) basicSection.open = true;
+    addLine('Cannot run BASIC script until syntax errors are fixed', 'err');
+    return;
+  }
   runBasicScript(src);
 });
 
@@ -2635,6 +3048,9 @@ async function copyTextPayload(text, successMessage, filenamePrefix) {
 }
 
 function collectBasicScriptPayload() {
+  basicValidationState = basicValidateDraft();
+  updateBasicValidationUi();
+  updateBasicControlUi();
   basicLoadedVars = collectBasicVarsFromEditor();
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
@@ -2642,6 +3058,7 @@ function collectBasicScriptPayload() {
   const meta = getBasicScriptMeta();
   if (!meta.title) throw new Error('Script title is required');
   if (!basicRawProgram) throw new Error('Script source is required');
+  if (basicValidationState.errors.length) throw new Error('Fix BASIC syntax errors before saving');
 
   return {
     title: meta.title,
@@ -3283,12 +3700,15 @@ cmdInput.addEventListener('blur', syncCommandPrompt);
 
 applyPresetToUi();
 loadSidebarWidth();
+renderVarEditor(basicLoadedVars);
+basicValidationState = basicValidateDraft();
 setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
 setTransportState('disconnected');
 setMachineState('unknown');
 updateStartupBannerUi();
 syncAutoscrollUi();
+updateBasicValidationUi();
 syncCommandPrompt();
 addLine('GRBL Serial Diagnostic ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
