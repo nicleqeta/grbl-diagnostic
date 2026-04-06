@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="GRBL Serial Diagnostic — browser-based GRBL serial terminal with a built-in line-numbered BASIC scripting engine. Write automated test scripts that send GRBL commands, wait for responses, loop, branch, do math, prompt for user input, and preview motion without a machine. Runs in Chrome/Edge via Web Serial API.">
 <title>GRBL Serial Diagnostic</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="shortcut icon" href="/favicon.ico">
@@ -792,6 +793,121 @@
 </style>
 </head>
 <body>
+<!--
+  AI-CONTEXT: GRBL Diagnostic — BASIC Scripting Engine Reference
+  ================================================================
+  This application includes a full line-numbered BASIC interpreter for writing
+  automated GRBL test and motion scripts. The BASIC engine is the primary
+  programmable feature of this tool. Complete reference follows.
+
+  STATEMENTS
+  ----------
+  LET var = expr              Assign a value to a variable. Variables are untyped.
+  SEND expr                   Send a GRBL command string over serial.
+  SEND expr WAIT FOR OK       Send and block until 'ok' response.
+  SEND expr WAIT FOR IDLE     Send and block until GRBL status is Idle.
+  SEND expr WAIT FOR GRBL     Send and block until a GRBL startup banner appears.
+  WAIT ms                     Pause execution for N milliseconds.
+  WAIT FOR OK                 Block until an 'ok' response is received.
+  WAIT FOR IDLE               Block until GRBL status is Idle.
+  WAIT FOR GRBL               Block until a GRBL startup banner appears.
+  PRINT expr                  Print a message to the terminal log.
+  INPUT var                   Prompt the user for a value, assign to var.
+  LET var = INPUT(prompt)     Same as INPUT but inline with a prompt string.
+  READ var                    Read the next incoming serial line into var.
+  IF cond THEN GOTO line      Conditional jump to a line number.
+  GOTO line                   Unconditional jump to a line number.
+  FOR var = start TO end      Begin a counting loop. Optional: STEP n.
+  NEXT var                    End of FOR loop body, increment and continue.
+  END                         Terminate the script.
+  RESULT expr                 Return a final value from the script.
+
+  BUILT-IN FUNCTIONS (used inside expressions)
+  ---------------------------------------------
+  INPUT(prompt)    Prompt user for a value (returns number or string)
+  READ(timeout)    Read next serial line (returns string, timeout in ms)
+  SETTING(n)       Read GRBL setting $n (returns numeric value)
+  STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
+  STR(n)           Convert number to string
+  INT(n)           Truncate to integer
+  ABS(n)           Absolute value
+  RND(n)           Random number in [0, n)
+  SIN(deg)         Sine (argument in degrees)
+  COS(deg)         Cosine (argument in degrees)
+  TAN(deg)         Tangent (argument in degrees)
+  ASIN(x)          Arc sine, result in degrees
+  ACOS(x)          Arc cosine, result in degrees
+  ATAN(x)          Arc tangent, result in degrees
+  ATAN2(y, x)      Two-argument arc tangent, result in degrees
+  SQRT(x)          Square root
+  ROUND(x)         Round to nearest integer
+  RAD(deg)         Convert degrees to radians
+  DEG(rad)         Convert radians to degrees
+  PI               The constant π (3.14159...)
+
+  EXPRESSIONS
+  -----------
+  Arithmetic: + - * / ^ (power)
+  String concatenation: &
+  Comparison operators: = < > <> <= >=
+  Parentheses for grouping
+  Variables are case-insensitive. Identifiers normalised to uppercase at parse time.
+
+  VARIABLE TEMPLATE SYSTEM
+  ------------------------
+  Scripts can declare default parameter values at the top using {name} placeholders.
+  Example:  {feedrate=1000}  {passes=3}
+  These are substituted before execution. Users may override them:
+    - via URL: ?vars=feedrate=2000,passes=5
+    - via the Variables panel in the UI before running
+  Special metadata fields: {title}, {author}, {version}, {description}
+
+  EXECUTION MODEL
+  ---------------
+  - Scripts run asynchronously in the browser main thread.
+  - Instruction limit: 1,000,000 steps per run.
+  - Wall-clock timeout: 36,000,000 ms (10 hours).
+  - Scripts can be paused and resumed via UI buttons.
+  - The Stop button terminates execution at the next instruction.
+  - Runtime errors (divide by zero, undefined variable) stop execution with a message.
+
+  PREVIEW MODE
+  ------------
+  Scripts can be previewed without a connected machine.
+  The preview engine dry-runs the script synchronously:
+    - INPUT(), READ(), SETTING(), STATE() calls return 0 (noted in preview log)
+    - SEND commands are displayed as motion command events
+    - PRINT commands are shown in the preview timeline
+    - WAIT commands are summarised, not actually delayed
+  Preview is useful for verifying loop logic and inspecting generated GRBL sequences.
+
+  SHARE URL SYSTEM
+  ----------------
+  Scripts can be shared via URL:
+    ?script=<base64-encoded script text>
+    ?post=<Discourse forum post URL>   (fetches script from forum post)
+  Variables can be passed alongside: ?script=...&vars=name=val,...
+
+  VALIDATOR
+  ---------
+  Before running or saving, scripts are validated:
+    - Syntax errors are highlighted with line numbers.
+    - Warnings are shown for common mistakes:
+        - Use of undefined variables
+        - Backward GOTO/IF-THEN-GOTO patterns that may cause infinite loops
+        - Jump to non-existent line numbers
+    - All built-in functions are recognised in the validator.
+
+  QUICK START EXAMPLE
+  -------------------
+  10 LET feedrate = 1000
+  20 SEND "G28" WAIT FOR IDLE
+  30 PRINT "Homing complete"
+  40 FOR i = 1 TO 5
+  50   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) WAIT FOR OK
+  60 NEXT i
+  70 END
+-->
 
 <header>
   <div class="logo">

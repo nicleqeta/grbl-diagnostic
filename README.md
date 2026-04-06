@@ -191,3 +191,142 @@ So this app is best used to diagnose and compare behavior, not to prove with abs
 GRBL Diagnostic is a simple browser tool for checking whether a GRBL controller is opening, resetting, sending startup output, answering commands, and responding reliably.
 
 It is mainly intended to make GRBL connection problems easier to see, compare, and share.
+
+---
+
+## BASIC Scripting
+
+The app includes a full line-numbered BASIC interpreter for writing automated GRBL test and motion scripts.
+
+Scripts run in the browser, send serial commands to the GRBL controller, wait for responses, and can loop, branch, do math, and prompt the user for input.
+
+### Writing a Script
+
+Scripts use line numbers. Each line starts with a number followed by a statement.
+
+```
+10 LET feedrate = 1000
+20 SEND "G28" WAIT FOR IDLE
+30 PRINT "Homing complete"
+40 FOR i = 1 TO 5
+50   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) WAIT FOR OK
+60 NEXT i
+70 END
+```
+
+Line numbers can be any positive integer. Lines execute in ascending order. Use GOTO to jump.
+
+### Statements
+
+| Statement | Description |
+|-----------|-------------|
+| `LET var = expr` | Assign a value to a variable |
+| `SEND expr` | Send a GRBL command string over serial |
+| `SEND expr WAIT FOR OK` | Send and wait for an `ok` response |
+| `SEND expr WAIT FOR IDLE` | Send and wait until GRBL status is `Idle` |
+| `SEND expr WAIT FOR GRBL` | Send and wait for a GRBL startup banner |
+| `WAIT ms` | Pause execution for N milliseconds |
+| `WAIT FOR OK` | Wait for an `ok` response without sending |
+| `WAIT FOR IDLE` | Wait until GRBL status is `Idle` |
+| `WAIT FOR GRBL` | Wait for a GRBL startup banner |
+| `PRINT expr` | Print a message to the terminal log |
+| `INPUT var` | Prompt the user for a value |
+| `LET var = INPUT(prompt)` | Prompt the user inline with a label |
+| `READ var` | Read the next incoming serial line |
+| `IF cond THEN GOTO line` | Conditional jump to a line number |
+| `GOTO line` | Unconditional jump to a line number |
+| `FOR var = start TO end` | Begin a counting loop (optional `STEP n`) |
+| `NEXT var` | End of FOR loop body |
+| `END` | Terminate the script |
+| `RESULT expr` | Return a final value from the script |
+
+### Built-In Functions
+
+| Function | Description |
+|----------|-------------|
+| `INPUT(prompt)` | Prompt the user (returns a number or string) |
+| `READ(timeout)` | Read the next serial line (timeout in ms) |
+| `SETTING(n)` | Read GRBL setting `$n` as a number |
+| `STATE()` | Current GRBL state: `Idle`, `Run`, `Alarm`, `Hold`, etc. |
+| `STR(n)` | Convert a number to a string |
+| `INT(n)` | Truncate to integer |
+| `ABS(n)` | Absolute value |
+| `RND(n)` | Random number in [0, n) |
+| `SIN(deg)` | Sine, argument in degrees |
+| `COS(deg)` | Cosine, argument in degrees |
+| `TAN(deg)` | Tangent, argument in degrees |
+| `ASIN(x)` | Arc sine, result in degrees |
+| `ACOS(x)` | Arc cosine, result in degrees |
+| `ATAN(x)` | Arc tangent, result in degrees |
+| `ATAN2(y, x)` | Two-argument arc tangent, result in degrees |
+| `SQRT(x)` | Square root |
+| `ROUND(x)` | Round to nearest integer |
+| `RAD(deg)` | Degrees to radians |
+| `DEG(rad)` | Radians to degrees |
+| `PI` | The constant π (3.14159…) |
+
+### Expressions
+
+- Arithmetic: `+` `-` `*` `/` `^` (power)
+- String concatenation: `&`
+- Comparison: `=` `<` `>` `<>` `<=` `>=`
+- Parentheses for grouping
+- Variable names are case-insensitive
+
+### Variable Template System
+
+Scripts can declare default parameter values at the top using `{name}` placeholders.
+
+```
+{feedrate=1000}
+{passes=3}
+```
+
+These are substituted before execution. Users can override them:
+
+- In the Variables panel in the UI before running
+- Via URL: `?vars=feedrate=2000,passes=5`
+
+Special metadata fields: `{title}`, `{author}`, `{version}`, `{description}`
+
+### Execution Model
+
+- Scripts run asynchronously in the browser.
+- Instruction limit: 1,000,000 steps per run.
+- Wall-clock timeout: 10 hours.
+- Scripts can be paused and resumed using the Pause and Resume buttons.
+- The Stop button terminates execution at the next instruction.
+- Runtime errors (divide by zero, undefined variable) stop execution with a message.
+
+### Preview Mode
+
+Scripts can be previewed without a connected machine.
+
+The preview engine dry-runs the script and shows a timeline of SEND, PRINT, and WAIT events. This is useful for checking loop logic and inspecting the sequence of GRBL commands that will be sent before connecting to a machine.
+
+During preview:
+
+- `INPUT()`, `READ()`, `SETTING()`, and `STATE()` return `0`
+- SEND commands appear as motion events in the preview log
+- Preview stops at the instruction limit or on a script error
+
+### Share URL System
+
+Scripts can be shared via URL:
+
+- `?script=<base64-encoded script>` — embed the full script in the link
+- `?post=<Discourse forum post URL>` — load the script from a forum post
+- `?vars=name=value,name=value` — pass variable overrides alongside a script
+
+### Validator
+
+Before running or saving, scripts are checked for:
+
+- Syntax errors, highlighted with line numbers
+- Unknown function or variable names
+- Jumps to non-existent line numbers
+- Backward loop patterns that may cause infinite loops
+
+### Help Page
+
+The app has a built-in BASIC help page accessible from the BASIC panel. It covers all statements and functions with short examples.
