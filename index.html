@@ -2263,90 +2263,91 @@ function basicEvalExpr(expr, vars) {
     if (t.type === 'IDENT') {
       consume();
       const name = t.value;
+      const hasCallSyntax = () => peek() && peek().type === 'OP' && peek().value === '(';
       // Built-in functions
-      if (name === 'STR') {
+      if (name === 'STR' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return String(inner);
       }
-      if (name === 'ABS') {
+      if (name === 'ABS' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.abs(Number(inner));
       }
-      if (name === 'INT') {
+      if (name === 'INT' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.trunc(Number(inner));
       }
-      if (name === 'SIN') {
+      if (name === 'SIN' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.sin((Number(inner) * Math.PI) / 180);
       }
-      if (name === 'COS') {
+      if (name === 'COS' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.cos((Number(inner) * Math.PI) / 180);
       }
-      if (name === 'TAN') {
+      if (name === 'TAN' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.tan((Number(inner) * Math.PI) / 180);
       }
-      if (name === 'ASIN') {
+      if (name === 'ASIN' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return (Math.asin(Number(inner)) * 180) / Math.PI;
       }
-      if (name === 'ACOS') {
+      if (name === 'ACOS' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return (Math.acos(Number(inner)) * 180) / Math.PI;
       }
-      if (name === 'ATAN') {
+      if (name === 'ATAN' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return (Math.atan(Number(inner)) * 180) / Math.PI;
       }
-      if (name === 'ATAN2') {
+      if (name === 'ATAN2' && hasCallSyntax()) {
         const [yValue, xValue] = parseTwoArgFunctionArgs(name);
         return (Math.atan2(Number(yValue), Number(xValue)) * 180) / Math.PI;
       }
-      if (name === 'SQRT') {
+      if (name === 'SQRT' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return Math.sqrt(Number(inner));
       }
-      if (name === 'ROUND') {
+      if (name === 'ROUND' && hasCallSyntax()) {
         const [value, digits] = parseTwoArgFunctionArgs(name);
         const precision = Math.trunc(Number(digits));
         const factor = Math.pow(10, Math.max(-9, Math.min(9, precision)));
         return Math.round(Number(value) * factor) / factor;
       }
-      if (name === 'RAD') {
+      if (name === 'RAD' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return (Number(inner) * Math.PI) / 180;
       }
-      if (name === 'DEG') {
+      if (name === 'DEG' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
         return (Number(inner) * 180) / Math.PI;
       }
-      if (name === 'RND') {
+      if (name === 'RND' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
         expect('OP', ')');
