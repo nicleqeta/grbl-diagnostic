@@ -1233,7 +1233,7 @@ let gcodeJobCounter  = 0;
 let gcodeJobAbort    = null;
 const BASIC_CONTROL_POLL_MS = 50;
 const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
-const BASIC_TIMEOUT_MS      = 60_000;    // hard wall-clock limit per run (ms)
+const BASIC_TIMEOUT_MS      = 36_000_000; // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
 
