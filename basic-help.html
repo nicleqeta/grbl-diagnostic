@@ -261,6 +261,118 @@
         <li><span class="ok">Queue mode:</span> GCode queue defaults to <code>Fast buffered</code>; switch to synchronous if your controller needs stricter ack pacing.</li>
       </ul>
     </section>
+
+    <section class="card">
+      <h2>8. Example: X-Axis Acceleration Finder</h2>
+      <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, then restores the original <code>$120</code> and <code>$110</code> and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run.</p>
+      <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
+      <pre><code>{title=X Axis Acceleration Finder}
+{author=GitHub Copilot}
+{version=1}
+{description=Raises X acceleration until the motor sounds bad or skips, then retests the edge and recommends a slightly safer $120 value.}
+{start_accel=200}
+{coarse_step=50}
+{fine_step=10}
+{max_accel=2000}
+{x_travel=8}
+{x_feed=3000}
+{repeats=6}
+{idle_timeout=20000}
+{settle_ms=250}
+
+10 PRINT "X-axis acceleration test"
+20 PRINT "Clear the machine so X can move back and forth safely."
+30 PRINT "This script will temporarily change $120 during the test."
+40 LET proceed = INPUT("Type 1 to begin, or 0 to cancel")
+50 IF proceed <> 1 THEN GOTO 9000
+
+60 LET original_accel = SETTING("$120")
+65 LET original_feed = SETTING("$110")
+70 LET last_good = 0
+80 LET first_bad = 0
+90 LET fine_good = 0
+100 LET fine_bad = 0
+110 LET recommended = 0
+120 LET current_accel = 0
+130 LET answer = 0
+
+140 PRINT "Original $120 = " &amp; STR(original_accel)
+145 PRINT "Original $110 = " &amp; STR(original_feed)
+146 PRINT "Temporarily setting Feed speed high"
+147 SEND "$110=60000"
+150 SEND "G21" TIMEOUT 1000 REQUIRE_OK
+160 SEND "G91" TIMEOUT 1000 REQUIRE_OK
+170 PRINT "Starting coarse search..."
+
+200 FOR test_accel = {start_accel} TO {max_accel} STEP {coarse_step}
+210 LET current_accel = test_accel
+220 GOSUB 1000
+240 IF answer <> 0 THEN GOTO 400
+250 LET last_good = current_accel
+260 NEXT test_accel
+
+270 PRINT "No failure found up to max tested value."
+280 LET recommended = last_good
+290 GOTO 700
+
+400 LET first_bad = current_accel
+410 PRINT "First bad coarse value = " &amp; STR(first_bad)
+420 IF last_good = 0 THEN GOTO 880
+430 LET fine_good = last_good
+440 PRINT "Starting fine search..."
+
+450 FOR test_accel = last_good + {fine_step} TO first_bad STEP {fine_step}
+460 LET current_accel = test_accel
+470 GOSUB 1000
+490 IF answer <> 0 THEN GOTO 600
+500 LET fine_good = current_accel
+510 NEXT test_accel
+
+520 PRINT "No failure found in fine search."
+530 LET recommended = fine_good
+540 GOTO 700
+
+600 LET fine_bad = current_accel
+610 LET recommended = fine_bad - {fine_step}
+620 PRINT "First bad fine value = " &amp; STR(fine_bad)
+630 GOTO 700
+
+700 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
+705 SEND "$110=" &amp; STR(original_feed) TIMEOUT 2000 REQUIRE_OK
+710 WAIT {settle_ms}
+730 PRINT "Last good coarse value = " &amp; STR(last_good)
+740 PRINT "First bad coarse value = " &amp; STR(first_bad)
+750 PRINT "Last good fine value = " &amp; STR(fine_good)
+760 PRINT "First bad fine value = " &amp; STR(fine_bad)
+770 PRINT "Suggested conservative $120 = " &amp; STR(recommended)
+780 RESULT "original_x_accel", original_accel
+790 RESULT "last_good_coarse", last_good
+800 RESULT "first_bad_coarse", first_bad
+810 RESULT "last_good_fine", fine_good
+820 RESULT "first_bad_fine", fine_bad
+830 RESULT "suggested_x_accel", recommended
+840 REPORT
+850 END
+
+880 LET recommended = original_accel
+890 PRINT "The starting acceleration already sounded bad."
+900 PRINT "Leaving recommendation at the original $120 value."
+910 GOTO 700
+
+1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
+1010 WAIT {settle_ms}
+1020 FOR j = 1 TO {repeats}
+1030 SEND "G1 X" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1040 WAIT_IDLE {idle_timeout}
+1050 SEND "G1 X-" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1060 WAIT_IDLE {idle_timeout}
+1070 NEXT j
+1075 INPUT answer, "Tested $120=" &amp; STR(current_accel) &amp; ". Enter 1 if bad, else 0"
+1080 RETURN
+
+9000 PRINT "Test cancelled."
+9010 END</code></pre>
+    </section>
   </main>
 </body>
 </html>
