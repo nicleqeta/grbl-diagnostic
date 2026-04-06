@@ -722,6 +722,73 @@
     .send-btn { width: 100%; }
     .term-input-shell { min-height: 44px; }
   }
+  /* GCode panel in sidebar */
+  .gcode-mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .gcode-mode-row label { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+  .gcode-mode-row select { flex: 1; margin-bottom: 0; }
+  /* GCode Queue panel in terminal column */
+  .gcode-queue-panel {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    max-height: 180px;
+    display: flex;
+    flex-direction: column;
+  }
+  .gcode-queue-header {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .gcode-queue-title { font-size: 12px; color: var(--text-muted); font-weight: 500; flex: 1; }
+  .gcode-queue-count { font-size: 11px; color: var(--text-muted); }
+  .gcode-queue-list { overflow-y: auto; flex: 1; min-height: 0; }
+  .gcode-queue-empty {
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .gcode-queue-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .gcode-queue-row:last-child { border-bottom: none; }
+  .gcode-queue-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .gcode-queue-row-mode { font-size: 10px; color: var(--text-muted); padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; flex-shrink: 0; }
+  .gcode-queue-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-weight: 500;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .gcode-queue-badge.running { color: var(--amber); border-color: #8b5d14; background: var(--amber-dim); }
+  .gcode-queue-badge.done { color: var(--green); border-color: #166534; background: var(--green-dim); }
+  .gcode-queue-badge.error { color: var(--red); border-color: #7f1d1d; background: var(--red-dim); }
+  .gcode-queue-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .gcode-queue-action {
+    font-size: 11px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 4px;
+    padding: 2px 7px;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: all 0.15s;
+  }
+  .gcode-queue-action:hover { color: var(--text); border-color: #3e4460; background: var(--surface2); }
+  .gcode-queue-action:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -859,11 +926,35 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
           <button class="btn" id="basic-copy-share-btn" disabled>Copy Share Link</button>
           <button class="btn" id="basic-copy-forum-btn" disabled>Copy Forum Post</button>
         </div>
-        <div class="diag-actions two-up" style="margin-bottom:8px;">
+        <div class="diag-actions" style="margin-bottom:8px;">
+          <button class="btn" id="basic-preview-btn" type="button">Preview</button>
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
           <button class="btn danger"  id="basic-stop-btn" disabled>Stop</button>
         </div>
         <button class="btn" id="basic-help-btn" type="button" style="margin-bottom:8px;">BASIC Help</button>
+      </div>
+    </details>
+
+    <!-- GCode section -->
+    <details class="section section-collapsible" id="gcode-section">
+      <summary class="section-toggle">
+        <span class="section-label">GCode</span>
+        <span class="section-toggle-icon">&#9656;</span>
+      </summary>
+      <div class="section-content">
+        <textarea id="gcode-input" placeholder="G0 X0 Y0&#10;G1 X10 F500&#10;M30" style="min-height:120px;"></textarea>
+        <div class="gcode-mode-row">
+          <label for="gcode-exec-mode">Mode:</label>
+          <select id="gcode-exec-mode">
+            <option value="sync-ack" selected>Synchronous (ack-gated)</option>
+            <option value="fast-buffer">Fast buffered</option>
+          </select>
+        </div>
+        <div class="diag-actions" style="margin-bottom:8px;">
+          <button class="btn" id="gcode-preview-btn" type="button" disabled>Preview</button>
+          <button class="btn primary" id="gcode-add-btn" type="button" disabled>Add to Queue</button>
+        </div>
+        <button class="btn" id="gcode-clear-btn" type="button" style="margin-bottom:8px;">Clear</button>
       </div>
     </details>
 
@@ -879,6 +970,18 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <button class="icon-btn" id="autoscroll-btn" title="Toggle autoscroll">↓ Auto</button>
         <button class="icon-btn" id="clear-btn">Clear</button>
         <button class="icon-btn" id="export-btn">Export</button>
+      </div>
+    </div>
+    <!-- GCode Queue -->
+    <div class="gcode-queue-panel" id="gcode-queue-panel">
+      <div class="gcode-queue-header">
+        <span class="gcode-queue-title">GCode Queue</span>
+        <span class="gcode-queue-count" id="gcode-queue-count">0 jobs</span>
+        <button class="icon-btn" id="gcode-queue-run-btn" disabled>Run All</button>
+        <button class="icon-btn" id="gcode-queue-clear-btn" disabled>Clear All</button>
+      </div>
+      <div class="gcode-queue-list" id="gcode-queue-list">
+        <div class="gcode-queue-empty" id="gcode-queue-empty">Queue is empty. Add G-code from the GCode panel.</div>
       </div>
     </div>
     <div class="terminal-window">
@@ -987,6 +1090,7 @@ const basicScriptInput = document.getElementById('basic-script-input');
 const basicSaveBtn     = document.getElementById('basic-save-btn');
 const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
 const basicCopyForumBtn= document.getElementById('basic-copy-forum-btn');
+const basicPreviewBtn  = document.getElementById('basic-preview-btn');
 const basicRunBtn      = document.getElementById('basic-run-btn');
 const basicStopBtn     = document.getElementById('basic-stop-btn');
 const basicHelpBtn     = document.getElementById('basic-help-btn');
@@ -999,6 +1103,16 @@ const basicConfirmDescription= document.getElementById('basic-confirm-descriptio
 const basicConfirmVars       = document.getElementById('basic-confirm-vars');
 const basicConfirmCancel     = document.getElementById('basic-confirm-cancel');
 const basicConfirmRun        = document.getElementById('basic-confirm-run');
+const gcodeInputEl      = document.getElementById('gcode-input');
+const gcodeAddBtn       = document.getElementById('gcode-add-btn');
+const gcodePreviewBtn   = document.getElementById('gcode-preview-btn');
+const gcodeClearBtn     = document.getElementById('gcode-clear-btn');
+const gcodeExecMode     = document.getElementById('gcode-exec-mode');
+const gcodeQueueList    = document.getElementById('gcode-queue-list');
+const gcodeQueueEmpty   = document.getElementById('gcode-queue-empty');
+const gcodeQueueCount   = document.getElementById('gcode-queue-count');
+const gcodeQueueRunBtn  = document.getElementById('gcode-queue-run-btn');
+const gcodeQueueClearBtn= document.getElementById('gcode-queue-clear-btn');
 
 const NAMED_PRESETS = {
   'grbl-info': {
@@ -1109,6 +1223,13 @@ let basicVars = {};
 let basicResults = new Map();
 let basicCallStack = [];
 let basicGrblSettings = {};   // cache of $N=value from READ/SETTING
+let previewWindowRef = null;
+let latestPreviewTimeline = null;
+let gcodeQueue       = [];
+let gcodeRunning     = false;
+let gcodeActiveJobId = null;
+let gcodeJobCounter  = 0;
+let gcodeJobAbort    = null;
 const BASIC_CONTROL_POLL_MS = 50;
 const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
 const BASIC_TIMEOUT_MS      = 60_000;    // hard wall-clock limit per run (ms)
@@ -2339,7 +2460,8 @@ function updateBasicControlUi() {
   basicSaveBtn.title = hasSyntaxErrors ? 'Fix BASIC syntax errors before saving' : '';
   basicCopyShareBtn.disabled = !basicSourceId;
   basicCopyForumBtn.disabled = !basicSourceId;
-  basicRunBtn.disabled = !port || !hasScript || basicRunning || hasSyntaxErrors;
+  basicPreviewBtn.disabled = !hasScript || basicRunning || hasSyntaxErrors;
+  basicRunBtn.disabled = !port || !hasScript || basicRunning || gcodeRunning || hasSyntaxErrors;
   basicStopBtn.disabled = !basicRunning;
 }
 
@@ -2459,9 +2581,673 @@ async function basicWaitForMachineState(targetState, timeoutMs = null) {
   }
 }
 
+function createBasicPreviewTimeline(scriptSource) {
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    source: 'browser_dry_run',
+    title: buildBasicDisplayName(getBasicScriptMeta()) || 'Untitled Preview',
+    scriptSource,
+    events: [],
+    commands: [],
+    segments: [],
+    commandCount: 0,
+    commandToFirstEvent: [],
+    commandToLastEvent: [],
+    commandToFirstSegment: [],
+    commandToLastSegment: [],
+    bounds: {
+      min: { x: 0, y: 0, z: 0 },
+      max: { x: 0, y: 0, z: 0 },
+      span: { x: 0, y: 0, z: 0 }
+    },
+    stats: {
+      unsupportedCount: 0,
+      errorCount: 0,
+      noteCount: 0,
+      motionCommandCount: 0
+    }
+  };
+}
+
+function previewPushEvent(timeline, kind, payload = {}) {
+  const event = {
+    seq: timeline.events.length,
+    tMs: payload.tMs == null ? timeline.events.length * 250 : payload.tMs,
+    kind,
+    ...payload
+  };
+  timeline.events.push(event);
+  if (typeof payload.commandId === 'number') {
+    if (timeline.commandToFirstEvent[payload.commandId] == null) {
+      timeline.commandToFirstEvent[payload.commandId] = event.seq;
+    }
+    timeline.commandToLastEvent[payload.commandId] = event.seq;
+  }
+  if (kind === 'error') timeline.stats.errorCount += 1;
+  if (kind === 'note') timeline.stats.noteCount += 1;
+  return event;
+}
+
+function previewUpdateBounds(timeline, point) {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) return;
+  if (timeline.segments.length <= 1 && timeline.bounds.span.x === 0 && timeline.bounds.span.y === 0 && timeline.bounds.span.z === 0 && timeline.bounds.min.x === 0 && timeline.bounds.min.y === 0 && timeline.bounds.min.z === 0 && timeline.bounds.max.x === 0 && timeline.bounds.max.y === 0 && timeline.bounds.max.z === 0) {
+    timeline.bounds.min = { ...point };
+    timeline.bounds.max = { ...point };
+  } else {
+    timeline.bounds.min.x = Math.min(timeline.bounds.min.x, point.x);
+    timeline.bounds.min.y = Math.min(timeline.bounds.min.y, point.y);
+    timeline.bounds.min.z = Math.min(timeline.bounds.min.z, point.z);
+    timeline.bounds.max.x = Math.max(timeline.bounds.max.x, point.x);
+    timeline.bounds.max.y = Math.max(timeline.bounds.max.y, point.y);
+    timeline.bounds.max.z = Math.max(timeline.bounds.max.z, point.z);
+  }
+  timeline.bounds.span = {
+    x: timeline.bounds.max.x - timeline.bounds.min.x,
+    y: timeline.bounds.max.y - timeline.bounds.min.y,
+    z: timeline.bounds.max.z - timeline.bounds.min.z
+  };
+}
+
+function previewRegisterCommand(timeline, command) {
+  const commandId = timeline.commands.length;
+  const entry = {
+    commandId,
+    sourceLine: command.sourceLine || null,
+    raw: String(command.raw || '').trim(),
+    display: String(command.display || command.raw || '').trim(),
+    status: command.status || 'sent',
+    firstSegment: -1,
+    lastSegment: -1
+  };
+  timeline.commands.push(entry);
+  timeline.commandToFirstEvent[commandId] = null;
+  timeline.commandToLastEvent[commandId] = null;
+  timeline.commandToFirstSegment[commandId] = -1;
+  timeline.commandToLastSegment[commandId] = -1;
+  previewPushEvent(timeline, 'command', {
+    commandId,
+    sourceLine: entry.sourceLine,
+    raw: entry.raw,
+    display: entry.display,
+    status: entry.status
+  });
+  timeline.commandCount = timeline.commands.length;
+  return entry;
+}
+
+function previewAddSegment(timeline, commandEntry, motionType, fromPoint, toPoint) {
+  const dx = toPoint.x - fromPoint.x;
+  const dy = toPoint.y - fromPoint.y;
+  const dz = toPoint.z - fromPoint.z;
+  const length = Math.hypot(dx, dy, dz);
+  if (!(length > 0)) return;
+  const segmentIndex = timeline.segments.length;
+  const segment = {
+    segmentId: segmentIndex,
+    commandId: commandEntry.commandId,
+    sourceLine: commandEntry.sourceLine,
+    raw: commandEntry.raw,
+    motionType,
+    from: { ...fromPoint },
+    to: { ...toPoint },
+    length
+  };
+  timeline.segments.push(segment);
+  if (commandEntry.firstSegment === -1) {
+    commandEntry.firstSegment = segmentIndex;
+    timeline.commandToFirstSegment[commandEntry.commandId] = segmentIndex;
+  }
+  commandEntry.lastSegment = segmentIndex;
+  timeline.commandToLastSegment[commandEntry.commandId] = segmentIndex;
+  previewUpdateBounds(timeline, fromPoint);
+  previewUpdateBounds(timeline, toPoint);
+}
+
+function createPreviewMotionState() {
+  return {
+    units: 'mm',
+    distanceMode: 'absolute',
+    plane: 'G17',
+    motionMode: 'G0',
+    feedRate: null,
+    spindleOn: false,
+    spindleRpm: null,
+    position: { x: 0, y: 0, z: 0 }
+  };
+}
+
+function previewUnitScale(units) {
+  return units === 'inch' ? 25.4 : 1;
+}
+
+function previewConvertValue(value, units) {
+  return Number(value) * previewUnitScale(units);
+}
+
+function previewRoundPoint(point) {
+  return {
+    x: Number(point.x.toFixed(6)),
+    y: Number(point.y.toFixed(6)),
+    z: Number(point.z.toFixed(6))
+  };
+}
+
+function previewStripGcodeComments(text) {
+  return String(text || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/;.*$/g, ' ')
+    .trim();
+}
+
+function previewParseGcodeWords(rawCommand) {
+  const stripped = previewStripGcodeComments(rawCommand);
+  const matches = Array.from(stripped.matchAll(/([A-Za-z])\s*([+\-]?(?:\d+(?:\.\d*)?|\.\d+))/g));
+  const words = matches.map(match => ({ letter: match[1].toUpperCase(), value: Number(match[2]) }));
+  return { stripped, words };
+}
+
+function previewResolveTargetPosition(state, axisWords) {
+  const target = { ...state.position };
+  ['X', 'Y', 'Z'].forEach(axis => {
+    if (axisWords[axis] == null) return;
+    const value = previewConvertValue(axisWords[axis], state.units);
+    const lower = axis.toLowerCase();
+    target[lower] = state.distanceMode === 'incremental' ? target[lower] + value : value;
+  });
+  return previewRoundPoint(target);
+}
+
+function previewComputeSweep(startAngle, endAngle, clockwise, forceFullCircle = false) {
+  let sweep = endAngle - startAngle;
+  if (clockwise) {
+    while (sweep >= 0) sweep -= Math.PI * 2;
+  } else {
+    while (sweep <= 0) sweep += Math.PI * 2;
+  }
+  if (forceFullCircle && Math.abs(sweep) < 1e-9) {
+    sweep = clockwise ? -(Math.PI * 2) : (Math.PI * 2);
+  }
+  return sweep;
+}
+
+function previewSolveArcCenterFromRadius(startPoint, endPoint, radius, clockwise) {
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const chord = Math.hypot(dx, dy);
+  const absRadius = Math.abs(radius);
+  if (chord === 0 || chord > absRadius * 2) return null;
+
+  const mid = {
+    x: (startPoint.x + endPoint.x) / 2,
+    y: (startPoint.y + endPoint.y) / 2
+  };
+  const h = Math.sqrt(Math.max(0, (absRadius * absRadius) - ((chord / 2) * (chord / 2))));
+  const nx = -dy / chord;
+  const ny = dx / chord;
+
+  const centers = [
+    { x: mid.x + (nx * h), y: mid.y + (ny * h), z: startPoint.z },
+    { x: mid.x - (nx * h), y: mid.y - (ny * h), z: startPoint.z }
+  ];
+
+  const scored = centers.map(center => {
+    const startAngle = Math.atan2(startPoint.y - center.y, startPoint.x - center.x);
+    const endAngle = Math.atan2(endPoint.y - center.y, endPoint.x - center.x);
+    const sweep = previewComputeSweep(startAngle, endAngle, clockwise);
+    return {
+      center,
+      sweep,
+      isLongArc: Math.abs(sweep) > Math.PI
+    };
+  });
+
+  if (radius >= 0) {
+    return (scored.find(candidate => !candidate.isLongArc) || scored[0]).center;
+  }
+  return (scored.find(candidate => candidate.isLongArc) || scored[0]).center;
+}
+
+function previewAddArcSegments(timeline, commandEntry, state, endPoint, centerPoint, clockwise) {
+  const startPoint = { ...state.position };
+  const radius = Math.hypot(startPoint.x - centerPoint.x, startPoint.y - centerPoint.y);
+  if (!(radius > 0)) return false;
+
+  const startAngle = Math.atan2(startPoint.y - centerPoint.y, startPoint.x - centerPoint.x);
+  const endAngle = Math.atan2(endPoint.y - centerPoint.y, endPoint.x - centerPoint.x);
+  const forceFullCircle = Math.abs(startPoint.x - endPoint.x) < 1e-9 && Math.abs(startPoint.y - endPoint.y) < 1e-9;
+  const sweep = previewComputeSweep(startAngle, endAngle, clockwise, forceFullCircle);
+  const tolerance = 0.1;
+  const divisor = Math.max(1e-6, 2 * Math.acos(Math.max(-1, Math.min(1, 1 - (tolerance / radius)))));
+  const segmentCount = Math.max(8, Math.min(720, Math.ceil(Math.abs(sweep) / divisor) || 1));
+
+  let previous = { ...startPoint };
+  for (let index = 1; index <= segmentCount; index += 1) {
+    const ratio = index / segmentCount;
+    const angle = startAngle + (sweep * ratio);
+    const nextPoint = previewRoundPoint({
+      x: centerPoint.x + (Math.cos(angle) * radius),
+      y: centerPoint.y + (Math.sin(angle) * radius),
+      z: startPoint.z + ((endPoint.z - startPoint.z) * ratio)
+    });
+    previewAddSegment(timeline, commandEntry, clockwise ? 'arc_cw' : 'arc_ccw', previous, nextPoint);
+    previous = nextPoint;
+  }
+  return true;
+}
+
+function previewCompileGcodeCommand(timeline, motionState, commandEntry) {
+  const parsed = previewParseGcodeWords(commandEntry.raw);
+  if (!parsed.words.length) {
+    previewPushEvent(timeline, 'note', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      message: 'Command contains no parsable G-code words'
+    });
+    return;
+  }
+
+  const gCodes = [];
+  const mCodes = [];
+  const axisWords = {};
+  const arcWords = {};
+
+  parsed.words.forEach(word => {
+    if (word.letter === 'G') gCodes.push(word.value);
+    else if (word.letter === 'M') mCodes.push(word.value);
+    else if (['X', 'Y', 'Z'].includes(word.letter)) axisWords[word.letter] = word.value;
+    else if (['I', 'J', 'K', 'R'].includes(word.letter)) arcWords[word.letter] = word.value;
+    else if (word.letter === 'F') motionState.feedRate = previewConvertValue(word.value, motionState.units);
+    else if (word.letter === 'S') motionState.spindleRpm = Number(word.value);
+  });
+
+  gCodes.forEach(code => {
+    if (code === 20) motionState.units = 'inch';
+    else if (code === 21) motionState.units = 'mm';
+    else if (code === 90) motionState.distanceMode = 'absolute';
+    else if (code === 91) motionState.distanceMode = 'incremental';
+    else if (code === 17) motionState.plane = 'G17';
+    else if (code === 18) motionState.plane = 'G18';
+    else if (code === 19) motionState.plane = 'G19';
+    else if (code === 0 || code === 1 || code === 2 || code === 3) motionState.motionMode = `G${code}`;
+  });
+
+  mCodes.forEach(code => {
+    if (code === 3 || code === 4) motionState.spindleOn = true;
+    if (code === 5) motionState.spindleOn = false;
+  });
+
+  const hasAxisWords = Object.keys(axisWords).length > 0;
+  const hasArcWords = Object.keys(arcWords).length > 0;
+  const motionMode = gCodes.some(code => [0, 1, 2, 3].includes(code))
+    ? motionState.motionMode
+    : (hasAxisWords || hasArcWords ? motionState.motionMode : null);
+
+  if (!motionMode) return;
+
+  const targetPoint = previewResolveTargetPosition(motionState, axisWords);
+  if (motionMode === 'G0' || motionMode === 'G1') {
+    if (hasAxisWords) {
+      previewAddSegment(timeline, commandEntry, motionMode === 'G0' ? 'rapid' : 'linear', motionState.position, targetPoint);
+      timeline.stats.motionCommandCount += 1;
+      motionState.position = targetPoint;
+    }
+    return;
+  }
+
+  if (motionMode !== 'G2' && motionMode !== 'G3') return;
+  const clockwise = motionMode === 'G2';
+
+  if (motionState.plane !== 'G17') {
+    previewPushEvent(timeline, 'error', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      raw: commandEntry.raw,
+      message: `Unsupported arc plane ${motionState.plane} in preview`
+    });
+    timeline.stats.unsupportedCount += 1;
+    motionState.position = targetPoint;
+    return;
+  }
+
+  let centerPoint = null;
+  if (arcWords.R != null) {
+    centerPoint = previewSolveArcCenterFromRadius(motionState.position, targetPoint, previewConvertValue(arcWords.R, motionState.units), clockwise);
+  } else if (arcWords.I != null || arcWords.J != null) {
+    centerPoint = previewRoundPoint({
+      x: motionState.position.x + previewConvertValue(arcWords.I || 0, motionState.units),
+      y: motionState.position.y + previewConvertValue(arcWords.J || 0, motionState.units),
+      z: motionState.position.z
+    });
+  }
+
+  if (!centerPoint) {
+    previewPushEvent(timeline, 'error', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      raw: commandEntry.raw,
+      message: 'Unable to solve arc center for preview'
+    });
+    motionState.position = targetPoint;
+    return;
+  }
+
+  const built = previewAddArcSegments(timeline, commandEntry, motionState, targetPoint, centerPoint, clockwise);
+  if (!built) {
+    previewPushEvent(timeline, 'error', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      raw: commandEntry.raw,
+      message: 'Arc preview generation failed'
+    });
+  } else {
+    timeline.stats.motionCommandCount += 1;
+  }
+  motionState.position = targetPoint;
+}
+
+function buildBasicPreviewTimeline(source) {
+  const scriptSource = substituteVars(source, basicLoadedVars);
+  const timeline = createBasicPreviewTimeline(scriptSource);
+  const { lines, order } = basicParseLines(scriptSource);
+  const motionState = createPreviewMotionState();
+  const previewVars = {};
+  const previewResults = new Map();
+  const previewCallStack = [];
+  let pc = 0;
+  let instructionCount = 0;
+
+  while (pc < order.length) {
+    instructionCount += 1;
+    if (instructionCount > BASIC_MAX_INSTRS) {
+      previewPushEvent(timeline, 'error', {
+        sourceLine: order[pc],
+        message: `Preview aborted: exceeded ${BASIC_MAX_INSTRS.toLocaleString()} instruction limit`
+      });
+      break;
+    }
+
+    const lineNum = order[pc];
+    const stmt = lines[lineNum];
+
+    if (/^REM\b/i.test(stmt)) { pc += 1; continue; }
+
+    if (/^LET\s+\w+\s*=\s*READ\(/i.test(stmt) || /^READ\(/i.test(stmt)) {
+      let varName = null;
+      let settingArg = null;
+      const letReadM = stmt.match(/^LET\s+(\w+)\s*=\s*READ\("([^"]+)"\)/i);
+      if (letReadM) { varName = letReadM[1]; settingArg = letReadM[2]; }
+      const readIntoM = stmt.match(/^READ\("([^"]+)"\)\s+INTO\s+(\w+)/i);
+      if (readIntoM) { settingArg = readIntoM[1]; varName = readIntoM[2]; }
+      const cached = basicGrblSettings[settingArg];
+      previewVars[basicNormalizeRuntimeVarName(varName)] = cached == null ? 0 : cached;
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: cached == null ? `Preview defaulted ${settingArg} to 0` : `Preview reused cached ${settingArg} = ${cached}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^LET\s+\w+\s*=\s*SETTING\(/i.test(stmt) || /^SETTING\(/i.test(stmt)) {
+      let varName = null;
+      let settingArg = null;
+      const letSettingM = stmt.match(/^LET\s+(\w+)\s*=\s*SETTING\("([^"]+)"\)/i);
+      if (letSettingM) { varName = letSettingM[1]; settingArg = letSettingM[2]; }
+      const settingIntoM = stmt.match(/^SETTING\("([^"]+)"\)\s+INTO\s+(\w+)/i);
+      if (settingIntoM) { settingArg = settingIntoM[1]; varName = settingIntoM[2]; }
+      const cached = basicGrblSettings[settingArg];
+      previewVars[basicNormalizeRuntimeVarName(varName)] = cached == null ? 0 : cached;
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: cached == null ? `Preview defaulted ${settingArg} to 0` : `Preview reused cached ${settingArg} = ${cached}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^LET\s+/i.test(stmt) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(stmt)) {
+      const body = stmt.replace(/^LET\s+/i, '');
+      const eq = body.indexOf('=');
+      if (eq !== -1) {
+        const varName = body.slice(0, eq).trim();
+        const valExpr = body.slice(eq + 1).trim();
+        previewVars[basicNormalizeRuntimeVarName(varName)] = basicEvalExpr(valExpr, previewVars);
+      }
+      pc += 1;
+      continue;
+    }
+
+    if (/^SEND\s+/i.test(stmt)) {
+      const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
+      const commandText = String(basicEvalExpr(sendSpec.expression, previewVars)).trim();
+      const parts = commandText.split(/\r?\n/).map(part => part.trim()).filter(Boolean);
+      parts.forEach(part => {
+        const commandEntry = previewRegisterCommand(timeline, {
+          sourceLine: lineNum,
+          raw: part,
+          display: part,
+          status: 'sent'
+        });
+        previewCompileGcodeCommand(timeline, motionState, commandEntry);
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^WAIT\s+/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: `Preview skipped timing statement: ${stmt}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^WAIT_IDLE(?:\s+.+)?$/i.test(stmt) || /^WAIT_STATE\s+.+$/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: `Preview skipped runtime state wait: ${stmt}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^PRINT\s+/i.test(stmt)) {
+      const msg = String(basicEvalExpr(stmt.replace(/^PRINT\s+/i, '').trim(), previewVars));
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: `PRINT: ${msg}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^CONFIRM\s+/i.test(stmt) || /^PAUSE$/i.test(stmt) || /^(?:LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt)) {
+      previewPushEvent(timeline, 'error', {
+        sourceLine: lineNum,
+        message: `Preview cannot resolve interactive statement: ${stmt}`
+      });
+      break;
+    }
+
+    if (/^RESULT\s+/i.test(stmt)) {
+      const resultSpec = basicParseResultOptions(stmt.replace(/^RESULT\s+/i, '').trim());
+      if (resultSpec.error) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: resultSpec.error });
+        break;
+      }
+      previewResults.set(resultSpec.key, basicEvalExpr(resultSpec.valueExpr, previewVars));
+      pc += 1;
+      continue;
+    }
+
+    if (/^REPORT$/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: `REPORT contains ${previewResults.size} result value(s)`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^(HOLD|RESUME|STATUS|SOFT_RESET)$/i.test(stmt)) {
+      const commandEntry = previewRegisterCommand(timeline, {
+        sourceLine: lineNum,
+        raw: stmt.toUpperCase(),
+        display: stmt.toUpperCase(),
+        status: 'sent'
+      });
+      previewPushEvent(timeline, 'note', {
+        commandId: commandEntry.commandId,
+        sourceLine: lineNum,
+        message: `Realtime command preserved for preview: ${stmt.toUpperCase()}`
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^IF\s+/i.test(stmt)) {
+      const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
+      if (ifM) {
+        const condResult = basicParseCondition(ifM[1], previewVars);
+        if (condResult) {
+          const target = parseInt(ifM[2], 10);
+          const targetIdx = order.indexOf(target);
+          if (targetIdx !== -1) { pc = targetIdx; continue; }
+          previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
+          break;
+        }
+      }
+      pc += 1;
+      continue;
+    }
+
+    if (/^GOTO\s+\d+/i.test(stmt)) {
+      const target = parseInt(stmt.match(/^GOTO\s+(\d+)/i)[1], 10);
+      const targetIdx = order.indexOf(target);
+      if (targetIdx !== -1) { pc = targetIdx; continue; }
+      previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
+      break;
+    }
+
+    if (/^GOSUB\s+\d+/i.test(stmt)) {
+      const target = parseInt(stmt.match(/^GOSUB\s+(\d+)/i)[1], 10);
+      const targetIdx = order.indexOf(target);
+      if (targetIdx !== -1) {
+        previewCallStack.push(pc + 1);
+        pc = targetIdx;
+        continue;
+      }
+      previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOSUB target ${target} not found` });
+      break;
+    }
+
+    if (/^RETURN$/i.test(stmt)) {
+      if (!previewCallStack.length) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: 'Preview RETURN encountered empty call stack' });
+        break;
+      }
+      pc = previewCallStack.pop();
+      continue;
+    }
+
+    if (/^END$/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: 'Preview reached END'
+      });
+      break;
+    }
+
+    previewPushEvent(timeline, 'error', {
+      sourceLine: lineNum,
+      message: `Preview encountered unsupported statement: ${stmt}`
+    });
+    break;
+  }
+
+  if (!timeline.segments.length) {
+    timeline.bounds.min = { ...motionState.position };
+    timeline.bounds.max = { ...motionState.position };
+    timeline.bounds.span = { x: 0, y: 0, z: 0 };
+  }
+
+  return timeline;
+}
+
+function getPreviewWindowFeatures() {
+  const width = 1220;
+  const height = 840;
+  const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+  return [
+    `width=${width}`,
+    `height=${height}`,
+    `left=${left}`,
+    `top=${top}`,
+    'resizable=yes',
+    'scrollbars=yes'
+  ].join(',');
+}
+
+function ensurePreviewWindow() {
+  if (previewWindowRef && !previewWindowRef.closed) return previewWindowRef;
+  previewWindowRef = window.open('preview.html', 'grbl-preview-window', getPreviewWindowFeatures());
+  if (!previewWindowRef) {
+    addLine('Preview window blocked by browser popup settings', 'err');
+    return null;
+  }
+  return previewWindowRef;
+}
+
+function postLatestPreviewTimeline() {
+  if (!latestPreviewTimeline) return;
+  if (!previewWindowRef || previewWindowRef.closed) return;
+  previewWindowRef.postMessage({
+    type: 'preview-load',
+    payload: latestPreviewTimeline
+  }, window.location.origin);
+}
+
+window.addEventListener('message', event => {
+  if (event.origin !== window.location.origin) return;
+  if (!event.data || typeof event.data !== 'object') return;
+  if (event.data.type === 'preview-closed') {
+    previewWindowRef = null;
+    return;
+  }
+  if (event.data.type === 'preview-ready' || event.data.type === 'preview-request-timeline') {
+    postLatestPreviewTimeline();
+  }
+});
+
+function openBasicPreview() {
+  const src = basicScriptInput.value.trim();
+  if (!src) {
+    addLine('No script to preview - enter a BASIC script first', 'err');
+    return;
+  }
+  basicValidationState = basicValidateDraft();
+  updateBasicValidationUi();
+  updateBasicControlUi();
+  if (basicValidationState.errors.length) {
+    if (basicSection) basicSection.open = true;
+    addLine('Cannot preview BASIC script until syntax errors are fixed', 'err');
+    return;
+  }
+
+  latestPreviewTimeline = buildBasicPreviewTimeline(src);
+  const previewWindow = ensurePreviewWindow();
+  if (!previewWindow) return;
+  previewWindow.focus();
+  postLatestPreviewTimeline();
+  addLine(`Preview compiled: ${latestPreviewTimeline.commands.length} command(s), ${latestPreviewTimeline.segments.length} segment(s)`, 'sys');
+}
+
 async function runBasicScript(source) {
   if (basicRunning) return;
-
+  if (gcodeRunning) { addLine('Cannot run BASIC script while G-code queue is running', 'err'); return; }
   const scriptSource = substituteVars(source, basicLoadedVars);
   const configText = buildBasicPreviewText(false);
   const configVars = basicLoadedVars || {};
@@ -2486,6 +3272,7 @@ async function runBasicScript(source) {
   basicResults = new Map();
   basicCallStack = [];
   updateBasicControlUi();
+  renderGcodeQueue();
   addLine('--- BASIC script started ---', 'basic');
 
   const { lines, order } = basicParseLines(scriptSource);
@@ -2836,8 +3623,306 @@ async function runBasicScript(source) {
     basicStopMessage = '--- Script stopped by user ---';
     basicInputBar.style.display = 'none';
     updateBasicControlUi();
+    renderGcodeQueue();
   }
 }
+
+// --------------- GCode Queue ---------------
+
+function gcodeEscHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function gcodeEscAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function gcodeNormalizeLines(raw) {
+  return raw.split('\n').map(function(l) { return l.trim(); })
+    .filter(function(l) {
+      if (!l.length) return false;
+      // Drop lines whose entire content is a comment once stripped
+      return previewStripGcodeComments(l).length > 0;
+    });
+}
+
+function addGcodeJob(raw, mode) {
+  const lines = gcodeNormalizeLines(raw);
+  if (!lines.length) { addLine('GCode queue: no valid commands to add', 'err'); return; }
+  const id = ++gcodeJobCounter;
+  const label = 'Job ' + id + ' (' + lines.length + (lines.length !== 1 ? ' lines)' : ' line)');
+  gcodeQueue.push({ id: id, label: label, raw: raw, lines: lines, mode: mode, status: 'pending', error: null });
+  renderGcodeQueue();
+  addLine('GCode queue: added ' + label + ' [' + (mode === 'fast-buffer' ? 'fast' : 'sync') + ']', 'sys');
+}
+
+function removeGcodeJob(id) {
+  if (gcodeRunning && gcodeActiveJobId === id) return;
+  gcodeQueue = gcodeQueue.filter(function(j) { return j.id !== id; });
+  renderGcodeQueue();
+}
+
+function clearGcodeQueue() {
+  if (gcodeRunning) return;
+  gcodeQueue = [];
+  renderGcodeQueue();
+}
+
+function updateGcodeJobStatus(id, status, error) {
+  const job = gcodeQueue.find(function(j) { return j.id === id; });
+  if (!job) return;
+  job.status = status;
+  job.error = error || null;
+  renderGcodeQueue();
+}
+
+function renderGcodeQueue() {
+  gcodeQueueCount.textContent = gcodeQueue.length === 1 ? '1 job' : gcodeQueue.length + ' jobs';
+  gcodeQueueClearBtn.disabled = gcodeRunning || gcodeQueue.length === 0;
+  const hasInput = Boolean(gcodeInputEl.value.trim());
+  gcodeAddBtn.disabled = !hasInput || gcodeRunning;
+  gcodePreviewBtn.disabled = !hasInput;
+  const pendingCount = gcodeQueue.filter(function(j) { return j.status === 'pending'; }).length;
+  gcodeQueueRunBtn.disabled = gcodeRunning || basicRunning || !port || pendingCount === 0;
+  if (!gcodeQueue.length) {
+    gcodeQueueEmpty.style.display = '';
+    Array.from(gcodeQueueList.querySelectorAll('.gcode-queue-row')).forEach(function(el) { el.remove(); });
+    return;
+  }
+  gcodeQueueEmpty.style.display = 'none';
+  // Remove rows for jobs no longer in the queue
+  const queueIds = new Set(gcodeQueue.map(function(j) { return j.id; }));
+  Array.from(gcodeQueueList.querySelectorAll('.gcode-queue-row')).forEach(function(el) {
+    if (!queueIds.has(Number(el.dataset.jobId))) el.remove();
+  });
+  // Add/update rows in order
+  gcodeQueue.forEach(function(job, idx) {
+    let row = gcodeQueueList.querySelector('.gcode-queue-row[data-job-id="' + job.id + '"]');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'gcode-queue-row';
+      row.dataset.jobId = job.id;
+      row.innerHTML =
+        '<span class="gcode-queue-row-label" title="' + gcodeEscAttr(job.label) + '">' + gcodeEscHtml(job.label) + '</span>' +
+        '<span class="gcode-queue-row-mode">' + (job.mode === 'fast-buffer' ? 'fast' : 'sync') + '</span>' +
+        '<span class="gcode-queue-badge" data-badge></span>' +
+        '<div class="gcode-queue-row-actions">' +
+          '<button class="gcode-queue-action" data-action="preview" data-job-id="' + job.id + '">Preview</button>' +
+          '<button class="gcode-queue-action" data-action="run" data-job-id="' + job.id + '">Run</button>' +
+          '<button class="gcode-queue-action" data-action="remove" data-job-id="' + job.id + '">Remove</button>' +
+        '</div>';
+      const rows = gcodeQueueList.querySelectorAll('.gcode-queue-row');
+      if (idx < rows.length) {
+        gcodeQueueList.insertBefore(row, rows[idx]);
+      } else {
+        gcodeQueueList.appendChild(row);
+      }
+    }
+    const badge = row.querySelector('[data-badge]');
+    const badgeText = job.status === 'error'
+      ? ('error' + (job.error ? ': ' + String(job.error).substring(0, 30) : ''))
+      : job.status;
+    badge.className = 'gcode-queue-badge ' + job.status;
+    badge.textContent = badgeText;
+    const isActive = gcodeRunning && gcodeActiveJobId === job.id;
+    row.querySelector('[data-action="remove"]').disabled = isActive;
+    row.querySelector('[data-action="run"]').disabled = gcodeRunning || basicRunning;
+  });
+}
+
+function openGcodeJobPreview(job) {
+  const motionState = createPreviewMotionState();
+  const timeline = createBasicPreviewTimeline(job.label);
+  job.lines.forEach(function(rawLine) {
+    const entry = previewRegisterCommand(timeline, { raw: rawLine, display: rawLine });
+    previewCompileGcodeCommand(timeline, motionState, entry);
+  });
+  latestPreviewTimeline = timeline;
+  ensurePreviewWindow();
+  postLatestPreviewTimeline();
+}
+
+function openGcodeInputPreview() {
+  const raw = gcodeInputEl.value.trim();
+  if (!raw) return;
+  const lines = gcodeNormalizeLines(raw);
+  if (!lines.length) { addLine('GCode preview: no valid commands', 'err'); return; }
+  const motionState = createPreviewMotionState();
+  const timeline = createBasicPreviewTimeline('GCode Preview');
+  lines.forEach(function(rawLine) {
+    const entry = previewRegisterCommand(timeline, { raw: rawLine, display: rawLine });
+    previewCompileGcodeCommand(timeline, motionState, entry);
+  });
+  latestPreviewTimeline = timeline;
+  ensurePreviewWindow();
+  postLatestPreviewTimeline();
+}
+
+function handleGcodeQueueAction(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const jobId  = Number(btn.dataset.jobId);
+  const job    = gcodeQueue.find(function(j) { return j.id === jobId; });
+  if (!job) return;
+  if (action === 'remove')       removeGcodeJob(jobId);
+  else if (action === 'preview') openGcodeJobPreview(job);
+  else if (action === 'run')     { void runSingleGcodeJob(job); }
+}
+
+function abortGcodeQueue(reason) {
+  if (!gcodeRunning) return;
+  if (gcodeJobAbort) {
+    gcodeJobAbort(reason || 'connection lost');
+    gcodeJobAbort = null;
+  }
+  gcodeRunning = false;
+  incomingLineInterceptor = null;
+  if (gcodeActiveJobId !== null) {
+    updateGcodeJobStatus(gcodeActiveJobId, 'error', reason || 'aborted');
+    gcodeActiveJobId = null;
+  }
+  lockSerialForQueue(false);
+  renderGcodeQueue();
+}
+
+function lockSerialForQueue(lock) {
+  cmdInput.disabled = lock || !port;
+  sendBtn.disabled  = lock || !port;
+  updateBasicControlUi();
+}
+
+async function gcodeRunJobSync(job) {
+  const TIMEOUT_MS = 8000;
+  for (let i = 0; i < job.lines.length; i++) {
+    if (!gcodeRunning) return { ok: false, error: 'stopped' };
+    const result = await executeSequenceCommand(
+      job.lines[i],
+      { requireAck: true, timeoutMs: TIMEOUT_MS }
+    );
+    if (result.status === 'error' || result.status === 'alarm' || result.status === 'cancelled') {
+      return { ok: false, error: result.line || result.status };
+    }
+    if (result.status === 'timeout') {
+      return { ok: false, error: 'timeout waiting for ok on: ' + job.lines[i].substring(0, 40) };
+    }
+  }
+  return { ok: true };
+}
+
+async function gcodeRunJobFast(job) {
+  const RX_BUFFER = 64; // conservative byte limit matching GRBL RX buffer
+  return new Promise(function(resolve) {
+    const prevInterceptor = incomingLineInterceptor;
+    let inFlight = 0;
+    const pending = [];
+    let cmdIdx = 0;
+    gcodeJobAbort = function(reason) {
+      gcodeJobAbort = null;
+      incomingLineInterceptor = prevInterceptor;
+      resolve({ ok: false, error: reason });
+    };
+    function done(result) {
+      gcodeJobAbort = null;
+      incomingLineInterceptor = prevInterceptor;
+      resolve(result);
+    }
+    function scheduleNext() {
+      while (cmdIdx < job.lines.length) {
+        const line  = job.lines[cmdIdx];
+        const bytes = (new TextEncoder().encode(line + '\n')).length;
+        if (inFlight + bytes > RX_BUFFER && inFlight > 0) break;
+        cmdIdx++;
+        inFlight += bytes;
+        pending.push(bytes);
+        void sendCommand(line + '\n', line);
+      }
+      if (cmdIdx >= job.lines.length && pending.length === 0) done({ ok: true });
+    }
+    incomingLineInterceptor = function(line) {
+      if (/^ok$/i.test(line)) {
+        if (pending.length > 0) {
+          inFlight -= pending.shift();
+          if (inFlight < 0) inFlight = 0;
+        }
+        scheduleNext();
+      } else if (/^error:\d+/i.test(line) || /ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) {
+        done({ ok: false, error: line });
+      }
+    };
+    scheduleNext();
+  });
+}
+
+async function runSingleGcodeJob(job) {
+  if (gcodeRunning || basicRunning) { addLine('GCode queue: already running, cannot start job', 'err'); return; }
+  if (!port || !writer) { addLine('GCode queue: not connected', 'err'); return; }
+  gcodeRunning     = true;
+  gcodeActiveJobId = job.id;
+  lockSerialForQueue(true);
+  updateGcodeJobStatus(job.id, 'running');
+  addLine('--- GCode queue: running ' + job.label + ' [' + (job.mode === 'fast-buffer' ? 'fast' : 'sync') + '] ---', 'sys');
+  let result;
+  try {
+    result = job.mode === 'fast-buffer' ? await gcodeRunJobFast(job) : await gcodeRunJobSync(job);
+  } catch(e) {
+    result = { ok: false, error: e.message || String(e) };
+  }
+  if (gcodeRunning) {
+    if (result.ok) {
+      updateGcodeJobStatus(job.id, 'done');
+      addLine('--- GCode queue: ' + job.label + ' completed ---', 'sys');
+    } else {
+      updateGcodeJobStatus(job.id, 'error', result.error || 'unknown error');
+      addLine('--- GCode queue: ' + job.label + ' failed: ' + (result.error || 'unknown error') + ' ---', 'err');
+    }
+    gcodeRunning     = false;
+    gcodeActiveJobId = null;
+    lockSerialForQueue(false);
+    renderGcodeQueue();
+  }
+}
+
+async function runGcodeQueue() {
+  if (gcodeRunning || basicRunning) { addLine('GCode queue: already running', 'err'); return; }
+  if (!port || !writer) { addLine('GCode queue: not connected', 'err'); return; }
+  const pendingJobs = gcodeQueue.filter(function(j) { return j.status === 'pending'; });
+  if (!pendingJobs.length) { addLine('GCode queue: no pending jobs (remove old jobs or add new ones)', 'sys'); return; }
+  gcodeRunning = true;
+  lockSerialForQueue(true);
+  addLine('--- GCode queue started: ' + pendingJobs.length + ' job(s) ---', 'sys');
+  for (const job of pendingJobs) {
+    if (!gcodeRunning) break;
+    gcodeActiveJobId = job.id;
+    updateGcodeJobStatus(job.id, 'running');
+    addLine('--- GCode queue: running ' + job.label + ' [' + (job.mode === 'fast-buffer' ? 'fast' : 'sync') + '] ---', 'sys');
+    let result;
+    try {
+      result = job.mode === 'fast-buffer' ? await gcodeRunJobFast(job) : await gcodeRunJobSync(job);
+    } catch(e) {
+      result = { ok: false, error: e.message || String(e) };
+    }
+    if (!gcodeRunning) break;
+    if (result.ok) {
+      updateGcodeJobStatus(job.id, 'done');
+      addLine('--- GCode queue: ' + job.label + ' done ---', 'sys');
+    } else {
+      updateGcodeJobStatus(job.id, 'error', result.error || 'unknown error');
+      addLine('--- GCode queue: ' + job.label + ' failed: ' + (result.error || 'unknown error') + ' ---', 'err');
+      addLine('--- GCode queue stopped on first failure ---', 'err');
+      break;
+    }
+  }
+  if (gcodeRunning) {
+    gcodeRunning     = false;
+    gcodeActiveJobId = null;
+    lockSerialForQueue(false);
+    renderGcodeQueue();
+    addLine('--- GCode queue finished ---', 'sys');
+  }
+}
+
+// --------------- End GCode Queue ---------------
 
 basicRunBtn.addEventListener('click', () => {
   const src = basicScriptInput.value.trim();
@@ -2852,6 +3937,21 @@ basicRunBtn.addEventListener('click', () => {
   }
   runBasicScript(src);
 });
+
+basicPreviewBtn.addEventListener('click', openBasicPreview);
+
+gcodeInputEl.addEventListener('input', renderGcodeQueue);
+gcodeClearBtn.addEventListener('click', function() {
+  gcodeInputEl.value = '';
+  renderGcodeQueue();
+});
+gcodeAddBtn.addEventListener('click', function() {
+  addGcodeJob(gcodeInputEl.value, gcodeExecMode.value);
+});
+gcodePreviewBtn.addEventListener('click', openGcodeInputPreview);
+gcodeQueueRunBtn.addEventListener('click', function() { void runGcodeQueue(); });
+gcodeQueueClearBtn.addEventListener('click', clearGcodeQueue);
+gcodeQueueList.addEventListener('click', handleGcodeQueueAction);
 
 basicStopBtn.addEventListener('click', () => {
   requestBasicStop();
@@ -3784,6 +4884,7 @@ async function disconnectPort(reason = 'Disconnected') {
     addLine('Disconnect cleanup warning: ' + e.message, 'err');
   }
   dtrSupported = false;
+  abortGcodeQueue('connection closed');
   settlePendingSequenceResponse({ status: 'cancelled', line: 'Sequence cancelled' });
   setConnectionUi('disconnected');
   setTransportState('disconnected');
@@ -3906,6 +5007,7 @@ function markConnectionFault(label) {
   resetReadySignalState();
   currentRun.startupResolved = 'fault';
   currentRun.startupReadyLine = null;
+  abortGcodeQueue('connection fault');
   settlePendingSequenceResponse({ status: 'cancelled', line: label });
   setTransportState('fault', label);
   setMachineState('unknown');
