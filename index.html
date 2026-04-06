@@ -1878,11 +1878,6 @@ function basicValidateScript(source, paramNames = []) {
       return;
     }
 
-    if (/\bINPUT\s*\(/i.test(statement)) {
-      errors.push(`Line ${lineNum}: INPUT must be written as name = INPUT("Prompt"), LET name = INPUT("Prompt"), or INPUT name`);
-      return;
-    }
-
     match = statement.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
     if (match) {
       basicValidateConditionSyntax(match[1], lineNum, definedParams, errors);
@@ -2407,6 +2402,124 @@ function basicParseCondition(condStr, vars) {
         if (op === '<')  return num ? lNum  < rNum : String(left)  < String(right);
         if (op === '>')  return num ? lNum  > rNum : String(left)  > String(right);
         if (op === '=')  return num ? lNum === rNum : left === right;
+      }
+    }
+  }
+  throw new Error(`No comparison operator in condition: ${condStr}`);
+}
+
+function basicFindInputExpressionCall(exprText) {
+  const text = String(exprText || '');
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    const startsInput = text.slice(i, i + 5).toUpperCase() === 'INPUT';
+    const before = i === 0 ? '' : text[i - 1];
+    const after = i + 5 >= text.length ? '' : text[i + 5];
+    const boundaryBefore = !before || !/[A-Za-z0-9_]/.test(before);
+    const boundaryAfter = !after || !/[A-Za-z0-9_]/.test(after);
+    if (!startsInput || !boundaryBefore || !boundaryAfter) continue;
+
+    let openIndex = i + 5;
+    while (openIndex < text.length && /\s/.test(text[openIndex])) openIndex += 1;
+    if (text[openIndex] !== '(') continue;
+
+    let depth = 0;
+    let inArgString = false;
+    for (let k = openIndex; k < text.length; k++) {
+      const c = text[k];
+      if (c === '"') {
+        inArgString = !inArgString;
+        continue;
+      }
+      if (inArgString) continue;
+      if (c === '(') {
+        depth += 1;
+      } else if (c === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          return {
+            start: i,
+            end: k + 1,
+            argExpr: text.slice(openIndex + 1, k)
+          };
+        }
+      }
+    }
+    throw new Error('Unclosed INPUT(...) expression');
+  }
+  return null;
+}
+
+async function basicResolveInputCallsInExpression(expr, vars) {
+  let rewritten = String(expr || '');
+  let guard = 0;
+  let tempIndex = 0;
+  while (true) {
+    const inputCall = basicFindInputExpressionCall(rewritten);
+    if (!inputCall) break;
+    guard += 1;
+    if (guard > 64) {
+      throw new Error('Too many nested INPUT(...) calls in expression');
+    }
+
+    const promptExpr = inputCall.argExpr.trim();
+    const promptText = promptExpr
+      ? String(await basicEvalExprRuntime(promptExpr, vars))
+      : 'Input';
+    const rawValue = await basicPromptInput(promptText);
+    if (basicStopRequested) {
+      throw new Error('Script stopped during INPUT');
+    }
+
+    const parsedNumber = parseFloat(rawValue);
+    let replacement;
+    if (Number.isFinite(parsedNumber)) {
+      replacement = String(parsedNumber);
+    } else {
+      const tempName = `__INPUT_TMP_${Date.now()}_${tempIndex++}`;
+      vars[basicNormalizeRuntimeVarName(tempName)] = String(rawValue);
+      replacement = tempName;
+    }
+
+    rewritten = rewritten.slice(0, inputCall.start) + replacement + rewritten.slice(inputCall.end);
+  }
+  return rewritten;
+}
+
+async function basicEvalExprRuntime(expr, vars) {
+  const rewritten = await basicResolveInputCallsInExpression(expr, vars);
+  return basicEvalExpr(rewritten, vars);
+}
+
+async function basicParseConditionRuntime(condStr, vars) {
+  const condOps = ['<=', '>=', '<>', '<', '>', '='];
+  let inStr = false;
+  for (let i = 0; i < condStr.length; i++) {
+    if (condStr[i] === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (inStr) continue;
+    for (const op of condOps) {
+      if (condStr.slice(i, i + op.length) === op) {
+        const left = await basicEvalExprRuntime(condStr.slice(0, i).trim(), vars);
+        const right = await basicEvalExprRuntime(condStr.slice(i + op.length).trim(), vars);
+        const lNum = typeof left === 'number' ? left : parseFloat(left);
+        const rNum = typeof right === 'number' ? right : parseFloat(right);
+        const num = Number.isFinite(lNum) && Number.isFinite(rNum);
+        if (op === '<=') return num ? lNum <= rNum : String(left) <= String(right);
+        if (op === '>=') return num ? lNum >= rNum : String(left) >= String(right);
+        if (op === '<>') return num ? lNum !== rNum : left !== right;
+        if (op === '<') return num ? lNum < rNum : String(left) < String(right);
+        if (op === '>') return num ? lNum > rNum : String(left) > String(right);
+        if (op === '=') return num ? lNum === rNum : left === right;
       }
     }
   }
@@ -3518,7 +3631,7 @@ async function runBasicScript(source) {
         if (eq !== -1) {
           const varName = body.slice(0, eq).trim();
           const valExpr = body.slice(eq + 1).trim();
-          basicVars[basicNormalizeRuntimeVarName(varName)] = basicEvalExpr(valExpr, basicVars);
+          basicVars[basicNormalizeRuntimeVarName(varName)] = await basicEvalExprRuntime(valExpr, basicVars);
         }
         pc++;
         continue;
@@ -3527,8 +3640,8 @@ async function runBasicScript(source) {
       // SEND
       if (/^SEND\s+/i.test(stmt)) {
         const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
-        const cmdStr = String(basicEvalExpr(sendSpec.expression, basicVars)).trim();
-        const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(basicEvalExpr(sendSpec.timeoutExpr, basicVars)));
+        const cmdStr = String(await basicEvalExprRuntime(sendSpec.expression, basicVars)).trim();
+        const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(await basicEvalExprRuntime(sendSpec.timeoutExpr, basicVars)));
         addLine(`SEND: ${cmdStr}`, 'basic');
         await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
         if (!(await basicDelayWithControl(100))) {
@@ -3542,7 +3655,7 @@ async function runBasicScript(source) {
       // WAIT
       if (/^WAIT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^WAIT\s+/i, '').trim();
-        const ms = Math.round(parseFloat(basicEvalExpr(arg, basicVars)));
+        const ms = Math.round(parseFloat(await basicEvalExprRuntime(arg, basicVars)));
         addLine(`WAIT ${ms} ms`, 'basic');
         if (!(await basicDelayWithControl(ms))) {
           stopScript();
@@ -3555,7 +3668,7 @@ async function runBasicScript(source) {
       // WAIT_IDLE [timeoutMs]
       if (/^WAIT_IDLE(?:\s+.+)?$/i.test(stmt)) {
         const waitIdleM = stmt.match(/^WAIT_IDLE(?:\s+(.+))?$/i);
-        const timeoutMs = waitIdleM && waitIdleM[1] ? Math.round(Number(basicEvalExpr(waitIdleM[1], basicVars))) : null;
+        const timeoutMs = waitIdleM && waitIdleM[1] ? Math.round(Number(await basicEvalExprRuntime(waitIdleM[1], basicVars))) : null;
         addLine(timeoutMs == null ? 'WAIT_IDLE' : `WAIT_IDLE ${timeoutMs} ms`, 'basic');
         if (!(await basicWaitForIdle(timeoutMs))) {
           stopScript();
@@ -3568,8 +3681,8 @@ async function runBasicScript(source) {
       // WAIT_STATE <target> [TIMEOUT timeoutMs]
       if (/^WAIT_STATE\s+.+$/i.test(stmt)) {
         const waitStateSpec = basicParseWaitStateOptions(stmt.replace(/^WAIT_STATE\s+/i, '').trim());
-        const targetState = String(basicEvalExpr(waitStateSpec.targetExpr, basicVars)).trim();
-        const timeoutMs = waitStateSpec.timeoutExpr == null ? null : Math.round(Number(basicEvalExpr(waitStateSpec.timeoutExpr, basicVars)));
+        const targetState = String(await basicEvalExprRuntime(waitStateSpec.targetExpr, basicVars)).trim();
+        const timeoutMs = waitStateSpec.timeoutExpr == null ? null : Math.round(Number(await basicEvalExprRuntime(waitStateSpec.timeoutExpr, basicVars)));
         addLine(timeoutMs == null
           ? `WAIT_STATE ${targetState}`
           : `WAIT_STATE ${targetState} TIMEOUT ${timeoutMs} ms`, 'basic');
@@ -3584,7 +3697,7 @@ async function runBasicScript(source) {
       // PRINT
       if (/^PRINT\s+/i.test(stmt)) {
         const arg = stmt.replace(/^PRINT\s+/i, '').trim();
-        const msg = String(basicEvalExpr(arg, basicVars));
+        const msg = String(await basicEvalExprRuntime(arg, basicVars));
         addLine(`PRINT: ${msg}`, 'basic');
         pc++;
         continue;
@@ -3596,13 +3709,13 @@ async function runBasicScript(source) {
           addLine(`Line ${lineNum}: ${forSpec.error}`, 'err');
           break;
         }
-        const stepValue = forSpec.stepExpr == null ? 1 : Number(basicEvalExpr(forSpec.stepExpr, basicVars));
+        const stepValue = forSpec.stepExpr == null ? 1 : Number(await basicEvalExprRuntime(forSpec.stepExpr, basicVars));
         if (!Number.isFinite(stepValue) || stepValue === 0) {
           addLine(`Line ${lineNum}: FOR STEP must be a non-zero number`, 'err');
           break;
         }
-        const startValue = Number(basicEvalExpr(forSpec.startExpr, basicVars));
-        const endValue = Number(basicEvalExpr(forSpec.endExpr, basicVars));
+        const startValue = Number(await basicEvalExprRuntime(forSpec.startExpr, basicVars));
+        const endValue = Number(await basicEvalExprRuntime(forSpec.endExpr, basicVars));
         const normalizedVarName = basicNormalizeRuntimeVarName(forSpec.varName);
         basicVars[normalizedVarName] = startValue;
         basicForStack.push({
@@ -3644,7 +3757,7 @@ async function runBasicScript(source) {
       // CONFIRM <messageExpr>
       if (/^CONFIRM\s+/i.test(stmt)) {
         const arg = stmt.replace(/^CONFIRM\s+/i, '').trim();
-        const message = String(basicEvalExpr(arg, basicVars));
+        const message = String(await basicEvalExprRuntime(arg, basicVars));
         addLine(`CONFIRM: ${message}`, 'basic');
         const confirmed = await basicShowConfirm(message, basicVars || {});
         if (!confirmed) {
@@ -3672,7 +3785,7 @@ async function runBasicScript(source) {
       if (/^RESULT\s+/i.test(stmt)) {
         const resultSpec = basicParseResultOptions(stmt.replace(/^RESULT\s+/i, '').trim());
         if (resultSpec.error) throw new Error(resultSpec.error);
-        const value = basicEvalExpr(resultSpec.valueExpr, basicVars);
+        const value = await basicEvalExprRuntime(resultSpec.valueExpr, basicVars);
         basicResults.set(resultSpec.key, value);
         addLine(`RESULT: ${resultSpec.key} = ${value}`, 'basic');
         pc++;
@@ -3744,7 +3857,7 @@ async function runBasicScript(source) {
           const varName = inputShortM[1];
           const promptExpr = inputShortM[2];
           const promptText = promptExpr
-            ? String(basicEvalExpr(promptExpr, basicVars))
+            ? String(await basicEvalExprRuntime(promptExpr, basicVars))
             : `Enter ${varName}`;
           const val = await basicPromptInput(promptText);
           if (basicStopRequested) {
@@ -3764,7 +3877,7 @@ async function runBasicScript(source) {
       if (/^IF\s+/i.test(stmt)) {
         const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)/i);
         if (ifM) {
-          const condResult = basicParseCondition(ifM[1], basicVars);
+          const condResult = await basicParseConditionRuntime(ifM[1], basicVars);
           if (condResult) {
             const target = parseInt(ifM[2], 10);
             const targetIdx = order.indexOf(target);
