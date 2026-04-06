@@ -1538,9 +1538,14 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bTAN\s*\(/gi, '__tan__(')
     .replace(/\bASIN\s*\(/gi, '__asin__(')
     .replace(/\bACOS\s*\(/gi, '__acos__(')
+    .replace(/\bATAN2\s*\(/gi, '__atan2__(')
     .replace(/\bATAN\s*\(/gi, '__atan__(')
+    .replace(/\bSQRT\s*\(/gi, '__sqrt__(')
+    .replace(/\bROUND\s*\(/gi, '__round__(')
+    .replace(/\bRAD\s*\(/gi, '__rad__(')
+    .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sqrt__', '__round__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1550,7 +1555,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sqrt__ = value => Math.sqrt(Number(value)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
