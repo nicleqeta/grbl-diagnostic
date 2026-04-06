@@ -884,7 +884,8 @@
   SHARE URL SYSTEM
   ----------------
   Scripts are saved server-side (Cloudflare KV) and shared via a short opaque ID:
-    ?script=<id>           ID returned when the script is saved via "Copy Share Link".
+    ?script=<id>           ID assigned when the script is saved via "Save Script".
+                           "Copy Share Link" (enabled after saving) copies this URL.
                            The app fetches the full script from /script/{id}.
   Variable overrides are individual extra query parameters alongside ?script=:
     ?script=abc123&feedrate=2000&passes=5

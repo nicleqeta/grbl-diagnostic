@@ -318,7 +318,7 @@ Scripts are saved server-side and shared via a short opaque ID:
 https://grbl.camiable.com/?script=abc123
 ```
 
-The "Copy Share Link" button saves the script to the server and copies the URL.
+The "Save Script" button saves the script to the server and assigns it an ID. Once saved, "Copy Share Link" copies the URL for that ID.
 
 Variable overrides are individual extra query parameters:
 
