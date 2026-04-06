@@ -2884,11 +2884,12 @@ async function basicSendScriptCommand(commandText, { timeoutMs = null, requireOk
 async function basicWaitForIdle(timeoutMs = null) {
   const startedAt = Date.now();
   const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  let observedFreshStatus = false;
 
   while (true) {
     if (!(await basicWaitForResumeOrStop())) return false;
     if (!port) throw new Error('Serial connection lost while waiting for machine to become idle');
-    if (machineState === 'idle') return true;
+    if (observedFreshStatus && machineState === 'idle') return true;
     if (machineState === 'alarm') throw new Error('Machine entered ALARM while waiting for idle');
     if (transportState === 'fault' || transportState === 'disconnected') {
       throw new Error('Connection fault while waiting for machine to become idle');
@@ -2898,6 +2899,7 @@ async function basicWaitForIdle(timeoutMs = null) {
     }
 
     await basicSendRealtimeCommand('?');
+    observedFreshStatus = true;
     if (!(await basicDelayWithControl(200))) return false;
   }
 }
