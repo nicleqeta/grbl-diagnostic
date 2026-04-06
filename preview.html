@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRBL Preview</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --teal: #14b8a6;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --green: #22c55e;
+    --blue: #60a5fa;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: "Segoe UI", Arial, sans-serif; }
+  body { display: flex; flex-direction: column; }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  .title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-right: auto;
+  }
+
+  .btn, .select {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .btn {
+    cursor: pointer;
+  }
+
+  .btn:hover, .select:hover { border-color: var(--teal); }
+
+  .stats {
+    display: flex;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .shell {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .viewport {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: radial-gradient(circle at top, rgba(20,184,166,0.08), transparent 36%), var(--bg);
+  }
+
+  .canvas-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .status-box {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    padding: 10px 12px;
+    background: rgba(26, 29, 39, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 360px;
+    white-space: pre-line;
+  }
+
+  .sidebar {
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .side-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .command-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .command-item {
+    border-bottom: 1px solid rgba(46, 51, 71, 0.5);
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+
+  .command-item:hover { background: rgba(34, 38, 58, 0.75); }
+  .command-item.active { background: rgba(20, 184, 166, 0.14); border-left: 3px solid var(--teal); padding-left: 9px; }
+  .command-line { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .command-text { color: var(--text); font-family: Consolas, monospace; font-size: 12px; word-break: break-word; }
+  .command-meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .empty {
+    margin: auto;
+    max-width: 440px;
+    text-align: center;
+    color: var(--muted);
+    line-height: 1.7;
+    padding: 24px;
+  }
+
+  .empty strong { color: var(--text); }
+
+  @media (max-width: 960px) {
+    .shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 280px; }
+    .sidebar { border-left: 0; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="title" id="title">GRBL Preview</div>
+    <button class="btn" id="rewind-btn" type="button">Rewind</button>
+    <button class="btn" id="step-back-btn" type="button">Step Back</button>
+    <select class="select" id="speed-select" aria-label="Playback speed">
+      <option value="0.5">0.5x</option>
+      <option value="1" selected>1x</option>
+      <option value="2">2x</option>
+      <option value="4">4x</option>
+      <option value="8">8x</option>
+    </select>
+    <button class="btn" id="play-btn" type="button">Play</button>
+    <button class="btn" id="step-forward-btn" type="button">Step Forward</button>
+    <button class="btn" id="fit-btn" type="button">Fit</button>
+    <select class="select" id="view-select" aria-label="Preview mode">
+      <option value="perspective">Perspective</option>
+      <option value="top">Top</option>
+    </select>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="shell">
+    <div class="viewport">
+      <div class="canvas-wrap">
+        <canvas id="preview-canvas"></canvas>
+        <div class="status-box" id="status-box">Waiting for preview data from the main window.</div>
+        <div class="empty" id="empty-state"><strong>No preview loaded.</strong><br>Return to the main app and click Preview on a BASIC script.</div>
+      </div>
+    </div>
+    <aside class="sidebar">
+      <div class="side-header">
+        <span>Command Tape</span>
+        <span id="command-progress">0 / 0</span>
+      </div>
+      <ul class="command-list" id="command-list"></ul>
+    </aside>
+  </div>
+
+<script>
+const canvas = document.getElementById('preview-canvas');
+const ctx = canvas.getContext('2d');
+const titleEl = document.getElementById('title');
+const statsEl = document.getElementById('stats');
+const statusBox = document.getElementById('status-box');
+const emptyState = document.getElementById('empty-state');
+const commandList = document.getElementById('command-list');
+const commandProgress = document.getElementById('command-progress');
+const rewindBtn = document.getElementById('rewind-btn');
+const playBtn = document.getElementById('play-btn');
+const stepBackBtn = document.getElementById('step-back-btn');
+const stepForwardBtn = document.getElementById('step-forward-btn');
+const fitBtn = document.getElementById('fit-btn');
+const viewSelect = document.getElementById('view-select');
+const speedSelect = document.getElementById('speed-select');
+
+let timeline = null;
+let playback = {
+  playing: false,
+  commandCursor: 0,
+  speed: 1,
+  viewMode: 'perspective',
+  baseCommandMs: 260,
+  lastFrameAt: 0,
+  accumulatorMs: 0,
+  zoom: 1
+};
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  render();
+}
+
+function resetPlayback() {
+  playback.playing = false;
+  playback.commandCursor = timeline && timeline.commandCount ? 0 : 0;
+  playback.accumulatorMs = 0;
+  playback.lastFrameAt = 0;
+  playback.zoom = 1;
+  syncPlaybackUi();
+}
+
+function syncPlaybackUi() {
+  playBtn.textContent = playback.playing ? 'Pause' : 'Play';
+  viewSelect.value = playback.viewMode;
+  speedSelect.value = String(playback.speed);
+  const count = timeline ? timeline.commandCount : 0;
+  const displayIndex = count ? Math.min(playback.commandCursor + 1, count) : 0;
+  commandProgress.textContent = `${displayIndex} / ${count}`;
+}
+
+function clampCommandCursor(value) {
+  if (!timeline || !timeline.commandCount) return 0;
+  return Math.max(0, Math.min(timeline.commandCount - 1, value));
+}
+
+function setCommandCursor(nextCommandId) {
+  playback.commandCursor = clampCommandCursor(nextCommandId);
+  syncPlaybackUi();
+  renderCommandList();
+  render();
+}
+
+function stepCommands(delta) {
+  if (!timeline || !timeline.commandCount) return;
+  setCommandCursor(playback.commandCursor + delta);
+}
+
+function fitPreview() {
+  playback.zoom = 1;
+  render();
+}
+
+function getVisibleSegmentEnd() {
+  if (!timeline || !timeline.commandCount) return -1;
+  for (let commandId = playback.commandCursor; commandId >= 0; commandId -= 1) {
+    const segmentIndex = timeline.commandToLastSegment[commandId];
+    if (typeof segmentIndex === 'number' && segmentIndex >= 0) return segmentIndex;
+  }
+  return -1;
+}
+
+function projectTop(point, bounds, scale, offsetX, offsetY) {
+  return {
+    x: offsetX + ((point.x - bounds.min.x) * scale),
+    y: offsetY - ((point.y - bounds.min.y) * scale)
+  };
+}
+
+function projectPerspective(point, center, scale, offsetX, offsetY) {
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  const dz = point.z - center.z;
+  const yaw = -Math.PI / 4;
+  const pitch = Math.PI / 3.4;
+  const x1 = (Math.cos(yaw) * dx) - (Math.sin(yaw) * dy);
+  const y1 = (Math.sin(yaw) * dx) + (Math.cos(yaw) * dy);
+  const z1 = dz;
+  const y2 = (Math.cos(pitch) * y1) - (Math.sin(pitch) * z1);
+  const z2 = (Math.sin(pitch) * y1) + (Math.cos(pitch) * z1);
+  const depth = 650 + z2;
+  const perspectiveScale = (650 / Math.max(120, depth)) * scale;
+  return {
+    x: offsetX + (x1 * perspectiveScale),
+    y: offsetY - (y2 * perspectiveScale)
+  };
+}
+
+function computeSceneScale(bounds, width, height) {
+  const spanX = Math.max(1, bounds.span.x);
+  const spanY = Math.max(1, bounds.span.y);
+  const spanZ = Math.max(1, bounds.span.z);
+  const size = Math.max(spanX, spanY, spanZ);
+  return ((Math.min(width, height) * 0.72) / size) * playback.zoom;
+}
+
+function renderGrid(bounds, width, height, offsetX, offsetY, scale) {
+  const stepBase = Math.max(bounds.span.x, bounds.span.y, 50);
+  const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(stepBase)) - 1));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
+  ctx.lineWidth = 1;
+  for (let x = Math.floor(bounds.min.x / step) * step; x <= bounds.max.x + step; x += step) {
+    const from = projectTop({ x, y: bounds.min.y, z: 0 }, bounds, scale, offsetX, offsetY);
+    const to = projectTop({ x, y: bounds.max.y, z: 0 }, bounds, scale, offsetX, offsetY);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+  for (let y = Math.floor(bounds.min.y / step) * step; y <= bounds.max.y + step; y += step) {
+    const from = projectTop({ x: bounds.min.x, y, z: 0 }, bounds, scale, offsetX, offsetY);
+    const to = projectTop({ x: bounds.max.x, y, z: 0 }, bounds, scale, offsetX, offsetY);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function renderAxes(bounds, width, height, offsetX, offsetY, scale, center) {
+  const origin = playback.viewMode === 'top'
+    ? projectTop({ x: 0, y: 0, z: 0 }, bounds, scale, offsetX, offsetY)
+    : projectPerspective({ x: 0, y: 0, z: 0 }, center, scale, offsetX, offsetY);
+  const xAxis = playback.viewMode === 'top'
+    ? projectTop({ x: 25, y: 0, z: 0 }, bounds, scale, offsetX, offsetY)
+    : projectPerspective({ x: 25, y: 0, z: 0 }, center, scale, offsetX, offsetY);
+  const yAxis = playback.viewMode === 'top'
+    ? projectTop({ x: 0, y: 25, z: 0 }, bounds, scale, offsetX, offsetY)
+    : projectPerspective({ x: 0, y: 25, z: 0 }, center, scale, offsetX, offsetY);
+  const zAxis = playback.viewMode === 'top'
+    ? projectTop({ x: 0, y: 0, z: 25 }, bounds, scale, offsetX, offsetY)
+    : projectPerspective({ x: 0, y: 0, z: 25 }, center, scale, offsetX, offsetY);
+
+  ctx.save();
+  ctx.lineWidth = 2;
+  [[xAxis, '#ef4444'], [yAxis, '#22c55e'], [zAxis, '#60a5fa']].forEach(([endpoint, color]) => {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(endpoint.x, endpoint.y);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function render() {
+  const width = canvas.clientWidth || canvas.width;
+  const height = canvas.clientHeight || canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  if (!timeline) return;
+
+  emptyState.style.display = 'none';
+  const bounds = timeline.bounds;
+  const center = {
+    x: bounds.min.x + (bounds.span.x / 2),
+    y: bounds.min.y + (bounds.span.y / 2),
+    z: bounds.min.z + (bounds.span.z / 2)
+  };
+  const scale = computeSceneScale(bounds, width, height);
+  const offsetX = width * 0.5;
+  const offsetY = height * 0.58;
+  const visibleSegmentEnd = getVisibleSegmentEnd();
+  const project = playback.viewMode === 'top'
+    ? point => projectTop(point, bounds, scale, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2))
+    : point => projectPerspective(point, center, scale, offsetX, offsetY);
+
+  if (playback.viewMode === 'top') {
+    renderGrid(bounds, width, height, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2), scale);
+  }
+  renderAxes(bounds, width, height, offsetX, offsetY, scale, center);
+
+  timeline.segments.forEach((segment, index) => {
+    const from = project(segment.from);
+    const to = project(segment.to);
+    const isVisible = index <= visibleSegmentEnd;
+    const isActive = segment.commandId === playback.commandCursor;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    if (!isVisible) {
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.18)';
+      ctx.lineWidth = 1;
+    } else if (isActive) {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 3;
+    } else {
+      ctx.strokeStyle = segment.motionType === 'rapid' ? 'rgba(96, 165, 250, 0.82)' : 'rgba(20, 184, 166, 0.88)';
+      ctx.lineWidth = segment.motionType === 'rapid' ? 1.5 : 2.2;
+    }
+    ctx.stroke();
+  });
+
+  const activeCommand = timeline.commands[clampCommandCursor(playback.commandCursor)] || null;
+  statusBox.textContent = [
+    `${timeline.title}`,
+    `View: ${playback.viewMode === 'top' ? 'Top' : 'Perspective'}`,
+    `Commands: ${timeline.commandCount}`,
+    `Segments: ${timeline.segments.length}`,
+    activeCommand ? `Active: ${activeCommand.display}` : 'Active: none'
+  ].join('\n');
+}
+
+function renderCommandList() {
+  commandList.innerHTML = '';
+  if (!timeline || !timeline.commands.length) return;
+
+  timeline.commands.forEach(command => {
+    const item = document.createElement('li');
+    item.className = `command-item${command.commandId === playback.commandCursor ? ' active' : ''}`;
+    item.dataset.commandId = String(command.commandId);
+
+    const line = document.createElement('div');
+    line.className = 'command-line';
+    line.textContent = command.sourceLine ? `Line ${command.sourceLine}` : 'Generated command';
+
+    const text = document.createElement('div');
+    text.className = 'command-text';
+    text.textContent = command.display || command.raw;
+
+    const meta = document.createElement('div');
+    meta.className = 'command-meta';
+    meta.textContent = command.firstSegment === -1
+      ? 'No motion geometry'
+      : `Segments ${command.firstSegment + 1}-${command.lastSegment + 1}`;
+
+    item.appendChild(line);
+    item.appendChild(text);
+    item.appendChild(meta);
+    item.addEventListener('click', () => setCommandCursor(command.commandId));
+    commandList.appendChild(item);
+
+    if (command.commandId === playback.commandCursor) {
+      requestAnimationFrame(() => item.scrollIntoView({ block: 'nearest' }));
+    }
+  });
+}
+
+function loadTimeline(nextTimeline) {
+  timeline = nextTimeline;
+  titleEl.textContent = timeline.title || 'GRBL Preview';
+  statsEl.textContent = `${timeline.stats.motionCommandCount} motion command(s) | ${timeline.stats.errorCount} error(s)`;
+  resetPlayback();
+  renderCommandList();
+  render();
+}
+
+function tick(timestamp) {
+  if (playback.playing && timeline && timeline.commandCount > 0) {
+    if (!playback.lastFrameAt) playback.lastFrameAt = timestamp;
+    playback.accumulatorMs += (timestamp - playback.lastFrameAt);
+    playback.lastFrameAt = timestamp;
+    const nextStepMs = playback.baseCommandMs / Math.max(0.25, playback.speed);
+    while (playback.accumulatorMs >= nextStepMs) {
+      playback.accumulatorMs -= nextStepMs;
+      if (playback.commandCursor >= timeline.commandCount - 1) {
+        playback.playing = false;
+        playback.accumulatorMs = 0;
+        break;
+      }
+      playback.commandCursor += 1;
+      renderCommandList();
+      render();
+      syncPlaybackUi();
+    }
+  } else {
+    playback.lastFrameAt = timestamp;
+  }
+  requestAnimationFrame(tick);
+}
+
+playBtn.addEventListener('click', () => {
+  playback.playing = !playback.playing;
+  syncPlaybackUi();
+});
+rewindBtn.addEventListener('click', () => {
+  playback.playing = false;
+  setCommandCursor(0);
+});
+stepBackBtn.addEventListener('click', () => {
+  playback.playing = false;
+  stepCommands(-1);
+});
+stepForwardBtn.addEventListener('click', () => {
+  playback.playing = false;
+  stepCommands(1);
+});
+fitBtn.addEventListener('click', fitPreview);
+viewSelect.addEventListener('change', () => {
+  playback.viewMode = viewSelect.value;
+  render();
+});
+speedSelect.addEventListener('change', () => {
+  playback.speed = Number(speedSelect.value) || 1;
+  syncPlaybackUi();
+});
+
+window.addEventListener('message', event => {
+  if (event.origin !== window.location.origin) return;
+  if (!event.data || event.data.type !== 'preview-load') return;
+  loadTimeline(event.data.payload);
+});
+
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('beforeunload', () => {
+  if (window.opener && !window.opener.closed) {
+    try { window.opener.postMessage({ type: 'preview-closed' }, window.location.origin); } catch {}
+  }
+});
+
+resizeCanvas();
+syncPlaybackUi();
+requestAnimationFrame(tick);
+
+if (window.opener && !window.opener.closed) {
+  try {
+    window.opener.postMessage({ type: 'preview-ready' }, window.location.origin);
+  } catch {}
+}
+</script>
+</body>
+</html>
