@@ -550,11 +550,11 @@
     font-size: 12px;
     color: var(--blue);
     font-family: var(--mono);
-    flex-shrink: 0;
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    flex: 0 1 46%;
+    min-width: 160px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
   }
   #basic-input-field {
     flex: 1;
@@ -1235,6 +1235,7 @@ const BASIC_CONTROL_POLL_MS = 50;
 const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
 const BASIC_TIMEOUT_MS      = 60_000;    // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
+const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
 
 if (!('serial' in navigator)) {
   noSerialSec.style.display = 'block';
@@ -2707,7 +2708,9 @@ async function basicSendRealtimeCommand(rawCommand, displayOverride = null) {
 }
 
 async function basicSendScriptCommand(commandText, { timeoutMs = null, requireOk = false } = {}) {
-  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  const normalizedTimeout = timeoutMs == null
+    ? BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS
+    : Math.max(0, Math.round(Number(timeoutMs) || 0));
   const result = await executeSequenceCommand(commandText, {
     timeoutMs: normalizedTimeout,
     requireAck: requireOk || normalizedTimeout != null
@@ -3545,6 +3548,7 @@ async function runBasicScript(source) {
 
   const { lines, order } = basicParseLines(scriptSource);
   let pc = 0; // index into order[]
+  let activeLineNum = null;
   let stopLogged = false;
   let instrCount = 0;
   const startTime = Date.now();
@@ -3579,6 +3583,7 @@ async function runBasicScript(source) {
       if (instrCount % BASIC_YIELD_EVERY === 0) await delay(0);
 
       const lineNum = order[pc];
+      activeLineNum = lineNum;
       const stmt = lines[lineNum];
 
        // REM (comment)
@@ -3934,7 +3939,12 @@ async function runBasicScript(source) {
       pc++;
     }
   } catch(e) {
-    addLine(`Script error: ${e.message}`, 'err');
+    const message = e && e.message ? e.message : String(e);
+    if (activeLineNum != null) {
+      addLine(`Script error on line ${activeLineNum}: ${message}`, 'err');
+    } else {
+      addLine(`Script error: ${message}`, 'err');
+    }
   } finally {
     basicRunning = false;
     basicStopRequested = false;
