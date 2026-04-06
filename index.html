@@ -1887,7 +1887,7 @@ function basicValidateScript(source, paramNames = []) {
     match = statement.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
     if (match) {
       basicValidateConditionSyntax(match[1], lineNum, definedParams, errors);
-      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[2], 10) });
+      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[2], 10), condition: match[1] });
       return;
     }
 
@@ -1918,6 +1918,27 @@ function basicValidateScript(source, paramNames = []) {
     if (!Object.prototype.hasOwnProperty.call(lines, target)) {
       errors.push(`Line ${fromLine}: jump target ${target} does not exist`);
     }
+  });
+
+  jumpTargets.forEach(({ fromLine, target, condition }) => {
+    if (!condition || target >= fromLine) return;
+    if (!Object.prototype.hasOwnProperty.call(lines, target)) return;
+
+    const cond = String(condition || '').trim();
+    const condMatch = cond.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|<>|=|<|>)\s*(.+)$/);
+    if (!condMatch) return;
+
+    const loopVar = basicNormalizeRuntimeVarName(condMatch[1]);
+    const targetStmt = String(lines[target] || '').trim();
+    const targetLet = targetStmt.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+    if (!targetLet) return;
+
+    const resetVar = basicNormalizeRuntimeVarName(targetLet[1]);
+    if (resetVar !== loopVar) return;
+
+    warnings.push(
+      `Line ${fromLine}: potential non-terminating loop; backward jump to line ${target} resets ${targetLet[1]} before the IF condition re-checks.`
+    );
   });
 
   if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
