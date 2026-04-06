@@ -150,7 +150,7 @@
         <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input.</li>
       </ul>
       <pre><code>10 LET max = READ("$30")
-20 INPUT speed, "Enter speed"
+    20 LET speed = INPUT("Enter speed")
 30 LET pct = INT((speed / max) * 100)</code></pre>
     </section>
 
@@ -163,11 +163,12 @@
         <li><code>SEND expr TIMEOUT expr REQUIRE_OK</code>: Use both options together.</li>
         <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
       </ul>
-      <pre><code>10 SEND "M3 S" & STR(speed) TIMEOUT 1200 REQUIRE_OK
-20 STATUS
-30 HOLD
-40 WAIT 500
-50 RESUME</code></pre>
+      <pre><code>10 LET speed = 900
+    20 SEND "M3 S" & STR(speed) TIMEOUT 1200 REQUIRE_OK
+    30 STATUS
+    40 HOLD
+    50 WAIT 500
+    60 RESUME</code></pre>
     </section>
 
     <section class="card">
@@ -191,27 +192,29 @@
         <li><code>RESULT name, expr</code>: Save a named result value.</li>
         <li><code>REPORT</code>: Print all saved results.</li>
       </ul>
-      <pre><code>10 PRINT "Starting run"
-20 RESULT "target_speed", speed
-30 CONFIRM "Run with speed " & STR(speed) & "?"
-40 REPORT</code></pre>
+      <pre><code>10 LET speed = 1200
+    20 PRINT "Starting run"
+    30 RESULT "target_speed", speed
+    40 CONFIRM "Run with speed " & STR(speed) & "?"
+    50 REPORT
+    60 END</code></pre>
     </section>
 
     <section class="card">
       <h2>5. Program Flow</h2>
       <ul>
+        <li><code>FOR name = start TO end [STEP step]</code> and <code>NEXT [name]</code>: Counter loop with optional explicit step.</li>
         <li><code>IF condition THEN GOTO line</code>: Conditional jump.</li>
         <li><code>GOTO line</code>: Unconditional jump.</li>
         <li><code>GOSUB line</code> and <code>RETURN</code>: Subroutine call/return.</li>
         <li><code>END</code>: Stop script.</li>
       </ul>
-      <pre><code>10 LET n = RND(10)
-20 INPUT guess, "Guess 1-10"
-30 IF guess = n THEN GOTO 80
-40 PRINT "Try again"
-50 GOTO 20
-80 PRINT "Correct"
-90 END</code></pre>
+      <pre><code>10 LET sum = 0
+20 FOR i = 1 TO 5
+30 LET sum = sum + i
+40 NEXT i
+50 PRINT "Sum = " & STR(sum)
+60 END</code></pre>
     </section>
 
     <section class="card">
@@ -221,20 +224,31 @@
         <li><code>STR(expr)</code>: Convert value to string.</li>
         <li><code>ABS(expr)</code>: Absolute value.</li>
         <li><code>INT(expr)</code>: Integer truncation.</li>
+        <li><code>ROUND(value, digits)</code>: Round to N decimal places (digits can be negative).</li>
+        <li><code>SQRT(expr)</code>: Square root.</li>
         <li><code>SIN(angleDeg)</code>: Sine of an angle in degrees.</li>
         <li><code>COS(angleDeg)</code>: Cosine of an angle in degrees.</li>
         <li><code>TAN(angleDeg)</code>: Tangent of an angle in degrees.</li>
         <li><code>ASIN(value)</code>: Inverse sine, returns degrees.</li>
         <li><code>ACOS(value)</code>: Inverse cosine, returns degrees.</li>
         <li><code>ATAN(value)</code>: Inverse tangent, returns degrees.</li>
+        <li><code>ATAN2(y, x)</code>: Inverse tangent with quadrant handling, returns degrees.</li>
+        <li><code>RAD(degValue)</code>: Convert degrees to radians.</li>
+        <li><code>DEG(radValue)</code>: Convert radians to degrees.</li>
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
       </ul>
-      <pre><code>10 LET angle = ATAN(1)
-20 LET x = 10 * COS(angle)
-30 LET y = 10 * SIN(angle)
-40 LET circumference = 2 * PI * 10
-50 PRINT "State: " & STATE()</code></pre>
+      <pre><code>10 LET dx = 3
+20 LET dy = 4
+30 LET len = SQRT(dx * dx + dy * dy)
+40 LET ang = ATAN2(dy, dx)
+    50 LET angRad = RAD(ang)
+    60 LET angDeg = DEG(angRad)
+    70 LET xr = ROUND(len * COS(angDeg), 3)
+    80 PRINT "Angle(deg): " & STR(angDeg)
+    90 PRINT "Projected X: " & STR(xr)
+    100 PRINT "State: " & STATE()
+    110 END</code></pre>
     </section>
 
     <section class="card">
@@ -244,6 +258,7 @@
         <li><span class="ok">Sharing:</span> saved scripts are loaded by <code>?script=...</code>.</li>
         <li><span class="ok">Overrides:</span> matching query params override saved variable defaults.</li>
         <li><span class="err">Safety:</span> runtime has instruction/time limits and stop controls.</li>
+        <li><span class="ok">Queue mode:</span> GCode queue defaults to <code>Fast buffered</code>; switch to synchronous if your controller needs stricter ack pacing.</li>
       </ul>
     </section>
   </main>
