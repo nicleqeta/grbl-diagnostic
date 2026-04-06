@@ -3217,6 +3217,19 @@ window.addEventListener('message', event => {
     previewWindowRef = null;
     return;
   }
+  if (event.data.type === 'preview-queue-gcode') {
+    const payload = event.data.payload || {};
+    const raw = String(payload.raw || '').trim();
+    const mode = payload.mode === 'fast-buffer' ? 'fast-buffer' : 'sync-ack';
+    if (!raw) {
+      addLine('Preview queue request ignored: no commands provided', 'err');
+      return;
+    }
+    const sourceTitle = String(payload.sourceTitle || 'Preview Job').trim();
+    addGcodeJob(raw, mode, { sourceTitle });
+    addLine(`Preview queue: received commands from ${sourceTitle}`, 'sys');
+    return;
+  }
   if (event.data.type === 'preview-ready' || event.data.type === 'preview-request-timeline') {
     postLatestPreviewTimeline();
   }
@@ -3646,11 +3659,13 @@ function gcodeNormalizeLines(raw) {
     });
 }
 
-function addGcodeJob(raw, mode) {
+function addGcodeJob(raw, mode, options = {}) {
   const lines = gcodeNormalizeLines(raw);
   if (!lines.length) { addLine('GCode queue: no valid commands to add', 'err'); return; }
   const id = ++gcodeJobCounter;
-  const label = 'Job ' + id + ' (' + lines.length + (lines.length !== 1 ? ' lines)' : ' line)');
+  const sourceTitle = String(options.sourceTitle || '').trim();
+  const labelPrefix = sourceTitle ? sourceTitle + ' - Job ' + id : 'Job ' + id;
+  const label = labelPrefix + ' (' + lines.length + (lines.length !== 1 ? ' lines)' : ' line)');
   gcodeQueue.push({ id: id, label: label, raw: raw, lines: lines, mode: mode, status: 'pending', error: null });
   renderGcodeQueue();
   addLine('GCode queue: added ' + label + ' [' + (mode === 'fast-buffer' ? 'fast' : 'sync') + ']', 'sys');

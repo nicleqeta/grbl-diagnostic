@@ -130,6 +130,44 @@
     flex: 1;
   }
 
+  .queue-panel {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface);
+  }
+
+  .queue-panel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .queue-panel-row .select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .queue-panel .btn {
+    width: 100%;
+  }
+
+  .queue-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .queue-status {
+    color: var(--muted);
+    font-size: 11px;
+    min-height: 16px;
+  }
+
   .command-item {
     border-bottom: 1px solid rgba(46, 51, 71, 0.5);
     padding: 10px 12px;
@@ -195,6 +233,20 @@
         <span id="command-progress">0 / 0</span>
       </div>
       <ul class="command-list" id="command-list"></ul>
+      <div class="queue-panel">
+        <div class="queue-panel-row">
+          <select class="select" id="queue-mode-select" aria-label="Queue execution mode">
+            <option value="sync-ack" selected>Synchronous (ack-gated)</option>
+            <option value="fast-buffer">Fast buffered</option>
+          </select>
+        </div>
+        <label class="queue-check">
+          <input type="checkbox" id="queue-include-nonmotion" checked>
+          Include non-motion commands
+        </label>
+        <button class="btn" id="queue-from-preview-btn" type="button">Queue as GCode</button>
+        <div class="queue-status" id="queue-status">Queue target ready.</div>
+      </div>
     </aside>
   </div>
 
@@ -214,6 +266,10 @@ const stepForwardBtn = document.getElementById('step-forward-btn');
 const fitBtn = document.getElementById('fit-btn');
 const viewSelect = document.getElementById('view-select');
 const speedSelect = document.getElementById('speed-select');
+const queueModeSelect = document.getElementById('queue-mode-select');
+const queueIncludeNonMotion = document.getElementById('queue-include-nonmotion');
+const queueFromPreviewBtn = document.getElementById('queue-from-preview-btn');
+const queueStatus = document.getElementById('queue-status');
 
 let timeline = null;
 let playback = {
@@ -469,7 +525,76 @@ function loadTimeline(nextTimeline) {
   statsEl.textContent = `${timeline.stats.motionCommandCount} motion command(s) | ${timeline.stats.errorCount} error(s)`;
   resetPlayback();
   renderCommandList();
+  syncQueuePanelUi();
   render();
+}
+
+function stripCommandComments(text) {
+  return String(text || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/;.*$/g, ' ')
+    .trim();
+}
+
+function collectQueueLines(includeNonMotion) {
+  if (!timeline || !timeline.commands || !timeline.commands.length) return [];
+  const lines = [];
+  timeline.commands.forEach(command => {
+    if (!includeNonMotion && command.firstSegment === -1) return;
+    const raw = String(command.raw || command.display || '').trim();
+    if (!raw.length) return;
+    if (!stripCommandComments(raw).length) return;
+    lines.push(raw);
+  });
+  return lines;
+}
+
+function syncQueuePanelUi() {
+  const hasTimeline = Boolean(timeline && timeline.commands && timeline.commands.length);
+  const openerReady = Boolean(window.opener && !window.opener.closed);
+  queueFromPreviewBtn.disabled = !hasTimeline || !openerReady;
+  if (!hasTimeline) {
+    queueStatus.textContent = 'Load a preview to enable queue export.';
+    return;
+  }
+  if (!openerReady) {
+    queueStatus.textContent = 'Queue unavailable: open preview from the main app.';
+    return;
+  }
+  queueStatus.textContent = 'Queue target ready.';
+}
+
+function requestQueueFromPreview() {
+  if (!timeline) return;
+  if (!window.opener || window.opener.closed) {
+    queueStatus.textContent = 'Queue unavailable: opener window not available.';
+    syncQueuePanelUi();
+    return;
+  }
+  const includeNonMotion = Boolean(queueIncludeNonMotion.checked);
+  const lines = collectQueueLines(includeNonMotion);
+  if (!lines.length) {
+    queueStatus.textContent = includeNonMotion
+      ? 'No commands available to queue.'
+      : 'No motion commands found with current filter.';
+    return;
+  }
+  const mode = queueModeSelect.value === 'fast-buffer' ? 'fast-buffer' : 'sync-ack';
+  const payload = {
+    type: 'preview-queue-gcode',
+    payload: {
+      mode,
+      includeNonMotion,
+      sourceTitle: timeline.title || 'Preview Job',
+      raw: lines.join('\n')
+    }
+  };
+  try {
+    window.opener.postMessage(payload, window.location.origin);
+    queueStatus.textContent = `Queued ${lines.length} command(s) to main window.`;
+  } catch {
+    queueStatus.textContent = 'Queue request failed to post to main window.';
+  }
 }
 
 function tick(timestamp) {
@@ -521,6 +646,7 @@ speedSelect.addEventListener('change', () => {
   playback.speed = Number(speedSelect.value) || 1;
   syncPlaybackUi();
 });
+queueFromPreviewBtn.addEventListener('click', requestQueueFromPreview);
 
 window.addEventListener('message', event => {
   if (event.origin !== window.location.origin) return;
@@ -537,6 +663,7 @@ window.addEventListener('beforeunload', () => {
 
 resizeCanvas();
 syncPlaybackUi();
+syncQueuePanelUi();
 requestAnimationFrame(tick);
 
 if (window.opener && !window.opener.closed) {
