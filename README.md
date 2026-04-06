@@ -312,11 +312,21 @@ During preview:
 
 ### Share URL System
 
-Scripts can be shared via URL:
+Scripts are saved server-side and shared via a short opaque ID:
 
-- `?script=<base64-encoded script>` — embed the full script in the link
-- `?post=<Discourse forum post URL>` — load the script from a forum post
-- `?vars=name=value,name=value` — pass variable overrides alongside a script
+```
+https://grbl.camiable.com/?script=abc123
+```
+
+The "Copy Share Link" button saves the script to the server and copies the URL.
+
+Variable overrides are individual extra query parameters:
+
+```
+https://grbl.camiable.com/?script=abc123&feedrate=2000&passes=5
+```
+
+Any query key not in the app's reserved list is treated as a variable override. Reserved keys that cannot be used as variable names: `script`, `preset`, `cmd`, `cmds`, `name`, `baud`, `dtr`, `observe`, `wait`, `delay`, `banner_timeout`, `banner_wait`, `show_req_resp`, `source`, `scrape`, `post`, `basic_post`.
 
 ### Validator
 

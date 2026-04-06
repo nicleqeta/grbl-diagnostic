@@ -883,10 +883,16 @@
 
   SHARE URL SYSTEM
   ----------------
-  Scripts can be shared via URL:
-    ?script=<base64-encoded script text>
-    ?post=<Discourse forum post URL>   (fetches script from forum post)
-  Variables can be passed alongside: ?script=...&vars=name=val,...
+  Scripts are saved server-side (Cloudflare KV) and shared via a short opaque ID:
+    ?script=<id>           ID returned when the script is saved via "Copy Share Link".
+                           The app fetches the full script from /script/{id}.
+  Variable overrides are individual extra query parameters alongside ?script=:
+    ?script=abc123&feedrate=2000&passes=5
+  Any query key not in the reserved list becomes a variable override.
+  Reserved keys (never treated as variable overrides):
+    script, preset, cmd, cmds, name, baud, dtr, observe, wait,
+    delay, banner_timeout, banner_wait, show_req_resp, source, scrape,
+    post, basic_post
 
   VALIDATOR
   ---------
