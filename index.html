@@ -946,8 +946,8 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <div class="gcode-mode-row">
           <label for="gcode-exec-mode">Mode:</label>
           <select id="gcode-exec-mode">
-            <option value="sync-ack" selected>Synchronous (ack-gated)</option>
-            <option value="fast-buffer">Fast buffered</option>
+            <option value="sync-ack">Synchronous (ack-gated)</option>
+            <option value="fast-buffer" selected>Fast buffered</option>
           </select>
         </div>
         <div class="diag-actions" style="margin-bottom:8px;">
@@ -1222,6 +1222,7 @@ let basicConfirmResolver = null;
 let basicVars = {};
 let basicResults = new Map();
 let basicCallStack = [];
+let basicForStack = [];
 let basicGrblSettings = {};   // cache of $N=value from READ/SETTING
 let previewWindowRef = null;
 let latestPreviewTimeline = null;
@@ -1629,6 +1630,39 @@ function basicParseWaitStateOptions(waitStateBody) {
   };
 }
 
+function basicParseForOptions(forBody) {
+  const body = String(forBody || '').trim();
+  const match = body.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+  if (!match) {
+    return { varName: null, startExpr: '', endExpr: '', stepExpr: null, error: 'FOR requires "FOR name = start TO end [STEP step]" format' };
+  }
+
+  const varName = match[1];
+  const rhs = match[2].trim();
+  const toIndex = basicFindTrailingKeyword(rhs, 'TO');
+  if (toIndex === -1) {
+    return { varName: null, startExpr: '', endExpr: '', stepExpr: null, error: 'FOR requires TO <end-expression>' };
+  }
+
+  const startExpr = rhs.slice(0, toIndex).trim();
+  const afterTo = rhs.slice(toIndex + 'TO'.length).trim();
+  const stepIndex = basicFindTrailingKeyword(afterTo, 'STEP');
+  const endExpr = stepIndex === -1 ? afterTo.trim() : afterTo.slice(0, stepIndex).trim();
+  const stepExpr = stepIndex === -1 ? null : afterTo.slice(stepIndex + 'STEP'.length).trim();
+
+  if (!startExpr) {
+    return { varName: null, startExpr, endExpr, stepExpr, error: 'FOR start expression is empty' };
+  }
+  if (!endExpr) {
+    return { varName: null, startExpr, endExpr, stepExpr, error: 'FOR end expression is empty' };
+  }
+  if (stepExpr != null && !stepExpr) {
+    return { varName: null, startExpr, endExpr, stepExpr, error: 'FOR STEP expression is empty' };
+  }
+
+  return { varName, startExpr, endExpr, stepExpr, error: null };
+}
+
 function basicFindTopLevelComma(text) {
   let inString = false;
   for (let index = 0; index < text.length; index += 1) {
@@ -1793,6 +1827,24 @@ function basicValidateScript(source, paramNames = []) {
       basicValidateExpressionSyntax(match[1], lineNum, 'the PRINT expression', definedParams, errors);
       return;
     }
+
+    match = statement.match(/^FOR\s+(.+)$/i);
+    if (match) {
+      const forSpec = basicParseForOptions(match[1]);
+      if (forSpec.error) {
+        errors.push(`Line ${lineNum}: ${forSpec.error}`);
+        return;
+      }
+      basicValidateExpressionSyntax(forSpec.startExpr, lineNum, `the FOR start expression for ${forSpec.varName}`, definedParams, errors);
+      basicValidateExpressionSyntax(forSpec.endExpr, lineNum, `the FOR end expression for ${forSpec.varName}`, definedParams, errors);
+      if (forSpec.stepExpr != null) {
+        basicValidateExpressionSyntax(forSpec.stepExpr, lineNum, `the FOR STEP expression for ${forSpec.varName}`, definedParams, errors);
+      }
+      return;
+    }
+
+    match = statement.match(/^NEXT(?:\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
+    if (match) return;
 
     match = statement.match(/^CONFIRM\s+(.+)$/i);
     if (match) {
@@ -2131,7 +2183,7 @@ function basicTokenize(expr) {
       }
     }
     // Single-char operators and punctuation
-    if ('+-*/()&<>='.includes(ch)) {
+    if ('+-*/()&<>=,'.includes(ch)) {
       tokens.push({ type: 'OP', value: ch });
       i++;
       continue;
@@ -2151,6 +2203,15 @@ function basicEvalExpr(expr, vars) {
     if (!t || t.type !== type || (value !== undefined && t.value !== value))
       throw new Error(`Expected ${type}${value !== undefined ? ' ' + value : ''} in expression`);
     return t;
+  }
+
+  function parseTwoArgFunctionArgs(name) {
+    expect('OP', '(');
+    const argA = parseExpr();
+    expect('OP', ',');
+    const argB = parseExpr();
+    expect('OP', ')');
+    return [argA, argB];
   }
 
   function parseExpr() {
@@ -2260,6 +2321,34 @@ function basicEvalExpr(expr, vars) {
         const inner = parseExpr();
         expect('OP', ')');
         return (Math.atan(Number(inner)) * 180) / Math.PI;
+      }
+      if (name === 'ATAN2') {
+        const [yValue, xValue] = parseTwoArgFunctionArgs(name);
+        return (Math.atan2(Number(yValue), Number(xValue)) * 180) / Math.PI;
+      }
+      if (name === 'SQRT') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.sqrt(Number(inner));
+      }
+      if (name === 'ROUND') {
+        const [value, digits] = parseTwoArgFunctionArgs(name);
+        const precision = Math.trunc(Number(digits));
+        const factor = Math.pow(10, Math.max(-9, Math.min(9, precision)));
+        return Math.round(Number(value) * factor) / factor;
+      }
+      if (name === 'RAD') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return (Number(inner) * Math.PI) / 180;
+      }
+      if (name === 'DEG') {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return (Number(inner) * 180) / Math.PI;
       }
       if (name === 'RND') {
         expect('OP', '(');
@@ -2954,6 +3043,7 @@ function buildBasicPreviewTimeline(source) {
   const previewVars = {};
   const previewResults = new Map();
   const previewCallStack = [];
+  const previewForStack = [];
   let pc = 0;
   let instructionCount = 0;
 
@@ -3060,6 +3150,57 @@ function buildBasicPreviewTimeline(source) {
         message: `PRINT: ${msg}`
       });
       pc += 1;
+      continue;
+    }
+
+    if (/^FOR\s+/i.test(stmt)) {
+      const forSpec = basicParseForOptions(stmt.replace(/^FOR\s+/i, '').trim());
+      if (forSpec.error) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: forSpec.error });
+        break;
+      }
+      const stepValue = forSpec.stepExpr == null ? 1 : Number(basicEvalExpr(forSpec.stepExpr, previewVars));
+      if (!Number.isFinite(stepValue) || stepValue === 0) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `FOR ${forSpec.varName} has invalid STEP value` });
+        break;
+      }
+      const startValue = Number(basicEvalExpr(forSpec.startExpr, previewVars));
+      const endValue = Number(basicEvalExpr(forSpec.endExpr, previewVars));
+      const normalizedVarName = basicNormalizeRuntimeVarName(forSpec.varName);
+      previewVars[normalizedVarName] = startValue;
+      previewForStack.push({
+        varName: normalizedVarName,
+        rawVarName: forSpec.varName,
+        endValue,
+        stepValue,
+        loopPc: pc
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^NEXT(?:\s+\w+)?$/i.test(stmt)) {
+      const nextMatch = stmt.match(/^NEXT(?:\s+(\w+))?$/i);
+      if (!previewForStack.length) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: 'NEXT encountered without matching FOR' });
+        break;
+      }
+      const loopState = previewForStack[previewForStack.length - 1];
+      const requestedName = nextMatch && nextMatch[1] ? basicNormalizeRuntimeVarName(nextMatch[1]) : null;
+      if (requestedName && requestedName !== loopState.varName) {
+        previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `NEXT ${nextMatch[1]} does not match active FOR ${loopState.rawVarName}` });
+        break;
+      }
+      const currentValue = Number(previewVars[loopState.varName]);
+      const nextValue = currentValue + loopState.stepValue;
+      previewVars[loopState.varName] = nextValue;
+      const keepLooping = loopState.stepValue > 0 ? nextValue <= loopState.endValue : nextValue >= loopState.endValue;
+      if (keepLooping) {
+        pc = loopState.loopPc + 1;
+      } else {
+        previewForStack.pop();
+        pc += 1;
+      }
       continue;
     }
 
@@ -3284,6 +3425,7 @@ async function runBasicScript(source) {
   basicVars = {};
   basicResults = new Map();
   basicCallStack = [];
+  basicForStack = [];
   updateBasicControlUi();
   renderGcodeQueue();
   addLine('--- BASIC script started ---', 'basic');
@@ -3445,6 +3587,57 @@ async function runBasicScript(source) {
         const msg = String(basicEvalExpr(arg, basicVars));
         addLine(`PRINT: ${msg}`, 'basic');
         pc++;
+        continue;
+      }
+
+      if (/^FOR\s+/i.test(stmt)) {
+        const forSpec = basicParseForOptions(stmt.replace(/^FOR\s+/i, '').trim());
+        if (forSpec.error) {
+          addLine(`Line ${lineNum}: ${forSpec.error}`, 'err');
+          break;
+        }
+        const stepValue = forSpec.stepExpr == null ? 1 : Number(basicEvalExpr(forSpec.stepExpr, basicVars));
+        if (!Number.isFinite(stepValue) || stepValue === 0) {
+          addLine(`Line ${lineNum}: FOR STEP must be a non-zero number`, 'err');
+          break;
+        }
+        const startValue = Number(basicEvalExpr(forSpec.startExpr, basicVars));
+        const endValue = Number(basicEvalExpr(forSpec.endExpr, basicVars));
+        const normalizedVarName = basicNormalizeRuntimeVarName(forSpec.varName);
+        basicVars[normalizedVarName] = startValue;
+        basicForStack.push({
+          varName: normalizedVarName,
+          rawVarName: forSpec.varName,
+          endValue,
+          stepValue,
+          loopPc: pc
+        });
+        pc++;
+        continue;
+      }
+
+      if (/^NEXT(?:\s+\w+)?$/i.test(stmt)) {
+        const nextMatch = stmt.match(/^NEXT(?:\s+(\w+))?$/i);
+        if (!basicForStack.length) {
+          addLine(`Line ${lineNum}: NEXT without matching FOR`, 'err');
+          break;
+        }
+        const loopState = basicForStack[basicForStack.length - 1];
+        const requestedName = nextMatch && nextMatch[1] ? basicNormalizeRuntimeVarName(nextMatch[1]) : null;
+        if (requestedName && requestedName !== loopState.varName) {
+          addLine(`Line ${lineNum}: NEXT ${nextMatch[1]} does not match active FOR ${loopState.rawVarName}`, 'err');
+          break;
+        }
+        const currentValue = Number(basicVars[loopState.varName]);
+        const nextValue = currentValue + loopState.stepValue;
+        basicVars[loopState.varName] = nextValue;
+        const keepLooping = loopState.stepValue > 0 ? nextValue <= loopState.endValue : nextValue >= loopState.endValue;
+        if (keepLooping) {
+          pc = loopState.loopPc + 1;
+        } else {
+          basicForStack.pop();
+          pc++;
+        }
         continue;
       }
 
@@ -3634,6 +3827,7 @@ async function runBasicScript(source) {
     basicStopRequested = false;
     basicPaused = false;
     basicStopMessage = '--- Script stopped by user ---';
+    basicForStack = [];
     basicInputBar.style.display = 'none';
     updateBasicControlUi();
     renderGcodeQueue();
