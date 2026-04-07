@@ -356,7 +356,8 @@ function projectPerspective(point, center, scale, offsetX, offsetY) {
   const pitch = Math.PI / 3.4;
   const x1 = (Math.cos(yaw) * dx) - (Math.sin(yaw) * dy);
   const y1 = (Math.sin(yaw) * dx) + (Math.cos(yaw) * dy);
-  const z1 = dz;
+  // Screen-space Y increases downward, so invert Z here to keep +Z visually upward.
+  const z1 = -dz;
   const y2 = (Math.cos(pitch) * y1) - (Math.sin(pitch) * z1);
   const z2 = (Math.sin(pitch) * y1) + (Math.cos(pitch) * z1);
   const depth = 650 + z2;
