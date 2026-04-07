@@ -1045,10 +1045,13 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
 90 END" style="min-height:140px;"></textarea>
   <div class="diag-box muted" id="basic-validation-box">Syntax check: enter a script to validate before saving.</div>
         <div class="diag-actions" style="margin-bottom:8px;">
+          <button class="btn" id="basic-import-btn" type="button">Import File</button>
+          <button class="btn" id="basic-clipboard-btn" type="button">Scan Clipboard</button>
           <button class="btn success" id="basic-save-btn">Save Script</button>
           <button class="btn" id="basic-copy-share-btn" disabled>Copy Share Link</button>
           <button class="btn" id="basic-copy-forum-btn" disabled>Copy Forum Post</button>
         </div>
+        <input type="file" id="basic-import-file-input" accept=".bas,.basic,.txt,text/plain" style="display:none;">
         <div class="diag-actions" style="margin-bottom:8px;">
           <button class="btn" id="basic-preview-btn" type="button">Preview</button>
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
@@ -1212,6 +1215,9 @@ const basicValidationBox = document.getElementById('basic-validation-box');
 const basicVarsList    = document.getElementById('basic-vars-list');
 const basicAddVarBtn   = document.getElementById('basic-add-var-btn');
 const basicScriptInput = document.getElementById('basic-script-input');
+const basicImportBtn   = document.getElementById('basic-import-btn');
+const basicClipboardBtn = document.getElementById('basic-clipboard-btn');
+const basicImportFileInput = document.getElementById('basic-import-file-input');
 const basicSaveBtn     = document.getElementById('basic-save-btn');
 const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
 const basicCopyForumBtn= document.getElementById('basic-copy-forum-btn');
@@ -1470,6 +1476,11 @@ function substituteVars(program, vars) {
   }
   return result;
 }
+
+const BASIC_IMPORT_LINE_RE = /^\s*\d+\b/;
+const BASIC_IMPORT_HEADER_RE = /^\s*REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION)\s*:\s*(.*)$/i;
+const BASIC_IMPORT_VAR_RE = /^\s*REM\s+VAR\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/i;
+const BASIC_IMPORT_PLACEHOLDER_RE = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 // Stored raw program template (before var substitution) so re-apply works
 let basicRawProgram = '';
@@ -2245,6 +2256,149 @@ function normalizeSavedScriptPayload(payload) {
   };
 }
 
+function deriveBasicImportTitle(fileName = '') {
+  const trimmed = String(fileName || '').trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\.[^.]+$/, '').trim();
+}
+
+function collectBasicImportPlaceholders(text = '') {
+  const names = new Set();
+  let match;
+  BASIC_IMPORT_PLACEHOLDER_RE.lastIndex = 0;
+  while ((match = BASIC_IMPORT_PLACEHOLDER_RE.exec(String(text || ''))) !== null) {
+    names.add(match[1]);
+  }
+  return names;
+}
+
+function parseBasicImportText(text, fileName = '') {
+  const normalizedText = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  if (!normalizedText.trim()) throw new Error('Imported BASIC file is empty');
+
+  const lines = normalizedText.split('\n');
+  const meta = {
+    title: '',
+    version: '',
+    author: '',
+    description: '',
+    programText: '',
+    vars: {}
+  };
+  const descriptionLines = [];
+  const vars = {};
+  const singletonHeaders = new Set();
+  let bodyStart = 0;
+
+  while (bodyStart < lines.length) {
+    const rawLine = lines[bodyStart];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      bodyStart += 1;
+      continue;
+    }
+    if (BASIC_IMPORT_LINE_RE.test(rawLine)) break;
+
+    const varMatch = rawLine.match(BASIC_IMPORT_VAR_RE);
+    if (varMatch) {
+      const varName = String(varMatch[1] || '').trim();
+      if (Object.prototype.hasOwnProperty.call(vars, varName)) {
+        throw new Error(`Imported BASIC file defines variable ${varName} more than once`);
+      }
+      vars[varName] = basicParseValue(varMatch[2] || '');
+      bodyStart += 1;
+      continue;
+    }
+
+    const headerMatch = rawLine.match(BASIC_IMPORT_HEADER_RE);
+    if (!headerMatch) break;
+
+    const key = String(headerMatch[1] || '').toUpperCase();
+    const value = String(headerMatch[2] || '');
+    if (key === 'DESCRIPTION') {
+      descriptionLines.push(value);
+      bodyStart += 1;
+      continue;
+    }
+    if (singletonHeaders.has(key)) {
+      throw new Error(`Imported BASIC file defines ${key} more than once`);
+    }
+    singletonHeaders.add(key);
+
+    if (key === 'TITLE') meta.title = value.trim();
+    else if (key === 'VERSION') meta.version = value.trim();
+    else if (key === 'AUTHOR') meta.author = value.trim();
+
+    bodyStart += 1;
+  }
+
+  meta.description = descriptionLines.join('\n').trim();
+  meta.programText = lines.slice(bodyStart).join('\n').trim();
+  meta.title = meta.title || deriveBasicImportTitle(fileName);
+
+  if (!meta.programText) {
+    throw new Error('Imported BASIC file is missing runnable program text');
+  }
+
+  const placeholderNames = new Set([
+    ...collectBasicImportPlaceholders(meta.description),
+    ...collectBasicImportPlaceholders(meta.programText)
+  ]);
+
+  placeholderNames.forEach(name => {
+    if (!Object.prototype.hasOwnProperty.call(vars, name)) vars[name] = '';
+  });
+
+  meta.vars = normalizeBasicVars(vars);
+  return meta;
+}
+
+async function importBasicScriptFromFile(file) {
+  const importFile = file instanceof File ? file : null;
+  if (!importFile) return false;
+
+  basicConfigBox.className = 'diag-box muted';
+  basicConfigBox.textContent = `Importing ${importFile.name}...`;
+
+  try {
+    const text = await importFile.text();
+    const payload = parseBasicImportText(text, importFile.name);
+    applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+    markBasicScriptStructuralDirty();
+    addLine(`Imported BASIC file: ${payload.title || importFile.name}`, 'sys');
+    return true;
+  } catch (error) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = `Import failed: ${error.message}`;
+    addLine(`Import BASIC file failed: ${error.message}`, 'err');
+    return false;
+  }
+}
+
+async function importBasicScriptFromClipboard() {
+  basicConfigBox.className = 'diag-box muted';
+  basicConfigBox.textContent = 'Reading BASIC script from clipboard...';
+
+  try {
+    if (!window.isSecureContext || !navigator.clipboard?.readText) {
+      throw new Error('Clipboard read requires HTTPS or localhost with clipboard permission enabled');
+    }
+
+    const text = await navigator.clipboard.readText();
+    const payload = parseBasicImportText(text, 'clipboard.bas');
+    applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+    markBasicScriptStructuralDirty();
+    addLine(`Imported BASIC from clipboard: ${payload.title || 'Untitled'}`, 'sys');
+    return true;
+  } catch (error) {
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = `Clipboard import failed: ${error.message}`;
+    addLine(`Clipboard import failed: ${error.message}`, 'err');
+    return false;
+  }
+}
+
 async function loadBasicScriptFromId(id, overrides = {}) {
   const scriptId = String(id || '').trim();
   if (!scriptId) return false;
@@ -2798,6 +2952,21 @@ basicHelpBtn?.addEventListener('click', () => {
     'scrollbars=yes'
   ].join(',');
   window.open('basic-help.html', 'grbl-basic-help-window', features);
+});
+
+basicImportBtn?.addEventListener('click', () => {
+  basicImportFileInput?.click();
+});
+
+basicClipboardBtn?.addEventListener('click', () => {
+  void importBasicScriptFromClipboard();
+});
+
+basicImportFileInput?.addEventListener('change', event => {
+  const file = event.target?.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  void importBasicScriptFromFile(file);
 });
 
 basicInputOk.addEventListener('click', () => {

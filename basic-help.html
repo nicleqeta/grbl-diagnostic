@@ -252,7 +252,27 @@
     </section>
 
     <section class="card">
-      <h2>7. Authoring Rules In This App</h2>
+      <h2>7. Import Header Format</h2>
+      <p>Plain-text BASIC imports can start with a short metadata header before the first numbered BASIC line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable BASIC.</p>
+      <ul>
+        <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
+        <li><code>REM DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
+        <li><code>REM VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
+        <li>If no title header exists, import falls back to the filename.</li>
+      </ul>
+      <pre><code>REM TITLE: X Axis Acceleration Finder
+REM VERSION: 1
+REM AUTHOR: GitHub Copilot
+REM DESCRIPTION: Raises X acceleration until the motor sounds bad.
+REM DESCRIPTION: Suggests a safer fallback value near the edge.
+REM VAR start_accel=200
+REM VAR coarse_step=50
+10 PRINT "X-axis acceleration test"
+20 PRINT "Start at " &amp; STR({start_accel})</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>8. Authoring Rules In This App</h2>
       <ul>
         <li><span class="warn">Validation:</span> save is blocked while syntax errors exist.</li>
         <li><span class="ok">Sharing:</span> saved scripts are loaded by <code>?script=...</code>.</li>
@@ -263,7 +283,7 @@
     </section>
 
     <section class="card">
-      <h2>8. Example: X-Axis Acceleration Finder</h2>
+      <h2>9. Example: X-Axis Acceleration Finder</h2>
       <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, then restores the original <code>$120</code> and <code>$110</code> and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run.</p>
       <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
       <pre><code>{title=X Axis Acceleration Finder}

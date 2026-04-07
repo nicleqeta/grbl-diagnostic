@@ -289,6 +289,31 @@ These are substituted before execution. Users can override them:
 
 Special metadata fields: `{title}`, `{author}`, `{version}`, `{description}`
 
+### Importing Plain BASIC Files
+
+The BASIC editor can import local plain-text script files.
+
+For richer imports, add a short header before the first numbered BASIC line:
+
+```text
+REM TITLE: X Axis Acceleration Finder
+REM VERSION: 1
+REM AUTHOR: GitHub Copilot
+REM DESCRIPTION: Raises X acceleration until the motor sounds bad.
+REM DESCRIPTION: Suggests a safer fallback value near the edge.
+REM VAR start_accel=200
+REM VAR coarse_step=50
+10 PRINT "X-axis acceleration test"
+```
+
+Rules:
+
+- Only top-of-file `REM` header lines are treated as import metadata.
+- Repeated `REM DESCRIPTION:` lines become a multiline description.
+- `REM VAR name=value` defines imported variable defaults.
+- `{name}` placeholders found in the script or description are added to the Variables panel if they were not declared explicitly.
+- If no title header is present, the editor falls back to the filename.
+
 ### Execution Model
 
 - Scripts run asynchronously in the browser.
