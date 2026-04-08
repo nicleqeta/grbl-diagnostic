@@ -488,6 +488,8 @@ REM VAR plateau_ms=5
 
 200 IF current_distance &gt; {max_distance} THEN GOTO 8000
 210 LET batch_count = MAX({min_batch_count}, INT({target_total_travel} / current_distance))
+215 REM batch_count = number of passes per timed batch. {min_batch_count} ensures at least that many passes.
+216 REM Each pass = 1 forward move + 1 backward move. Total moves in batch = batch_count * 2.
 220 LET best_accel = 0
 230 LET best_ms = 0
 240 LET stagnant_steps = 0
@@ -524,6 +526,7 @@ REM VAR plateau_ms=5
 1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
 1020 PRINT "BENCH START distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1025 REM Batch loop: each iteration of FOR pass_index performs 2 moves (forward at 1040/1050, backward at 1060/1070)
 1030 FOR pass_index = 1 TO batch_count
 1040 SEND "G1 X" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
 1050 WAIT_IDLE {idle_timeout}
