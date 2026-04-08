@@ -2514,17 +2514,75 @@ async function importBasicScriptFromFile(file) {
   }
 }
 
-function isLikelyGcode(text) {
-  // Check if text looks like G-code based on common patterns
-  const gcodePatterns = [
-    /^[GM]\d+/m,           // G0, G1, M3, M30, etc.
-    /^\s*o\d+\s+/im,       // o100 sub, o100 do, etc.
-    /^\s*#\d+/m,           // #100 = value (parameters)
-    /G[0-3].*[XYZ]/im,     // G motion with axis
-    /M[0-9]{1,3}(?:\s|$)/m // M-codes
-  ];
-  
-  return gcodePatterns.some(pattern => pattern.test(text));
+function classifyClipboardProgramText(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 300);
+
+  let basicScore = 0;
+  let gcodeScore = 0;
+
+  const basicKeywordRe = /^(LET|SEND|WAIT|WAIT_IDLE|WAIT_STATE|PRINT|INPUT|IF|GOTO|FOR|NEXT|END|RESULT|REPORT|CONFIRM|PAUSE|GOSUB|RETURN|READ|HOLD|RESUME|STATUS|SOFT_RESET)\b/i;
+  const gcodeLineRe = /^[GMT]\d+(?:\.\d+)?(?:\s|$)/i;
+  const gcodeMacroRe = /^O\d+\s+(SUB|ENDSUB|CALL|DO|WHILE|ENDWHILE|IF|ENDIF|REPEAT|RETURN)\b/i;
+  const gcodeParamRe = /^#(?:\d+|<[_a-zA-Z]\w*>)(?:\s*=|\s|$)/;
+
+  for (const line of lines) {
+    if (/^REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION|VAR)\b/i.test(line)) basicScore += 4;
+
+    const numbered = line.match(/^\d+\s+(.+)$/);
+    const body = numbered ? numbered[1].trim() : line;
+
+    if (numbered) {
+      basicScore += 3;
+      if (basicKeywordRe.test(body)) basicScore += 3;
+      if (/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*INPUT\s*\(/i.test(body)) basicScore += 2;
+    } else if (basicKeywordRe.test(body)) {
+      basicScore += 2;
+    }
+
+    if (gcodeLineRe.test(body)) gcodeScore += 3;
+    if (gcodeMacroRe.test(body)) gcodeScore += 4;
+    if (gcodeParamRe.test(body)) gcodeScore += 2;
+    if (/^\([^)]*\)$/.test(body) || /^;/.test(body)) gcodeScore += 1;
+    if (/^[GMT]\d+.*\b[XYZIJKRFS]-?\d/i.test(body)) gcodeScore += 2;
+  }
+
+  try {
+    const parsed = parseBasicImportText(text, 'clipboard.bas');
+    const parsedProgram = basicParseLines(parsed.programText || '');
+    if (parsedProgram.order.length > 0) basicScore += 4;
+  } catch {
+    // Ignore parse errors here; parser runs again for final import path.
+  }
+
+  if (basicScore >= 8 && basicScore >= gcodeScore + 2) {
+    return { mode: 'basic', basicScore, gcodeScore };
+  }
+  if (gcodeScore >= 8 && gcodeScore >= basicScore + 2) {
+    return { mode: 'gcode', basicScore, gcodeScore };
+  }
+  return { mode: 'unclear', basicScore, gcodeScore };
+}
+
+function importClipboardAsPlainText(text) {
+  const payload = parseBasicImportText(text, 'clipboard.bas');
+  applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+  markBasicScriptStructuralDirty();
+  addLine(`Imported BASIC from clipboard: ${payload.title || 'Untitled'}`, 'sys');
+  return true;
+}
+
+function convertClipboardGcodeToBasic(text) {
+  const result = convertGcodeToBasic(text);
+  if (!result.success) throw new Error(result.error || 'Unknown conversion error');
+  const payload = parseBasicImportText(result.basic, 'gcode-import.bas');
+  applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+  markBasicScriptStructuralDirty();
+  addLine('Converted G-code to BASIC script', 'sys');
+  return true;
 }
 
 async function importBasicScriptFromClipboard() {
@@ -2538,58 +2596,55 @@ async function importBasicScriptFromClipboard() {
 
     const text = await navigator.clipboard.readText();
     
-    // Check if it looks like G-code
-    if (isLikelyGcode(text)) {
-      basicConfigBox.className = 'diag-box amber';
-      basicConfigBox.innerHTML = '<strong>G-code detected!</strong><br/>Would you like to convert this G-code file to BASIC? <button id="gcode-convert-yes" class="btn" style="margin-top:8px;">Convert G-code to BASIC</button> <button id="gcode-convert-no" class="btn" style="margin-top:8px;">Import as plain text</button>';
-      
-      return new Promise((resolve) => {
-        const yesBtn = document.getElementById('gcode-convert-yes');
-        const noBtn = document.getElementById('gcode-convert-no');
-        
-        yesBtn?.addEventListener('click', () => {
-          basicConfigBox.textContent = '';
-          const result = convertGcodeToBasic(text);
-          if (result.success) {
-            const payload = parseBasicImportText(result.basic, 'gcode-import.bas');
-            applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
-            markBasicScriptStructuralDirty();
-            basicConfigBox.className = 'diag-box good';
-            basicConfigBox.textContent = 'G-code converted to BASIC successfully!';
-            addLine('Converted G-code to BASIC script', 'sys');
-            resolve(true);
-          } else {
-            basicConfigBox.className = 'diag-box';
-            basicConfigBox.textContent = `Conversion failed: ${result.error}`;
-            addLine(`G-code conversion failed: ${result.error}`, 'err');
-            resolve(false);
-          }
-        });
-        
-        noBtn?.addEventListener('click', () => {
-          try {
-            basicConfigBox.textContent = 'Importing as plain text...';
-            const payload = parseBasicImportText(text, 'clipboard.bas');
-            applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
-            markBasicScriptStructuralDirty();
-            addLine(`Imported from clipboard: ${payload.title || 'Untitled'}`, 'sys');
-            resolve(true);
-          } catch (error) {
-            basicConfigBox.className = 'diag-box';
-            basicConfigBox.textContent = `Plain-text import failed: ${error.message}`;
-            addLine(`Plain-text import failed: ${error.message}`, 'err');
-            resolve(false);
-          }
-        });
-      });
+    const detection = classifyClipboardProgramText(text);
+
+    if (detection.mode === 'basic') {
+      basicConfigBox.className = 'diag-box success';
+      basicConfigBox.textContent = 'Detected BASIC script. Importing as plain text...';
+      return importClipboardAsPlainText(text);
     }
-    
-    // Not G-code, import as BASIC
-    const payload = parseBasicImportText(text, 'clipboard.bas');
-    applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
-    markBasicScriptStructuralDirty();
-    addLine(`Imported BASIC from clipboard: ${payload.title || 'Untitled'}`, 'sys');
-    return true;
+
+    if (detection.mode === 'gcode') {
+      basicConfigBox.className = 'diag-box success';
+      basicConfigBox.textContent = 'Detected G-code. Auto-converting to BASIC...';
+      return convertClipboardGcodeToBasic(text);
+    }
+
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.innerHTML = '<strong>Clipboard content is unclear.</strong><br/>Choose import mode. <button id="gcode-convert-yes" class="btn" style="margin-top:8px;">Convert as G-code</button> <button id="gcode-convert-no" class="btn" style="margin-top:8px;">Import as plain text BASIC</button>';
+
+    return new Promise((resolve) => {
+      const yesBtn = document.getElementById('gcode-convert-yes');
+      const noBtn = document.getElementById('gcode-convert-no');
+
+      yesBtn?.addEventListener('click', () => {
+        try {
+          basicConfigBox.className = 'diag-box success';
+          basicConfigBox.textContent = 'Converting clipboard G-code to BASIC...';
+          convertClipboardGcodeToBasic(text);
+          resolve(true);
+        } catch (error) {
+          basicConfigBox.className = 'diag-box';
+          basicConfigBox.textContent = `Conversion failed: ${error.message}`;
+          addLine(`G-code conversion failed: ${error.message}`, 'err');
+          resolve(false);
+        }
+      });
+
+      noBtn?.addEventListener('click', () => {
+        try {
+          basicConfigBox.className = 'diag-box success';
+          basicConfigBox.textContent = 'Importing clipboard as plain text BASIC...';
+          importClipboardAsPlainText(text);
+          resolve(true);
+        } catch (error) {
+          basicConfigBox.className = 'diag-box';
+          basicConfigBox.textContent = `Plain-text import failed: ${error.message}`;
+          addLine(`Plain-text import failed: ${error.message}`, 'err');
+          resolve(false);
+        }
+      });
+    });
   } catch (error) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = `Clipboard import failed: ${error.message}`;
