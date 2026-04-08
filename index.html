@@ -865,6 +865,57 @@
   }
   .gcode-queue-action:hover { color: var(--text); border-color: #3e4460; background: var(--surface2); }
   .gcode-queue-action:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .version-badge {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-left: auto;
+    padding-right: 4px;
+  }
+
+  .new-version-banner {
+    display: none;
+    background: var(--amber-dim);
+    border-bottom: 2px solid var(--amber);
+    padding: 12px 20px;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--amber);
+    flex-shrink: 0;
+  }
+
+  .new-version-banner.show {
+    display: flex;
+  }
+
+  .new-version-banner-text {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .new-version-banner-icon {
+    font-weight: bold;
+    font-size: 16px;
+  }
+
+  .new-version-banner-btn {
+    background: var(--amber);
+    color: #000;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .new-version-banner-btn:hover {
+    background: #fbbf24;
+  }
 </style>
 </head>
 <body>
@@ -1024,11 +1075,20 @@
     <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="4"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="12" y1="8" x2="15" y2="8"/></svg>
   </div>
   <h1>GRBL Diagnostic <span>/ serial terminal</span></h1>
+  <div class="version-badge" id="version-badge"></div>
   <div class="status-group">
     <div class="status-pill disconnected" id="transport-pill">Disconnected</div>
     <div class="status-pill unknown" id="machine-pill">Unknown</div>
   </div>
 </header>
+
+<div class="new-version-banner" id="new-version-banner">
+  <div class="new-version-banner-text">
+    <span class="new-version-banner-icon">⬆</span>
+    <span>New version available</span>
+  </div>
+  <button class="new-version-banner-btn" id="reload-btn">Reload Now</button>
+</div>
 
 <main>
   <div class="sidebar" id="sidebar">
@@ -1272,6 +1332,47 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
 </div>
 
 <script>
+// Version checking
+let currentVersion = null;
+let storedVersion = null;
+
+async function loadAndCheckVersion() {
+  try {
+    const response = await fetch('version.json?t=' + Date.now());
+    if (!response.ok) return;
+    const data = await response.json();
+    currentVersion = data.version;
+    storedVersion = localStorage.getItem('app-version');
+    
+    // Display current version in header
+    const badge = document.getElementById('version-badge');
+    if (badge) {
+      badge.textContent = `v${currentVersion.split('T')[0]}`;
+    }
+    
+    // Check if new version is available
+    if (storedVersion && storedVersion !== currentVersion) {
+      showNewVersionBanner();
+    }
+    
+    // Store current version
+    localStorage.setItem('app-version', currentVersion);
+  } catch (err) {
+    console.error('Failed to check version:', err);
+  }
+}
+
+function showNewVersionBanner() {
+  const banner = document.getElementById('new-version-banner');
+  if (banner) {
+    banner.classList.add('show');
+  }
+}
+
+function reloadPage() {
+  location.reload();
+}
+
 const terminal     = document.getElementById('terminal');
 const transportPill = document.getElementById('transport-pill');
 const machinePill  = document.getElementById('machine-pill');
@@ -6702,6 +6803,10 @@ if (startupScriptRequest) {
   queueMicrotask(() => { void loadBasicScriptFromId(startupScriptRequest.id, startupScriptRequest.overrides); });
 }
 scrollTerminalToBottom(true);
+
+// Initialize version checking and event listeners
+document.getElementById('reload-btn')?.addEventListener('click', reloadPage);
+loadAndCheckVersion();
 </script>
 </body>
 </html>
