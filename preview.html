@@ -455,13 +455,19 @@ function formatBenchmarkDataForAI() {
   };
 }
 
+let _lastTapeSampleCount = -1;
+
 function renderBenchmarkDataTape() {
   const data = formatBenchmarkDataForAI();
   if (!data) {
     benchmarkTapePanel.classList.remove('active');
+    _lastTapeSampleCount = -1;
     return;
   }
   benchmarkTapePanel.classList.add('active');
+  // Skip expensive JSON.stringify + scroll when sample count hasn't changed
+  if (data.samples.length === _lastTapeSampleCount) return;
+  _lastTapeSampleCount = data.samples.length;
   tapeContent.textContent = JSON.stringify(data, null, 2);
   tapeContent.scrollTop = tapeContent.scrollHeight;
 }
@@ -749,12 +755,18 @@ function render() {
   ].join('\n');
 }
 
-function renderCommandList() {
-  commandList.innerHTML = '';
-  if (!timeline) return;
+let _lastCommandListSampleCount = -1;
 
-  if ((!timeline.commands || !timeline.commands.length) && getBenchmarkSamples().length) {
-    getBenchmarkSamples().slice().reverse().forEach(sample => {
+function renderCommandList() {
+  if (!timeline) { commandList.innerHTML = ''; _lastCommandListSampleCount = -1; return; }
+
+  const benchSamples = getBenchmarkSamples();
+  if ((!timeline.commands || !timeline.commands.length) && benchSamples.length) {
+    // Skip full rebuild if sample count hasn't changed
+    if (benchSamples.length === _lastCommandListSampleCount) return;
+    _lastCommandListSampleCount = benchSamples.length;
+    commandList.innerHTML = '';
+    benchSamples.slice().reverse().forEach(sample => {
       const item = document.createElement('li');
       item.className = 'command-item';
 
@@ -778,6 +790,8 @@ function renderCommandList() {
     return;
   }
 
+  _lastCommandListSampleCount = -1;
+  commandList.innerHTML = '';
   if (!timeline.commands.length) return;
 
   timeline.commands.forEach(command => {
@@ -949,10 +963,24 @@ speedSelect.addEventListener('change', () => {
 });
 queueFromPreviewBtn.addEventListener('click', requestQueueFromPreview);
 
+let _pendingTimelinePayload = null;
+let _timelineRafPending = false;
+
 window.addEventListener('message', event => {
   if (event.origin !== window.location.origin) return;
   if (!event.data || event.data.type !== 'preview-load') return;
-  loadTimeline(event.data.payload);
+  // Coalesce rapid postMessage calls — only render the latest one per animation frame
+  _pendingTimelinePayload = event.data.payload;
+  if (!_timelineRafPending) {
+    _timelineRafPending = true;
+    requestAnimationFrame(() => {
+      _timelineRafPending = false;
+      if (_pendingTimelinePayload) {
+        loadTimeline(_pendingTimelinePayload);
+        _pendingTimelinePayload = null;
+      }
+    });
+  }
 });
 
 window.addEventListener('resize', resizeCanvas);

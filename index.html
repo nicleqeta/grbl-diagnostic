@@ -397,6 +397,8 @@
     font-size: 13px;
     line-height: 1.7;
     background: var(--bg);
+    contain: layout style;
+    will-change: transform;
   }
   #terminal::-webkit-scrollbar { width: 6px; }
   #terminal::-webkit-scrollbar-track { background: transparent; }
@@ -1496,6 +1498,22 @@ const DEFAULT_STATUS_DELAY_MS = 600;
 const DEFAULT_BANNER_TIMEOUT_MS = 3000;
 const DEFAULT_READY_SETTLE_MS = 150;
 const MAX_LOG_LINES = 5000;
+let _terminalDivQueue = [];
+let _terminalFlushId = 0;
+let _lastPreviewPost = 0;
+let _previewPostPending = false;
+const PREVIEW_POST_THROTTLE_MS = 150;
+
+function _flushTerminalDivs() {
+  _terminalFlushId = 0;
+  if (!_terminalDivQueue.length) return;
+  const frag = document.createDocumentFragment();
+  while (_terminalDivQueue.length) frag.appendChild(_terminalDivQueue.shift());
+  terminal.appendChild(frag);
+  while (terminal.children.length > MAX_LOG_LINES) terminal.removeChild(terminal.firstChild);
+  while (logLines.length > MAX_LOG_LINES) logLines.shift();
+  scrollTerminalToBottom();
+}
 const APP_TITLE = 'GRBL Serial Diagnostic';
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 const SIDEBAR_WIDTH_KEY = 'grbl-diagnostic-sidebar-width';
@@ -4662,6 +4680,22 @@ function ensurePreviewWindow() {
 function postLatestPreviewTimeline() {
   if (!latestPreviewTimeline) return;
   if (!previewWindowRef || previewWindowRef.closed) return;
+  const now = Date.now();
+  // Throttle preview updates to at most ~6 fps during rapid benchmark updates
+  if (now - _lastPreviewPost < PREVIEW_POST_THROTTLE_MS) {
+    if (!_previewPostPending) {
+      _previewPostPending = true;
+      setTimeout(() => {
+        _previewPostPending = false;
+        _lastPreviewPost = Date.now();
+        if (latestPreviewTimeline && previewWindowRef && !previewWindowRef.closed) {
+          previewWindowRef.postMessage({ type: 'preview-load', payload: latestPreviewTimeline }, window.location.origin);
+        }
+      }, PREVIEW_POST_THROTTLE_MS - (now - _lastPreviewPost));
+    }
+    return;
+  }
+  _lastPreviewPost = now;
   previewWindowRef.postMessage({
     type: 'preview-load',
     payload: latestPreviewTimeline
@@ -6538,6 +6572,13 @@ function addLine(text, type = 'rx') {
     if (incomingLineInterceptor) { incomingLineInterceptor(text); }
   }
 
+  // During benchmark runs, suppress ? status poll tx and the resulting <State|...> rx
+  // lines to reduce DOM churn. Machine state is still updated via updateStatus below.
+  if (basicBenchmarkCapture) {
+    if (type === 'tx' && text.trim() === '?') { updateStatus(text); return; }
+    if (type === 'rx' && /^<[A-Za-z]+[:|]/.test(text)) { updateStatus(text); return; }
+  }
+
   logLines.push(`[${time}] ${arrow} ${text}`);
 
   const div = document.createElement('div');
@@ -6558,15 +6599,12 @@ function addLine(text, type = 'rx') {
   div.appendChild(timeSpan);
   div.appendChild(arrowSpan);
   div.appendChild(textSpan);
-  terminal.appendChild(div);
 
-  while (logLines.length > MAX_LOG_LINES) {
-    logLines.shift();
-    if (terminal.firstChild) terminal.removeChild(terminal.firstChild);
-  }
+  // Batch DOM insertion via RAF + DocumentFragment to avoid per-line reflow
+  _terminalDivQueue.push(div);
+  if (!_terminalFlushId) _terminalFlushId = requestAnimationFrame(_flushTerminalDivs);
 
   updateCopyLogState();
-  scrollTerminalToBottom();
   updateStatus(text);
 }
 
