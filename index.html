@@ -300,17 +300,7 @@
   .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .basic-meta-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); gap: 6px; }
   .basic-meta-grid.three-up { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1fr); }
-  .basic-description-panel {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(34, 38, 58, 0.22);
-    padding: 10px;
-    margin-bottom: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .basic-description-tabs { display: flex; gap: 6px; }
+  .basic-description-tabs { display: flex; gap: 6px; margin-bottom: 4px; }
   .basic-description-tab {
     border: 1px solid var(--border);
     background: var(--surface2);
@@ -326,22 +316,19 @@
     color: var(--teal);
     background: rgba(20, 184, 166, 0.12);
   }
-  .basic-description-panes { min-height: 140px; max-height: 220px; }
-  .basic-description-pane { display: none; height: 100%; }
+  .basic-description-pane { display: none; }
   .basic-description-pane.active { display: block; }
   .basic-description-pane textarea {
     margin: 0;
-    min-height: 140px;
-    max-height: 220px;
-    height: 100%;
+    max-height: 140px;
+    min-height: 0;
+    height: auto;
     resize: none;
     overflow-y: auto;
   }
   .basic-description-pane #basic-config-box {
     margin: 0;
-    min-height: 140px;
     max-height: 220px;
-    height: 100%;
     overflow-y: auto;
     white-space: pre-wrap;
   }
@@ -1220,8 +1207,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
-        <div class="basic-description-panel" id="basic-description-panel">
-          <div class="basic-meta-grid three-up">
+        <div class="basic-meta-grid three-up">
             <input type="text" id="basic-title-input" placeholder="Script title, e.g. Ramp Test" title="Required title for the saved script and share preview.">
             <input type="text" id="basic-version-input" placeholder="Version" title="Optional version such as 1.2.">
             <input type="text" id="basic-author-input" placeholder="Author" title="Optional author name for the generated share preview.">
@@ -1232,13 +1218,12 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
           </div>
           <div class="basic-description-panes">
             <div class="basic-description-pane active" id="basic-desc-pane-edit">
-              <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post." style="min-height:88px;"></textarea>
+              <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post."></textarea>
             </div>
             <div class="basic-description-pane" id="basic-desc-pane-rendered">
               <div class="diag-box muted" id="basic-config-box">Write a title, description, variables, and script to create a shareable program.</div>
             </div>
           </div>
-        </div>
         <div id="basic-vars-section">
           <div class="basic-vars-header">
             <div class="section-label">Variables</div>
@@ -2003,6 +1988,7 @@ function setBasicScriptMeta(meta = {}) {
   basicAuthorInput.value = meta.author || '';
   basicDescriptionInput.value = meta.description || '';
   basicRawConfigText = basicDescriptionInput.value.trim();
+  autoResizeBasicDescription();
 }
 
 function buildBasicDisplayName(meta = getBasicScriptMeta()) {
@@ -2061,7 +2047,14 @@ function setBasicDescriptionTab(nextTab) {
   requestAnimationFrame(() => {
     const targetElement = editing ? basicDescriptionInput : basicConfigBox;
     setBasicDescriptionScrollByRatio(targetElement, basicDescriptionScrollRatio);
+    if (editing) autoResizeBasicDescription();
   });
+}
+
+function autoResizeBasicDescription() {
+  const el = basicDescriptionInput;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 
 function buildBasicOverrideEntries() {
@@ -5689,6 +5682,8 @@ basicScriptInput.addEventListener('input', () => {
   });
 });
 
+basicDescriptionInput.addEventListener('input', autoResizeBasicDescription);
+
 basicDescTabEdit.addEventListener('click', () => setBasicDescriptionTab('edit'));
 basicDescTabRendered.addEventListener('click', () => setBasicDescriptionTab('rendered'));
 
@@ -6963,6 +6958,7 @@ scrollTerminalToBottom(true);
 document.getElementById('reload-btn')?.addEventListener('click', reloadPage);
 loadAndCheckVersion();
 setBasicDescriptionTab('edit');
+autoResizeBasicDescription();
 </script>
 </body>
 </html>

@@ -260,6 +260,14 @@
     .shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 280px; }
     .sidebar { border-left: 0; border-top: 1px solid var(--border); }
   }
+
+  body.benchmark-mode #rewind-btn,
+  body.benchmark-mode #step-back-btn,
+  body.benchmark-mode #speed-select,
+  body.benchmark-mode #play-btn,
+  body.benchmark-mode #step-forward-btn,
+  body.benchmark-mode #fit-btn,
+  body.benchmark-mode .queue-panel { display: none; }
 </style>
 </head>
 <body>
@@ -699,7 +707,9 @@ function render() {
   if (!timeline) return;
 
   emptyState.style.display = 'none';
-  if (playback.viewMode === 'benchmark') {
+  const isBenchmark = playback.viewMode === 'benchmark';
+  document.body.classList.toggle('benchmark-mode', isBenchmark);
+  if (isBenchmark) {
     renderBenchmarkChart(width, height);
     renderBenchmarkDataTape();
     return;
