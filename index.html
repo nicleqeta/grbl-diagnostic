@@ -384,6 +384,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
     background: radial-gradient(circle at top, rgba(20,184,166,0.08), transparent 42%), linear-gradient(180deg, rgba(15,17,23,0.98), rgba(10,12,18,1));
   }
 
@@ -591,25 +592,40 @@
     line-height: 1.5;
   }
 
-  /* BASIC script inline input prompt */
+  /* BASIC script input modal in terminal window */
   .basic-input-bar {
+    position: absolute;
+    inset: 0;
     display: flex;
-    gap: 8px;
-    padding: 10px 16px;
-    background: #0d1f3c;
-    border-top: 1px solid #1e3a5f;
-    flex-shrink: 0;
     align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(12, 17, 25, 0.72);
+    z-index: 6;
+  }
+  .basic-input-box {
+    width: min(640px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: linear-gradient(180deg, rgba(14,30,57,0.98), rgba(12,24,46,0.98));
+    border: 1px solid #1e3a5f;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 14px 28px rgba(0,0,0,0.38);
   }
   .basic-input-prompt {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--blue);
     font-family: var(--mono);
-    flex: 0 1 46%;
-    min-width: 160px;
     white-space: normal;
     overflow-wrap: anywhere;
     line-height: 1.35;
+  }
+  .basic-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
   #basic-input-field {
     flex: 1;
@@ -771,7 +787,7 @@
     .term-header,
     .term-realtime-bar,
     .term-input-bar,
-    .basic-input-bar { padding-left: 12px; padding-right: 12px; }
+    .basic-input-bar { padding: 12px; }
     .term-header { align-items: flex-start; flex-direction: column; }
     .term-header-actions { width: 100%; flex-wrap: wrap; }
     .term-realtime-group { grid-template-columns: 1fr; }
@@ -779,6 +795,8 @@
     .term-input-bar { flex-direction: column; }
     .send-btn { width: 100%; }
     .term-input-shell { min-height: 44px; }
+    .basic-input-row { flex-direction: column; align-items: stretch; }
+    .basic-input-ok { width: 100%; }
   }
   /* GCode panel in sidebar */
   .gcode-mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -1183,6 +1201,16 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
     </div>
     <div class="terminal-window">
       <div id="terminal"></div>
+      <!-- BASIC input modal (shown for INPUT statements) -->
+      <div class="basic-input-bar" id="basic-input-bar" style="display:none;">
+        <div class="basic-input-box">
+          <span class="basic-input-prompt" id="basic-input-prompt">?</span>
+          <div class="basic-input-row">
+            <input type="text" id="basic-input-field" autocomplete="off" spellcheck="false">
+            <button class="basic-input-ok" id="basic-input-ok">OK</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="term-realtime-bar">
@@ -1212,13 +1240,6 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
           <button class="cmd-btn" data-cmd="\x18" disabled><span class="cmd-label">Soft reset</span>^X</button>
         </div>
       </div>
-    </div>
-
-    <!-- BASIC inline input bar (hidden until INPUT statement hit) -->
-    <div class="basic-input-bar" id="basic-input-bar" style="display:none;">
-      <span class="basic-input-prompt" id="basic-input-prompt">?</span>
-      <input type="text" id="basic-input-field" autocomplete="off" spellcheck="false">
-      <button class="basic-input-ok" id="basic-input-ok">OK</button>
     </div>
 
     <div class="term-input-bar">
