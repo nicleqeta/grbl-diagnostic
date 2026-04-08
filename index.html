@@ -66,6 +66,13 @@
     align-items: center;
     gap: 8px;
   }
+  .header-about-btn {
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .header-about-btn:hover { color: var(--text); border-color: var(--teal); }
   .status-pill {
     font-size: 11px;
     font-weight: 600;
@@ -709,6 +716,64 @@
   }
   .basic-confirm-run:hover { background: #0d9488; }
 
+  .about-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+  }
+  .about-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    max-width: 520px;
+    width: 92%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .about-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--teal);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .about-grid {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 6px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .about-key { color: var(--text-muted); }
+  .about-value { color: var(--text); word-break: break-word; }
+  .about-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.5;
+  }
+  .about-actions { display: flex; justify-content: flex-end; }
+  .about-close {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .about-close:hover { color: var(--text); border-color: #3e4460; }
+
   .var-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 110px 26px;
@@ -773,6 +838,7 @@
     .basic-input-bar { padding-left: 12px; padding-right: 12px; }
     .term-header { align-items: flex-start; flex-direction: column; }
     .term-header-actions { width: 100%; flex-wrap: wrap; }
+    .about-grid { grid-template-columns: 1fr; }
     .term-realtime-group { grid-template-columns: 1fr; }
     .term-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .term-input-bar { flex-direction: column; }
@@ -1005,6 +1071,7 @@
   </div>
   <h1>GRBL Diagnostic <span>/ serial terminal</span></h1>
   <div class="status-group">
+    <button class="icon-btn header-about-btn" id="about-btn" type="button">About</button>
     <div class="status-pill disconnected" id="transport-pill">Disconnected</div>
     <div class="status-pill unknown" id="machine-pill">Unknown</div>
   </div>
@@ -1248,6 +1315,25 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
   </div>
 </div>
 
+<div class="about-overlay" id="about-overlay" style="display:none;">
+  <div class="about-box" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="about-title" id="about-title">About This Build</div>
+    <div class="about-grid">
+      <div class="about-key">Cloudflare asset build time</div><div class="about-value" id="about-build-time">Loading...</div>
+      <div class="about-key">Cloudflare edge date</div><div class="about-value" id="about-edge-date">-</div>
+      <div class="about-key">Worker loaded at</div><div class="about-value" id="about-worker-loaded">-</div>
+      <div class="about-key">Cloudflare ray</div><div class="about-value" id="about-cf-ray">-</div>
+      <div class="about-key">Cloudflare colo</div><div class="about-value" id="about-cf-colo">-</div>
+      <div class="about-key">Asset ETag</div><div class="about-value" id="about-etag">-</div>
+      <div class="about-key">Status</div><div class="about-value" id="about-status">Ready</div>
+    </div>
+    <div class="about-note">Asset build time is read from Cloudflare-served index.html metadata (Last-Modified). Edge date and ray are from the current Cloudflare request.</div>
+    <div class="about-actions">
+      <button class="about-close" id="about-close-btn" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const terminal     = document.getElementById('terminal');
 const transportPill = document.getElementById('transport-pill');
@@ -1285,6 +1371,16 @@ const builderNameInput = document.getElementById('builder-name-input');
 const builderCommandsInput = document.getElementById('builder-commands-input');
 const copyLinkBtn  = document.getElementById('copy-link-btn');
 const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
+const aboutBtn     = document.getElementById('about-btn');
+const aboutOverlay = document.getElementById('about-overlay');
+const aboutCloseBtn = document.getElementById('about-close-btn');
+const aboutBuildTime = document.getElementById('about-build-time');
+const aboutEdgeDate = document.getElementById('about-edge-date');
+const aboutWorkerLoaded = document.getElementById('about-worker-loaded');
+const aboutCfRay = document.getElementById('about-cf-ray');
+const aboutCfColo = document.getElementById('about-cf-colo');
+const aboutEtag = document.getElementById('about-etag');
+const aboutStatus = document.getElementById('about-status');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
@@ -1571,6 +1667,45 @@ function enableAutoscrollFollow() {
   autoScroll = true;
   syncAutoscrollUi();
   scrollTerminalToBottom(true);
+}
+
+function formatAboutDate(value) {
+  if (!value) return 'Unavailable';
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return String(value);
+  return `${parsed.toLocaleString()} (${parsed.toUTCString()})`;
+}
+
+function closeAboutModal() {
+  if (aboutOverlay) aboutOverlay.style.display = 'none';
+}
+
+async function openAboutModal() {
+  if (!aboutOverlay) return;
+  aboutOverlay.style.display = 'flex';
+  if (aboutStatus) aboutStatus.textContent = 'Loading build metadata...';
+
+  try {
+    const response = await fetch('/build-info', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const info = await response.json();
+
+    aboutBuildTime.textContent = formatAboutDate(info.assetLastModified);
+    aboutEdgeDate.textContent = formatAboutDate(info.edgeDate);
+    aboutWorkerLoaded.textContent = formatAboutDate(info.workerLoadedAt);
+    aboutCfRay.textContent = info.cfRay || 'Unavailable';
+    aboutCfColo.textContent = info.cfColo || 'Unavailable';
+    aboutEtag.textContent = info.assetEtag || 'Unavailable';
+    aboutStatus.textContent = 'Build metadata loaded from Cloudflare';
+  } catch (error) {
+    aboutBuildTime.textContent = 'Unavailable';
+    aboutEdgeDate.textContent = 'Unavailable';
+    aboutWorkerLoaded.textContent = 'Unavailable';
+    aboutCfRay.textContent = 'Unavailable';
+    aboutCfColo.textContent = 'Unavailable';
+    aboutEtag.textContent = 'Unavailable';
+    aboutStatus.textContent = `Failed to load build metadata: ${error.message}`;
+  }
 }
 
 function syncCommandPrompt() {
@@ -3446,6 +3581,15 @@ function basicShowConfirm(configText, vars) {
 
 basicConfirmCancel.addEventListener('click', () => { if (basicConfirmResolver) basicConfirmResolver(false); });
 basicConfirmRun.addEventListener('click',    () => { if (basicConfirmResolver) basicConfirmResolver(true);  });
+
+aboutBtn?.addEventListener('click', () => {
+  void openAboutModal();
+});
+
+aboutCloseBtn?.addEventListener('click', closeAboutModal);
+aboutOverlay?.addEventListener('click', event => {
+  if (event.target === aboutOverlay) closeAboutModal();
+});
 
 basicHelpBtn?.addEventListener('click', () => {
   const width = 980;

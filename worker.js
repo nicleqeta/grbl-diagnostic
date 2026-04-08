@@ -4,6 +4,7 @@ const SCRIPT_CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 const APP_TITLE = 'GRBL Serial Diagnostic';
+const WORKER_LOADED_AT = new Date().toISOString();
 
 function generateId(length = 6) {
   const alphabet = 'abcdefghijkmnopqrstuvwxyz23456789';
@@ -107,6 +108,57 @@ function injectScriptMetadata(html, requestUrl, script) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/build-info') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            ...SCRIPT_CORS_HEADERS,
+            'Cache-Control': 'no-store',
+          }
+        });
+      }
+
+      if (request.method !== 'GET') {
+        return new Response('Method not allowed', {
+          status: 405,
+          headers: {
+            ...SCRIPT_CORS_HEADERS,
+            'Cache-Control': 'no-store',
+          }
+        });
+      }
+
+      let assetLastModified = null;
+      let assetEtag = null;
+      try {
+        const indexUrl = new URL('/index.html', url.origin);
+        const indexResponse = await env.ASSETS.fetch(new Request(indexUrl.toString(), { method: 'HEAD' }));
+        assetLastModified = indexResponse.headers.get('last-modified');
+        assetEtag = indexResponse.headers.get('etag');
+      } catch {
+        // Return partial metadata when asset header lookup fails.
+      }
+
+      const payload = {
+        appTitle: APP_TITLE,
+        workerLoadedAt: WORKER_LOADED_AT,
+        edgeDate: new Date().toISOString(),
+        assetLastModified,
+        assetEtag,
+        cfRay: request.headers.get('cf-ray') || null,
+        cfColo: request.cf?.colo || null,
+      };
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          ...SCRIPT_CORS_HEADERS,
+        }
+      });
+    }
 
     if (url.pathname === '/favicon.ico') {
       return Response.redirect(new URL('/favicon.svg', request.url), 302);
