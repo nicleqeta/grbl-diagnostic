@@ -305,20 +305,21 @@ REM VAR coarse_step=50
 
     <section class="card">
       <h2>9. Example: X-Axis Acceleration Finder</h2>
-      <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, then restores the original <code>$120</code> and <code>$110</code> and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run.</p>
+      <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
+      <p>After reporting results, the script compares the original and suggested <code>$120</code> values and asks whether to apply the suggested value now or keep the original setting.</p>
       <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
       <pre><code>REM TITLE: X Axis Acceleration Finder
 REM AUTHOR: GitHub Copilot
-REM VERSION: 2
-REM DESCRIPTION: Raises X acceleration until the motor sounds bad or skips, then retests near the edge.
-REM DESCRIPTION: Restores original settings and reports a conservative $120 recommendation.
-REM VAR start_accel=200
-REM VAR coarse_step=50
-REM VAR fine_step=10
-REM VAR max_accel=2000
-REM VAR x_travel=8
-REM VAR x_feed=3000
-REM VAR repeats=6
+  REM VERSION: 3
+  REM DESCRIPTION: Raises X acceleration by {coarse_step} starting at {start_accel} until the motor sounds bad or skips, then refines by {fine_step} near the edge.
+  REM DESCRIPTION: Compares original $120 to the found value and asks whether to apply the suggested setting or keep the original.
+  REM VAR start_accel=800
+  REM VAR coarse_step=200
+  REM VAR fine_step=20
+  REM VAR max_accel=4000
+  REM VAR x_travel=400
+  REM VAR x_feed=70000
+  REM VAR repeats=1
 REM VAR idle_timeout=20000
 REM VAR settle_ms=250
 
@@ -338,47 +339,47 @@ REM VAR settle_ms=250
 140 LET answer = 0
 150 LET max_tested_accel = 0
 160 LET max_mid_speed_mm_min = 0
-170 PRINT "Original $120 = " &amp; STR(original_accel)
-180 PRINT "Original $110 = " &amp; STR(original_feed)
-190 PRINT "Temporarily setting feed speed high"
-200 SEND "$110=60000" TIMEOUT 2000 REQUIRE_OK
-210 SEND "G21" TIMEOUT 1000 REQUIRE_OK
-220 SEND "G91" TIMEOUT 1000 REQUIRE_OK
-230 PRINT "Starting coarse search..."
+170 LET apply_choice = 0
+180 PRINT "Original $120 = " &amp; STR(original_accel)
+190 PRINT "Original $110 = " &amp; STR(original_feed)
+200 PRINT "Temporarily setting feed speed high"
+210 SEND "$110=60000" TIMEOUT 2000 REQUIRE_OK
+220 SEND "G21" TIMEOUT 1000 REQUIRE_OK
+230 SEND "G91" TIMEOUT 1000 REQUIRE_OK
+240 PRINT "Starting coarse search..."
 
-240 FOR test_accel = {start_accel} TO {max_accel} STEP {coarse_step}
-250 LET current_accel = test_accel
-260 LET max_tested_accel = MAX(max_tested_accel, current_accel)
-270 GOSUB 1000
-280 IF answer &lt;&gt; 0 THEN GOTO 400
-290 LET last_good = current_accel
-300 NEXT test_accel
-310 PRINT "No failure found up to max tested value."
-320 LET recommended = last_good
-330 GOTO 700
+250 FOR test_accel = {start_accel} TO {max_accel} STEP {coarse_step}
+260 LET current_accel = test_accel
+270 LET max_tested_accel = MAX(max_tested_accel, current_accel)
+280 GOSUB 1000
+290 IF answer &lt;&gt; 0 THEN GOTO 410
+300 LET last_good = current_accel
+310 NEXT test_accel
+320 PRINT "No failure found up to max tested value."
+330 LET recommended = last_good
+340 GOTO 710
 
-400 LET first_bad = current_accel
-410 PRINT "First bad coarse value = " &amp; STR(first_bad)
-420 IF last_good = 0 THEN GOTO 900
-430 LET fine_good = last_good
-440 PRINT "Starting fine search..."
-450 FOR test_accel = last_good + {fine_step} TO first_bad STEP {fine_step}
-460 LET current_accel = test_accel
-470 LET max_tested_accel = MAX(max_tested_accel, current_accel)
-480 GOSUB 1000
-490 IF answer &lt;&gt; 0 THEN GOTO 600
-500 LET fine_good = current_accel
-510 NEXT test_accel
-520 LET recommended = fine_good
-530 GOTO 700
+410 LET first_bad = current_accel
+420 PRINT "First bad coarse value = " &amp; STR(first_bad)
+430 IF last_good = 0 THEN GOTO 920
+440 LET fine_good = last_good
+450 PRINT "Starting fine search..."
+460 FOR test_accel = last_good + {fine_step} TO first_bad STEP {fine_step}
+470 LET current_accel = test_accel
+480 LET max_tested_accel = MAX(max_tested_accel, current_accel)
+490 GOSUB 1000
+500 IF answer &lt;&gt; 0 THEN GOTO 610
+510 LET fine_good = current_accel
+520 NEXT test_accel
+530 LET recommended = fine_good
+540 GOTO 710
 
-600 LET fine_bad = current_accel
-610 LET recommended = fine_bad - {fine_step}
-620 PRINT "First bad fine value = " &amp; STR(fine_bad)
-630 GOTO 700
+610 LET fine_bad = current_accel
+620 LET recommended = fine_bad - {fine_step}
+630 PRINT "First bad fine value = " &amp; STR(fine_bad)
+640 GOTO 710
 
-700 LET max_mid_speed_mm_min = SQRT(max_tested_accel * {x_travel}) * 60
-710 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
+710 LET max_mid_speed_mm_min = SQRT(max_tested_accel * {x_travel}) * 60
 720 SEND "$110=" &amp; STR(original_feed) TIMEOUT 2000 REQUIRE_OK
 730 WAIT {settle_ms}
 740 PRINT "Last good coarse value = " &amp; STR(last_good)
@@ -396,12 +397,25 @@ REM VAR settle_ms=250
 860 RESULT "max_tested_accel", max_tested_accel
 870 RESULT "theoretical_midpoint_speed_mm_min", max_mid_speed_mm_min
 880 REPORT
-890 END
+890 PRINT "Original $120 = " &amp; STR(original_accel) &amp; ", suggested $120 = " &amp; STR(recommended)
+900 INPUT apply_choice, "Use suggested $120 now? Enter 1 for yes, 0 for no"
+905 IF apply_choice &lt;&gt; 1 THEN GOTO 960
+910 SEND "$120=" &amp; STR(recommended) TIMEOUT 2000 REQUIRE_OK
+915 WAIT {settle_ms}
+916 PRINT "Updated $120 to suggested value."
+917 RESULT "applied_x_accel", recommended
+918 GOTO 990
 
-900 LET recommended = original_accel
-910 PRINT "The starting acceleration already sounded bad."
-920 PRINT "Leaving recommendation at the original $120 value."
-930 GOTO 700
+920 LET recommended = original_accel
+930 PRINT "The starting acceleration already sounded bad."
+940 PRINT "Keeping recommendation at original $120."
+950 GOTO 710
+
+960 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
+970 WAIT {settle_ms}
+980 PRINT "Kept original $120 setting."
+985 RESULT "applied_x_accel", original_accel
+990 END
 
 1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
