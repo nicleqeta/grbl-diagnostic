@@ -191,6 +191,71 @@
 
   .empty strong { color: var(--text); }
 
+  .benchmark-tape-panel {
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    max-height: 280px;
+  }
+
+  .benchmark-tape-panel.active {
+    display: flex;
+  }
+
+  .tape-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    gap: 8px;
+  }
+
+  .tape-title {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .tape-copy-btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tape-copy-btn:hover {
+    border-color: var(--teal);
+    background: rgba(20, 184, 166, 0.08);
+  }
+
+  .tape-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 12px;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: rgba(15, 17, 23, 0.5);
+  }
+
+  .tape-content code {
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1px 3px;
+    border-radius: 2px;
+  }
+
   @media (max-width: 960px) {
     .shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 280px; }
     .sidebar { border-left: 0; border-top: 1px solid var(--border); }
@@ -227,6 +292,13 @@
         <div class="status-box" id="status-box">Waiting for preview data from the main window.</div>
         <div class="empty" id="empty-state"><strong>No preview loaded.</strong><br>Return to the main app and click Preview on a BASIC script.</div>
       </div>
+      <div class="benchmark-tape-panel" id="benchmark-tape-panel">
+        <div class="tape-header">
+          <span class="tape-title">Benchmark Data (AI Format)</span>
+          <button class="tape-copy-btn" id="tape-copy-btn" type="button">Copy JSON</button>
+        </div>
+        <div class="tape-content" id="tape-content"></div>
+      </div>
     </div>
     <aside class="sidebar">
       <div class="side-header">
@@ -260,6 +332,9 @@ const statusBox = document.getElementById('status-box');
 const emptyState = document.getElementById('empty-state');
 const commandList = document.getElementById('command-list');
 const commandProgress = document.getElementById('command-progress');
+const benchmarkTapePanel = document.getElementById('benchmark-tape-panel');
+const tapeContent = document.getElementById('tape-content');
+const tapeCopyBtn = document.getElementById('tape-copy-btn');
 const rewindBtn = document.getElementById('rewind-btn');
 const playBtn = document.getElementById('play-btn');
 const stepBackBtn = document.getElementById('step-back-btn');
@@ -339,6 +414,69 @@ function getBenchmarkSummary() {
 
 function getBenchmarkSamples() {
   return Array.isArray(timeline?.benchmark?.samples) ? timeline.benchmark.samples : [];
+}
+
+function formatBenchmarkDataForAI() {
+  if (!timeline || !timeline.benchmark) return null;
+  const { benchmark } = timeline;
+  const summary = getBenchmarkSummary();
+  const samples = getBenchmarkSamples();
+  return {
+    metadata: {
+      title: benchmark.title || 'BASIC Benchmark',
+      description: 'Best observed acceleration by distance; samples show all measurements at each acceleration level',
+      format: 'JSON object with metadata, summary aggregation, and raw samples',
+      startedAtIso: benchmark.startedAtIso,
+      updatedAtIso: benchmark.updatedAtIso,
+      sampleCount: samples.length,
+      distanceCount: summary.length,
+      plotType: 'acceleration vs distance',
+      xAxisLabel: 'Distance (mm)',
+      yAxisLabel: 'Best Acceleration (accel units)',
+      summaryAggregation: 'For each distance, the acceleration with the lowest elapsed time (ties favor higher accel)',
+      sampleFields: {
+        distance: 'stroke length in mm',
+        accel: 'acceleration setting tested',
+        batch: 'number of back-and-forth repetitions',
+        repeat: 'repeat count (usually 1)',
+        feed: 'feedrate in mm/min',
+        elapsedMs: 'measured batch time in milliseconds',
+        startedAtIso: 'ISO timestamp when batch started',
+        endedAtIso: 'ISO timestamp when batch ended'
+      }
+    },
+    summary: summary.map(point => ({
+      distance: point.distance,
+      bestAccel: point.bestAccel,
+      bestElapsedMs: point.bestElapsedMs,
+      sampleCount: point.sampleCount
+    })),
+    samples
+  };
+}
+
+function renderBenchmarkDataTape() {
+  const data = formatBenchmarkDataForAI();
+  if (!data) {
+    benchmarkTapePanel.classList.remove('active');
+    return;
+  }
+  benchmarkTapePanel.classList.add('active');
+  tapeContent.textContent = JSON.stringify(data, null, 2);
+  tapeContent.scrollTop = tapeContent.scrollHeight;
+}
+
+function copyBenchmarkDataToClipboard() {
+  const data = formatBenchmarkDataForAI();
+  if (!data) return;
+  const jsonStr = JSON.stringify(data, null, 2);
+  navigator.clipboard.writeText(jsonStr).then(() => {
+    const originalText = tapeCopyBtn.textContent;
+    tapeCopyBtn.textContent = 'Copied!';
+    setTimeout(() => { tapeCopyBtn.textContent = originalText; }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy to clipboard:', err);
+  });
 }
 
 function renderBenchmarkChart(width, height) {
@@ -557,8 +695,10 @@ function render() {
   emptyState.style.display = 'none';
   if (playback.viewMode === 'benchmark') {
     renderBenchmarkChart(width, height);
+    renderBenchmarkDataTape();
     return;
   }
+  benchmarkTapePanel.classList.remove('active');
   const bounds = timeline.bounds;
   const center = {
     x: bounds.min.x + (bounds.span.x / 2),
@@ -798,6 +938,7 @@ stepForwardBtn.addEventListener('click', () => {
   stepCommands(1);
 });
 fitBtn.addEventListener('click', fitPreview);
+tapeCopyBtn.addEventListener('click', copyBenchmarkDataToClipboard);
 viewSelect.addEventListener('change', () => {
   playback.viewMode = viewSelect.value;
   render();
