@@ -1614,6 +1614,7 @@ function refreshBasicBenchmarkPreview() {
   if (!basicBenchmarkCapture) return;
   const timeline = ensureBenchmarkPreviewTimeline();
   timeline.benchmark = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
+  ensurePreviewWindow();
   postLatestPreviewTimeline();
 }
 
