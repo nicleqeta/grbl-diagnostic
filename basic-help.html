@@ -435,8 +435,30 @@ REM VAR settle_ms=250
 
     <section class="card">
       <h2>10. Example: Distance-Scaled Acceleration Plateau Map</h2>
-      <p>This example explores how usable acceleration changes with move distance. It starts at 1 mm, doubles the stroke each round, times a batch of back-and-forth moves at each acceleration, and stops each distance bucket after two consecutive acceleration steps fail to improve the measured batch time by at least <code>{plateau_ms}</code>.</p>
-      <p>The script emits <code>BENCH START ...</code> and <code>BENCH END ...</code> markers. The app measures those batches in JavaScript and exposes the latest completed batch duration back to BASIC through <code>BENCH_LAST_MS()</code>. Open the Preview window before running the script and switch to <strong>Benchmark</strong> view to watch the graph fill in live.</p>
+      <p>
+        This test answers the question: <em>at what acceleration does my machine stop getting faster for a given move distance?</em>
+        It sweeps the X-axis acceleration setting (<code>$120</code>) upward from <code>{start_accel}</code> in steps of <code>{accel_step}</code> up to a ceiling of <code>{max_accel}</code>,
+        while running a timed batch of back-and-forth moves at each level.
+        The stroke starts at 1&nbsp;mm and doubles each round — 1, 2, 4, 8&hellip; up to <code>{max_distance}</code>&nbsp;mm —
+        so you get a curve showing how the best usable acceleration scales with travel distance.
+      </p>
+      <p>
+        For each distance, the script calculates how many passes are needed so the total travel stays close to <code>{target_total_travel}</code>&nbsp;mm,
+        with a minimum of <code>{min_batch_count}</code> passes per batch.
+        Before each batch it writes the new acceleration to <code>$120</code>, then waits <code>{settle_ms}</code>&nbsp;ms for the controller to absorb the change.
+        Each move is issued at feedrate <code>{x_feed}</code>&nbsp;mm/min and the script waits up to <code>{idle_timeout}</code>&nbsp;ms for the machine to reach idle before continuing.
+      </p>
+      <p>
+        The script stops testing higher acceleration at a given distance once two consecutive steps fail to beat the previous best batch time by at least <code>{plateau_ms}</code>&nbsp;ms —
+        the point of diminishing returns for that stroke length.
+        When all distances are done (or the max is reached), <code>$120</code> is restored to its original value.
+      </p>
+      <p>
+        Timing is measured by wrapping each batch in <code>BENCH START&nbsp;…</code> / <code>BENCH END&nbsp;…</code> markers.
+        The app captures the wall-clock duration and exposes it back to the script via <code>BENCH_LAST_MS()</code>.
+        The Preview window opens automatically on the first marker and switches to <strong>Benchmark</strong> view,
+        where you can watch the best-acceleration-per-distance curve build in real time and copy the raw data as JSON for further analysis.
+      </p>
       <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
 REM AUTHOR: GitHub Copilot
 REM VERSION: 1
