@@ -300,6 +300,51 @@
   .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .basic-meta-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); gap: 6px; }
   .basic-meta-grid.three-up { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1fr); }
+  .basic-description-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(34, 38, 58, 0.22);
+    padding: 10px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .basic-description-tabs { display: flex; gap: 6px; }
+  .basic-description-tab {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .basic-description-tab.active {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: rgba(20, 184, 166, 0.12);
+  }
+  .basic-description-panes { min-height: 140px; max-height: 220px; }
+  .basic-description-pane { display: none; height: 100%; }
+  .basic-description-pane.active { display: block; }
+  .basic-description-pane textarea {
+    margin: 0;
+    min-height: 140px;
+    max-height: 220px;
+    height: 100%;
+    resize: none;
+    overflow-y: auto;
+  }
+  .basic-description-pane #basic-config-box {
+    margin: 0;
+    min-height: 140px;
+    max-height: 220px;
+    height: 100%;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
   .basic-preview-title { color: var(--text); font-weight: 600; }
   .basic-preview-meta { color: var(--text-muted); }
   .basic-share-url {
@@ -672,6 +717,8 @@
     padding: 24px;
     max-width: 440px;
     width: 90%;
+    max-height: 88vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -693,6 +740,8 @@
     border-left: 3px solid var(--teal);
     white-space: pre-wrap;
     font-family: var(--mono);
+    max-height: min(44vh, 360px);
+    overflow-y: auto;
   }
   .basic-confirm-vars {
     font-size: 11px;
@@ -1171,13 +1220,25 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
-        <div class="basic-meta-grid three-up">
-          <input type="text" id="basic-title-input" placeholder="Script title, e.g. Ramp Test" title="Required title for the saved script and share preview.">
-          <input type="text" id="basic-version-input" placeholder="Version" title="Optional version such as 1.2.">
-          <input type="text" id="basic-author-input" placeholder="Author" title="Optional author name for the generated share preview.">
+        <div class="basic-description-panel" id="basic-description-panel">
+          <div class="basic-meta-grid three-up">
+            <input type="text" id="basic-title-input" placeholder="Script title, e.g. Ramp Test" title="Required title for the saved script and share preview.">
+            <input type="text" id="basic-version-input" placeholder="Version" title="Optional version such as 1.2.">
+            <input type="text" id="basic-author-input" placeholder="Author" title="Optional author name for the generated share preview.">
+          </div>
+          <div class="basic-description-tabs" role="tablist" aria-label="Description and rendered preview">
+            <button class="basic-description-tab active" id="basic-desc-tab-edit" type="button" data-tab="edit" role="tab" aria-selected="true">Description</button>
+            <button class="basic-description-tab" id="basic-desc-tab-rendered" type="button" data-tab="rendered" role="tab" aria-selected="false">Rendered</button>
+          </div>
+          <div class="basic-description-panes">
+            <div class="basic-description-pane active" id="basic-desc-pane-edit">
+              <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post." style="min-height:88px;"></textarea>
+            </div>
+            <div class="basic-description-pane" id="basic-desc-pane-rendered">
+              <div class="diag-box muted" id="basic-config-box">Write a title, description, variables, and script to create a shareable program.</div>
+            </div>
+          </div>
         </div>
-        <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post." style="min-height:88px;"></textarea>
-        <div class="diag-box muted" id="basic-config-box">Write a title, description, variables, and script to create a shareable program.</div>
         <div id="basic-vars-section">
           <div class="basic-vars-header">
             <div class="section-label">Variables</div>
@@ -1425,6 +1486,10 @@ const basicVersionInput= document.getElementById('basic-version-input');
 const basicAuthorInput = document.getElementById('basic-author-input');
 const basicDescriptionInput = document.getElementById('basic-description-input');
 const basicConfigBox   = document.getElementById('basic-config-box');
+const basicDescTabEdit = document.getElementById('basic-desc-tab-edit');
+const basicDescTabRendered = document.getElementById('basic-desc-tab-rendered');
+const basicDescPaneEdit = document.getElementById('basic-desc-pane-edit');
+const basicDescPaneRendered = document.getElementById('basic-desc-pane-rendered');
 const basicValidationBox = document.getElementById('basic-validation-box');
 const basicVarsList    = document.getElementById('basic-vars-list');
 const basicAddVarBtn   = document.getElementById('basic-add-var-btn');
@@ -1898,6 +1963,8 @@ let basicLoadedVars = {};
 let basicBaseVars = {};
 let basicSourceId = '';
 let basicValidationState = { errors: [], warnings: [], lines: {}, order: [] };
+let basicDescriptionTab = 'edit';
+let basicDescriptionScrollRatio = 0;
 
 function basicParseValue(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -1960,6 +2027,41 @@ function updateBasicDocumentTitle() {
 
 function getBasicRenderedDescription() {
   return basicRawConfigText ? substituteVars(basicRawConfigText, basicLoadedVars).trim() : '';
+}
+
+function getBasicDescriptionScrollState(element) {
+  if (!element) return { top: 0, max: 0, ratio: 0 };
+  const max = Math.max(0, element.scrollHeight - element.clientHeight);
+  const top = Math.max(0, element.scrollTop || 0);
+  return { top, max, ratio: max > 0 ? top / max : 0 };
+}
+
+function setBasicDescriptionScrollByRatio(element, ratio) {
+  if (!element) return;
+  const max = Math.max(0, element.scrollHeight - element.clientHeight);
+  element.scrollTop = max <= 0 ? 0 : Math.round(max * Math.max(0, Math.min(1, ratio)));
+}
+
+function setBasicDescriptionTab(nextTab) {
+  if (!['edit', 'rendered'].includes(nextTab)) return;
+  const currentElement = basicDescriptionTab === 'rendered' ? basicConfigBox : basicDescriptionInput;
+  basicDescriptionScrollRatio = getBasicDescriptionScrollState(currentElement).ratio;
+
+  basicDescriptionTab = nextTab;
+  const editing = nextTab === 'edit';
+
+  basicDescTabEdit.classList.toggle('active', editing);
+  basicDescTabRendered.classList.toggle('active', !editing);
+  basicDescTabEdit.setAttribute('aria-selected', editing ? 'true' : 'false');
+  basicDescTabRendered.setAttribute('aria-selected', editing ? 'false' : 'true');
+
+  basicDescPaneEdit.classList.toggle('active', editing);
+  basicDescPaneRendered.classList.toggle('active', !editing);
+
+  requestAnimationFrame(() => {
+    const targetElement = editing ? basicDescriptionInput : basicConfigBox;
+    setBasicDescriptionScrollByRatio(targetElement, basicDescriptionScrollRatio);
+  });
 }
 
 function buildBasicOverrideEntries() {
@@ -5587,6 +5689,19 @@ basicScriptInput.addEventListener('input', () => {
   });
 });
 
+basicDescTabEdit.addEventListener('click', () => setBasicDescriptionTab('edit'));
+basicDescTabRendered.addEventListener('click', () => setBasicDescriptionTab('rendered'));
+
+basicDescriptionInput.addEventListener('scroll', () => {
+  if (basicDescriptionTab !== 'edit') return;
+  basicDescriptionScrollRatio = getBasicDescriptionScrollState(basicDescriptionInput).ratio;
+});
+
+basicConfigBox.addEventListener('scroll', () => {
+  if (basicDescriptionTab !== 'rendered') return;
+  basicDescriptionScrollRatio = getBasicDescriptionScrollState(basicConfigBox).ratio;
+});
+
 basicAddVarBtn.addEventListener('click', () => {
   basicLoadedVars = { ...basicLoadedVars, [getNextBasicVarName()]: 0 };
   markBasicScriptStructuralDirty();
@@ -6847,6 +6962,7 @@ scrollTerminalToBottom(true);
 // Initialize version checking and event listeners
 document.getElementById('reload-btn')?.addEventListener('click', reloadPage);
 loadAndCheckVersion();
+setBasicDescriptionTab('edit');
 </script>
 </body>
 </html>
