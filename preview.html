@@ -215,6 +215,7 @@
     <select class="select" id="view-select" aria-label="Preview mode">
       <option value="perspective">Perspective</option>
       <option value="top">Top</option>
+      <option value="benchmark">Benchmark</option>
     </select>
     <div class="stats" id="stats"></div>
   </div>
@@ -332,6 +333,125 @@ function fitPreview() {
   render();
 }
 
+function getBenchmarkSummary() {
+  return Array.isArray(timeline?.benchmark?.summary) ? timeline.benchmark.summary : [];
+}
+
+function getBenchmarkSamples() {
+  return Array.isArray(timeline?.benchmark?.samples) ? timeline.benchmark.samples : [];
+}
+
+function renderBenchmarkChart(width, height) {
+  const summary = getBenchmarkSummary();
+  const samples = getBenchmarkSamples();
+  const latestSample = timeline?.benchmark?.latestSample || null;
+  const margin = { top: 36, right: 28, bottom: 68, left: 68 };
+  const plotWidth = Math.max(120, width - margin.left - margin.right);
+  const plotHeight = Math.max(120, height - margin.top - margin.bottom);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(15, 17, 23, 0.94)';
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.20)';
+  ctx.strokeRect(margin.left, margin.top, plotWidth, plotHeight);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '12px Segoe UI, Arial, sans-serif';
+  ctx.fillText('Best observed acceleration by distance', margin.left, 20);
+
+  if (!summary.length) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '14px Segoe UI, Arial, sans-serif';
+    ctx.fillText('Waiting for benchmark samples from a live BASIC run.', margin.left, margin.top + 28);
+    ctx.restore();
+    statusBox.textContent = [
+      `${timeline.title || 'GRBL Preview'}`,
+      'View: Benchmark',
+      `Samples: ${samples.length}`,
+      'Awaiting first completed BENCH marker pair'
+    ].join('\n');
+    return;
+  }
+
+  const accelMax = Math.max(1, ...summary.map(point => Number(point.bestAccel) || 0));
+  const accelScaleMax = accelMax * 1.1;
+  const xStep = summary.length > 1 ? plotWidth / (summary.length - 1) : 0;
+  const pointX = index => margin.left + (summary.length === 1 ? plotWidth / 2 : index * xStep);
+  const pointY = accel => margin.top + plotHeight - ((Number(accel) || 0) / accelScaleMax) * plotHeight;
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+  ctx.lineWidth = 1;
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const y = margin.top + (plotHeight * tick) / 4;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(margin.left + plotWidth, y);
+    ctx.stroke();
+
+    const accelLabel = ((accelScaleMax * (4 - tick)) / 4).toFixed(0);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(accelLabel, 12, y + 4);
+  }
+
+  samples.forEach(sample => {
+    const summaryIndex = summary.findIndex(point => point.distance === sample.distance);
+    if (summaryIndex === -1) return;
+    const x = pointX(summaryIndex);
+    const y = pointY(sample.accel);
+    ctx.fillStyle = 'rgba(96, 165, 250, 0.38)';
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  summary.forEach((point, index) => {
+    const x = pointX(index);
+    const y = pointY(point.bestAccel);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  summary.forEach((point, index) => {
+    const x = pointX(index);
+    const y = pointY(point.bestAccel);
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(`${Number(point.distance)} mm`, x - 18, margin.top + plotHeight + 20);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`${Number(point.bestAccel).toFixed(0)}`, x - 12, y - 10);
+  });
+
+  ctx.save();
+  ctx.translate(18, margin.top + plotHeight / 2 + 40);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('Acceleration', 0, 0);
+  ctx.restore();
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('Distance', margin.left + plotWidth / 2 - 18, height - 20);
+  ctx.restore();
+
+  statusBox.textContent = [
+    `${timeline.title || 'GRBL Preview'}`,
+    'View: Benchmark',
+    `Samples: ${samples.length}`,
+    `Distances: ${summary.length}`,
+    latestSample
+      ? `Latest: D=${latestSample.distance} A=${latestSample.accel} T=${Number(latestSample.elapsedMs || 0).toFixed(1)} ms`
+      : 'Latest: none'
+  ].join('\n');
+}
+
 function getVisibleSegmentEnd() {
   if (!timeline || !timeline.commandCount) return -1;
   for (let commandId = playback.commandCursor; commandId >= 0; commandId -= 1) {
@@ -435,6 +555,10 @@ function render() {
   if (!timeline) return;
 
   emptyState.style.display = 'none';
+  if (playback.viewMode === 'benchmark') {
+    renderBenchmarkChart(width, height);
+    return;
+  }
   const bounds = timeline.bounds;
   const center = {
     x: bounds.min.x + (bounds.span.x / 2),
@@ -487,7 +611,34 @@ function render() {
 
 function renderCommandList() {
   commandList.innerHTML = '';
-  if (!timeline || !timeline.commands.length) return;
+  if (!timeline) return;
+
+  if ((!timeline.commands || !timeline.commands.length) && getBenchmarkSamples().length) {
+    getBenchmarkSamples().slice().reverse().forEach(sample => {
+      const item = document.createElement('li');
+      item.className = 'command-item';
+
+      const line = document.createElement('div');
+      line.className = 'command-line';
+      line.textContent = `${Number(sample.distance)} mm @ ${Number(sample.accel)} accel`;
+
+      const text = document.createElement('div');
+      text.className = 'command-text';
+      text.textContent = `${Number(sample.elapsedMs || 0).toFixed(1)} ms batch ${Number(sample.batch || 0)} repeat ${Number(sample.repeat || 1)}`;
+
+      const meta = document.createElement('div');
+      meta.className = 'command-meta';
+      meta.textContent = sample.startedAtIso || 'Live benchmark sample';
+
+      item.appendChild(line);
+      item.appendChild(text);
+      item.appendChild(meta);
+      commandList.appendChild(item);
+    });
+    return;
+  }
+
+  if (!timeline.commands.length) return;
 
   timeline.commands.forEach(command => {
     const item = document.createElement('li');
@@ -523,7 +674,15 @@ function renderCommandList() {
 function loadTimeline(nextTimeline) {
   timeline = nextTimeline;
   titleEl.textContent = timeline.title || 'GRBL Preview';
-  statsEl.textContent = `${timeline.stats.motionCommandCount} motion command(s) | ${timeline.stats.errorCount} error(s)`;
+  const benchmarkSampleCount = Number(timeline?.benchmark?.sampleCount || 0);
+  statsEl.textContent = benchmarkSampleCount
+    ? `${timeline.stats.motionCommandCount} motion command(s) | ${benchmarkSampleCount} benchmark sample(s)`
+    : `${timeline.stats.motionCommandCount} motion command(s) | ${timeline.stats.errorCount} error(s)`;
+  if (benchmarkSampleCount && !timeline.segments.length) {
+    playback.viewMode = 'benchmark';
+  } else if (playback.viewMode === 'benchmark') {
+    playback.viewMode = 'perspective';
+  }
   resetPlayback();
   renderCommandList();
   syncQueuePanelUi();

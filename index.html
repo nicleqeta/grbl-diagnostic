@@ -905,6 +905,7 @@
   GCODE_PARAM(k)   Read cached CNC-style parameter (#100, "100", "_x", "#<_x>")
   GCODE_PARAM(k,d) Read cached param with fallback default d
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
+  BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
   INT(n)           Truncate to integer
   TRUNC(n)         Truncate to integer (alias of INT)
@@ -970,7 +971,7 @@
   ------------
   Scripts can be previewed without a connected machine.
   The preview engine dry-runs the script synchronously:
-    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE() calls return 0 (noted in preview log)
+    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE(), BENCH_LAST_MS() calls return 0 (noted in preview log)
     - SEND commands are displayed as motion command events
     - PRINT commands are shown in the preview timeline
     - WAIT commands are summarised, not actually delayed
@@ -1496,6 +1497,7 @@ function basicGetGcodeParam(keyLike, fallbackValue = 0) {
 }
 let previewWindowRef = null;
 let latestPreviewTimeline = null;
+let basicBenchmarkCapture = null;
 let gcodeQueue       = [];
 let gcodeRunning     = false;
 let gcodeActiveJobId = null;
@@ -1513,6 +1515,152 @@ if (!('serial' in navigator)) {
 }
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function createBasicBenchmarkCapture(title = 'BASIC Benchmark') {
+  return {
+    version: 1,
+    title,
+    startedAtIso: new Date().toISOString(),
+    updatedAtIso: new Date().toISOString(),
+    latestSample: null,
+    samples: [],
+    activeMarkers: new Map()
+  };
+}
+
+function parseBasicBenchmarkFields(text) {
+  const fields = {};
+  const pattern = /([A-Za-z_]+)=("(?:[^"\\]|\\.)*"|[^\s]+)/g;
+  let match = null;
+  while ((match = pattern.exec(String(text || '')))) {
+    const rawKey = String(match[1] || '').trim().toLowerCase();
+    let rawValue = String(match[2] || '').trim();
+    if (!rawKey) continue;
+    if (rawValue.startsWith('"') && rawValue.endsWith('"')) {
+      rawValue = rawValue.slice(1, -1);
+    }
+    const numericValue = Number(rawValue);
+    fields[rawKey] = Number.isFinite(numericValue) ? numericValue : rawValue;
+  }
+  return fields;
+}
+
+function buildBasicBenchmarkMarkerKey(fields) {
+  const distance = Number(fields.distance ?? fields.dist ?? fields.d);
+  const accel = Number(fields.accel ?? fields.a);
+  const batch = Number(fields.batch ?? fields.passes ?? fields.p ?? 0);
+  const repeat = Number(fields.repeat ?? fields.r ?? 1);
+  if (!Number.isFinite(distance) || !Number.isFinite(accel)) return '';
+  return `${distance}|${accel}|${batch}|${repeat}`;
+}
+
+function buildBasicBenchmarkSummary(samples) {
+  const byDistance = new Map();
+  samples.forEach(sample => {
+    if (!Number.isFinite(sample.distance)) return;
+    const key = String(sample.distance);
+    let bucket = byDistance.get(key);
+    if (!bucket) {
+      bucket = {
+        distance: sample.distance,
+        sampleCount: 0,
+        bestAccel: sample.accel,
+        bestElapsedMs: sample.elapsedMs,
+        latestElapsedMs: sample.elapsedMs
+      };
+      byDistance.set(key, bucket);
+    }
+    bucket.sampleCount += 1;
+    bucket.latestElapsedMs = sample.elapsedMs;
+    if (sample.elapsedMs < bucket.bestElapsedMs || (Math.abs(sample.elapsedMs - bucket.bestElapsedMs) < 0.0001 && sample.accel > bucket.bestAccel)) {
+      bucket.bestElapsedMs = sample.elapsedMs;
+      bucket.bestAccel = sample.accel;
+    }
+  });
+  return Array.from(byDistance.values()).sort((left, right) => left.distance - right.distance);
+}
+
+function buildBasicBenchmarkPreviewData(capture) {
+  if (!capture) return null;
+  const summary = buildBasicBenchmarkSummary(capture.samples);
+  return {
+    version: capture.version,
+    title: capture.title,
+    startedAtIso: capture.startedAtIso,
+    updatedAtIso: capture.updatedAtIso,
+    sampleCount: capture.samples.length,
+    distanceCount: summary.length,
+    latestSample: capture.latestSample ? { ...capture.latestSample } : null,
+    samples: capture.samples.map(sample => ({ ...sample })),
+    summary
+  };
+}
+
+function getLastBasicBenchmarkMs() {
+  return Number(basicBenchmarkCapture?.latestSample?.elapsedMs || 0);
+}
+
+function ensureBenchmarkPreviewTimeline() {
+  if (!latestPreviewTimeline) {
+    latestPreviewTimeline = createBasicPreviewTimeline('');
+  }
+  if (basicBenchmarkCapture?.title && !latestPreviewTimeline.title) {
+    latestPreviewTimeline.title = basicBenchmarkCapture.title;
+  }
+  return latestPreviewTimeline;
+}
+
+function refreshBasicBenchmarkPreview() {
+  if (!basicBenchmarkCapture) return;
+  const timeline = ensureBenchmarkPreviewTimeline();
+  timeline.benchmark = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
+  postLatestPreviewTimeline();
+}
+
+function recordBasicBenchmarkMessage(message) {
+  if (!basicBenchmarkCapture) return false;
+  const text = String(message || '').trim();
+  const markerMatch = text.match(/^BENCH\s+(START|END)\b\s*(.*)$/i);
+  if (!markerMatch) return false;
+
+  const kind = markerMatch[1].toUpperCase();
+  const fields = parseBasicBenchmarkFields(markerMatch[2]);
+  const markerKey = buildBasicBenchmarkMarkerKey(fields);
+  if (!markerKey) return false;
+
+  const nowIso = new Date().toISOString();
+  const nowPerfMs = performance.now();
+  basicBenchmarkCapture.updatedAtIso = nowIso;
+
+  if (kind === 'START') {
+    basicBenchmarkCapture.activeMarkers.set(markerKey, {
+      fields,
+      startedAtIso: nowIso,
+      startedPerfMs: nowPerfMs
+    });
+    refreshBasicBenchmarkPreview();
+    return true;
+  }
+
+  const activeMarker = basicBenchmarkCapture.activeMarkers.get(markerKey);
+  if (!activeMarker) return false;
+  basicBenchmarkCapture.activeMarkers.delete(markerKey);
+
+  const sample = {
+    distance: Number(fields.distance ?? activeMarker.fields.distance ?? activeMarker.fields.dist ?? activeMarker.fields.d),
+    accel: Number(fields.accel ?? activeMarker.fields.accel ?? activeMarker.fields.a),
+    batch: Number(fields.batch ?? activeMarker.fields.batch ?? activeMarker.fields.passes ?? activeMarker.fields.p ?? 0),
+    repeat: Number(fields.repeat ?? activeMarker.fields.repeat ?? activeMarker.fields.r ?? 1),
+    feed: Number(fields.feed ?? activeMarker.fields.feed ?? 0),
+    elapsedMs: Math.max(0, nowPerfMs - activeMarker.startedPerfMs),
+    startedAtIso: activeMarker.startedAtIso,
+    endedAtIso: nowIso
+  };
+  basicBenchmarkCapture.samples.push(sample);
+  basicBenchmarkCapture.latestSample = sample;
+  refreshBasicBenchmarkPreview();
+  return true;
+}
 
 function clampSidebarWidth(width) {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
@@ -1837,10 +1985,11 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bMAX\s*\(/gi, '__max__(')
     .replace(/\bMOD\s*\(/gi, '__mod__(')
     .replace(/\bGCODE_PARAM\s*\(/gi, '__gcode_param__(')
+    .replace(/\bBENCH_LAST_MS\s*\(/gi, '__bench_last_ms__(')
     .replace(/\bRAD\s*\(/gi, '__rad__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bench_last_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1850,7 +1999,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bench_last_ms__ = () => 0; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -3243,6 +3392,11 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         return basicGetGcodeParam(keyExpr, fallback);
       }
+      if (name === 'BENCH_LAST_MS' && hasCallSyntax()) {
+        expect('OP', '(');
+        expect('OP', ')');
+        return getLastBasicBenchmarkMs();
+      }
       if (name === 'PI') {
         return Math.PI;
       }
@@ -3720,7 +3874,8 @@ function createBasicPreviewTimeline(scriptSource) {
       errorCount: 0,
       noteCount: 0,
       motionCommandCount: 0
-    }
+    },
+    benchmark: null
   };
 }
 
@@ -4486,6 +4641,8 @@ async function runBasicScript(source) {
   basicResults = new Map();
   basicCallStack = [];
   basicForStack = [];
+  basicBenchmarkCapture = createBasicBenchmarkCapture(buildBasicDisplayName(getBasicScriptMeta()) || 'BASIC Benchmark');
+  refreshBasicBenchmarkPreview();
   updateBasicControlUi();
   renderGcodeQueue();
   addLine('--- BASIC script started ---', 'basic');
@@ -4648,6 +4805,7 @@ async function runBasicScript(source) {
         const arg = stmt.replace(/^PRINT\s*/i, '').trim();
         const msg = arg ? String(await basicEvalExprRuntime(arg, basicVars)) : '';
         addLine(`PRINT: ${msg}`, 'basic');
+        recordBasicBenchmarkMessage(msg);
         pc++;
         continue;
       }
@@ -4852,6 +5010,7 @@ async function runBasicScript(source) {
               const arg = thenBody.replace(/^PRINT\s*/i, '').trim();
               const msg = arg ? String(await basicEvalExprRuntime(arg, basicVars)) : '';
               addLine(`PRINT: ${msg}`, 'basic');
+              recordBasicBenchmarkMessage(msg);
               pc++;
               continue;
             }
@@ -4930,12 +5089,17 @@ async function runBasicScript(source) {
       addLine(`Script error: ${message}`, 'err');
     }
   } finally {
+    if (basicBenchmarkCapture) {
+      basicBenchmarkCapture.activeMarkers.clear();
+      refreshBasicBenchmarkPreview();
+    }
     basicRunning = false;
     basicStopRequested = false;
     basicPaused = false;
     basicStopMessage = '--- Script stopped by user ---';
     basicForStack = [];
     basicInputBar.style.display = 'none';
+    basicBenchmarkCapture = null;
     updateBasicControlUi();
     renderGcodeQueue();
   }

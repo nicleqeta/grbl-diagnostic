@@ -253,6 +253,7 @@
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
         <li><code>GCODE_PARAM(key[, fallback])</code>: Read cached CNC-style parameters such as <code>#100</code> or <code>#&lt;_x&gt;</code> with optional default fallback.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
+        <li><code>BENCH_LAST_MS()</code>: Latest completed <code>BENCH START ...</code>/<code>BENCH END ...</code> batch duration captured by the app.</li>
       </ul>
       <pre><code>10 LET dx = 3
 20 LET dy = 4
@@ -427,6 +428,101 @@ REM VAR settle_ms=250
 1070 NEXT j
 1080 INPUT answer, "Tested $120=" &amp; STR(current_accel) &amp; ". Enter 1 if bad, else 0"
 1090 RETURN
+
+9000 PRINT "Test cancelled."
+9010 END</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>10. Example: Distance-Scaled Acceleration Plateau Map</h2>
+      <p>This example explores how usable acceleration changes with move distance. It starts at 1 mm, doubles the stroke each round, times a batch of back-and-forth moves at each acceleration, and stops each distance bucket after two consecutive acceleration steps fail to improve the measured batch time by at least <code>{plateau_ms}</code>.</p>
+      <p>The script emits <code>BENCH START ...</code> and <code>BENCH END ...</code> markers. The app measures those batches in JavaScript and exposes the latest completed batch duration back to BASIC through <code>BENCH_LAST_MS()</code>. Open the Preview window before running the script and switch to <strong>Benchmark</strong> view to watch the graph fill in live.</p>
+      <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
+REM AUTHOR: GitHub Copilot
+REM VERSION: 1
+REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths.
+REM DESCRIPTION: Uses BENCH markers so the app can time each batch and plot best observed acceleration by distance in the Preview window.
+REM VAR start_accel=400
+REM VAR accel_step=100
+REM VAR max_accel=4000
+REM VAR max_distance=400
+REM VAR x_feed=30000
+REM VAR target_total_travel=80
+REM VAR min_batch_count=4
+REM VAR settle_ms=200
+REM VAR idle_timeout=12000
+REM VAR plateau_ms=5
+
+10 PRINT "Distance-scaled acceleration plateau map"
+20 PRINT "Clear the machine so X can move symmetrically around the current point."
+30 LET proceed = INPUT("Type 1 to begin, or 0 to cancel")
+40 IF proceed &lt;&gt; 1 THEN GOTO 9000
+50 LET original_accel = SETTING("$120")
+60 LET current_distance = 1
+70 LET final_best_accel = original_accel
+80 LET final_best_ms = 0
+90 SEND "G21" TIMEOUT 1000 REQUIRE_OK
+100 SEND "G91" TIMEOUT 1000 REQUIRE_OK
+
+200 IF current_distance &gt; {max_distance} THEN GOTO 8000
+210 LET batch_count = MAX({min_batch_count}, INT({target_total_travel} / current_distance))
+220 LET best_accel = 0
+230 LET best_ms = 0
+240 LET stagnant_steps = 0
+250 PRINT "Distance " &amp; STR(current_distance) &amp; " mm with batch_count=" &amp; STR(batch_count)
+
+300 FOR test_accel = {start_accel} TO {max_accel} STEP {accel_step}
+310 LET current_accel = test_accel
+320 GOSUB 1000
+330 LET current_ms = BENCH_LAST_MS()
+340 PRINT "Measured distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " ms=" &amp; STR(ROUND(current_ms, 3))
+350 IF best_ms = 0 THEN GOTO 500
+360 IF current_ms + {plateau_ms} &lt; best_ms THEN GOTO 520
+370 LET stagnant_steps = stagnant_steps + 1
+380 IF stagnant_steps &lt; 2 THEN GOTO 600
+390 PRINT "Plateau reached for distance=" &amp; STR(current_distance)
+400 GOTO 700
+
+500 LET best_ms = current_ms
+510 LET best_accel = current_accel
+515 GOTO 600
+
+520 LET best_ms = current_ms
+530 LET best_accel = current_accel
+540 LET stagnant_steps = 0
+
+600 NEXT test_accel
+
+700 PRINT "Best observed acceleration at distance=" &amp; STR(current_distance) &amp; " is " &amp; STR(best_accel) &amp; " with batch_ms=" &amp; STR(ROUND(best_ms, 3))
+710 LET final_best_accel = best_accel
+720 LET final_best_ms = best_ms
+730 LET current_distance = current_distance * 2
+740 GOTO 200
+
+1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
+1010 WAIT {settle_ms}
+1020 PRINT "BENCH START distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1030 FOR pass_index = 1 TO batch_count
+1040 SEND "G1 X" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1050 WAIT_IDLE {idle_timeout}
+1060 SEND "G1 X-" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1070 WAIT_IDLE {idle_timeout}
+1080 NEXT pass_index
+1090 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1100 RETURN
+
+8000 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
+8010 WAIT {settle_ms}
+8020 PRINT "Restored original $120 = " &amp; STR(original_accel)
+8030 PRINT "Last completed best distance=" &amp; STR(current_distance / 2)
+8040 PRINT "Last completed best accel=" &amp; STR(final_best_accel)
+8050 PRINT "Last completed best batch ms=" &amp; STR(ROUND(final_best_ms, 3))
+8060 RESULT "restored_x_accel", original_accel
+8070 RESULT "last_distance_mm", current_distance / 2
+8080 RESULT "last_best_accel", final_best_accel
+8090 RESULT "last_best_batch_ms", ROUND(final_best_ms, 3)
+8100 REPORT
+8110 END
 
 9000 PRINT "Test cancelled."
 9010 END</code></pre>
