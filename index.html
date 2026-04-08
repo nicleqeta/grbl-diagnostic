@@ -1349,7 +1349,9 @@ async function loadAndCheckVersion() {
     // Display current version in header
     const badge = document.getElementById('version-badge');
     if (badge) {
-      badge.textContent = `v${currentVersion.split('T')[0]}`;
+      const [vDate, vTimePart = ''] = currentVersion.split('T');
+      const vTime = vTimePart.slice(0, 5); // HH:MM
+      badge.textContent = vTime ? `v${vDate} · ${vTime}` : `v${vDate}`;
     }
     
     // Check if new version is available
