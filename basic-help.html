@@ -186,7 +186,7 @@
     <section class="card">
       <h2>4. User Messaging And Results</h2>
       <ul>
-        <li><code>PRINT expr</code>: Log a message to terminal.</li>
+        <li><code>PRINT [expr]</code>: Log a message to terminal. Omit the expression for a blank separator line.</li>
         <li><code>CONFIRM expr</code>: Show confirmation dialog. If canceled, script stops.</li>
         <li><code>PAUSE</code>: Pause script until resumed.</li>
         <li><code>RESULT name, expr</code>: Save a named result value.</li>
@@ -204,7 +204,7 @@
       <h2>5. Program Flow</h2>
       <ul>
         <li><code>FOR name = start TO end [STEP step]</code> and <code>NEXT [name]</code>: Counter loop with optional explicit step.</li>
-        <li><code>IF condition THEN GOTO line</code>: Conditional jump.</li>
+        <li><code>IF condition THEN GOTO line</code>: Conditional jump. Also accepts <code>IF cond THEN LET</code>, <code>IF cond THEN PRINT</code>, <code>IF cond THEN GOSUB</code>, and <code>IF cond THEN END</code> as single-line inline statements.</li>
         <li><code>GOTO line</code>: Unconditional jump.</li>
         <li><code>GOSUB line</code> and <code>RETURN</code>: Subroutine call/return.</li>
         <li><code>END</code>: Stop script.</li>
@@ -224,31 +224,51 @@
         <li><code>STR(expr)</code>: Convert value to string.</li>
         <li><code>ABS(expr)</code>: Absolute value.</li>
         <li><code>INT(expr)</code>: Integer truncation.</li>
-        <li><code>ROUND(value, digits)</code>: Round to N decimal places (digits can be negative).</li>
+        <li><code>TRUNC(expr)</code>: Integer truncation (alias of <code>INT</code>).</li>
+        <li><code>CEIL(expr)</code>: Round up to next integer.</li>
+        <li><code>FLOOR(expr)</code>: Round down to previous integer.</li>
+        <li><code>SIGN(expr)</code>: Returns <code>-1</code>, <code>0</code>, or <code>1</code> based on value sign.</li>
+        <li><code>ROUND(value[, digits])</code>: Round to nearest integer or to N decimal places.</li>
         <li><code>SQRT(expr)</code>: Square root.</li>
+        <li><code>HYPOT(x, y)</code>: 2D hypotenuse length.</li>
+        <li><code>EXP(expr)</code>: Exponential function (<code>e^x</code>).</li>
+        <li><code>LOG(expr)</code>: Natural logarithm (<code>ln</code>).</li>
+        <li><code>LN(expr)</code>: Alias for natural logarithm.</li>
+        <li><code>LOG10(expr)</code>: Base-10 logarithm.</li>
+        <li><code>CLAMP(value, min, max)</code>: Bound a value to a range.</li>
+        <li><code>MAX(a, b)</code>: Larger of two values.</li>
+        <li><code>MIN(a, b)</code>: Smaller of two values.</li>
+        <li><code>MOD(a, b)</code> or <code>a % b</code>: Remainder (modulo).</li>
         <li><code>SIN(angleDeg)</code>: Sine of an angle in degrees.</li>
         <li><code>COS(angleDeg)</code>: Cosine of an angle in degrees.</li>
         <li><code>TAN(angleDeg)</code>: Tangent of an angle in degrees.</li>
+        <li><code>SINH(value)</code>, <code>COSH(value)</code>, <code>TANH(value)</code>: Hyperbolic trig.</li>
         <li><code>ASIN(value)</code>: Inverse sine, returns degrees.</li>
         <li><code>ACOS(value)</code>: Inverse cosine, returns degrees.</li>
         <li><code>ATAN(value)</code>: Inverse tangent, returns degrees.</li>
         <li><code>ATAN2(y, x)</code>: Inverse tangent with quadrant handling, returns degrees.</li>
+        <li><code>ASINH(value)</code>, <code>ACOSH(value)</code>, <code>ATANH(value)</code>: Inverse hyperbolic trig.</li>
         <li><code>RAD(degValue)</code>: Convert degrees to radians.</li>
         <li><code>DEG(radValue)</code>: Convert radians to degrees.</li>
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
+        <li><code>GCODE_PARAM(key[, fallback])</code>: Read cached CNC-style parameters such as <code>#100</code> or <code>#&lt;_x&gt;</code> with optional default fallback.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
       </ul>
       <pre><code>10 LET dx = 3
 20 LET dy = 4
-30 LET len = SQRT(dx * dx + dy * dy)
+30 LET len = HYPOT(dx, dy)
 40 LET ang = ATAN2(dy, dx)
-    50 LET angRad = RAD(ang)
-    60 LET angDeg = DEG(angRad)
-    70 LET xr = ROUND(len * COS(angDeg), 3)
-    80 PRINT "Angle(deg): " & STR(angDeg)
-    90 PRINT "Projected X: " & STR(xr)
-    100 PRINT "State: " & STATE()
-    110 END</code></pre>
+50 LET angRad = RAD(ang)
+60 LET angDeg = DEG(angRad)
+70 LET xr = ROUND(len * COS(angDeg), 3)
+80 LET safeFeed = CLAMP(5000, 200, 3000)
+90 LET lane = 17 % 5
+100 PRINT "Angle(deg): " & STR(angDeg)
+110 PRINT "Projected X: " & STR(xr)
+120 PRINT "Safe feed: " & STR(safeFeed)
+130 PRINT "Lane: " & STR(lane)
+140 PRINT "State: " & STATE()
+150 END</code></pre>
     </section>
 
     <section class="card">
@@ -259,6 +279,7 @@
         <li><code>REM DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
         <li><code>REM VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
         <li>If no title header exists, import falls back to the filename.</li>
+        <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step BASIC automatically.</li>
       </ul>
       <pre><code>REM TITLE: X Axis Acceleration Finder
 REM VERSION: 1
@@ -327,7 +348,7 @@ REM VAR settle_ms=250
 
 240 FOR test_accel = {start_accel} TO {max_accel} STEP {coarse_step}
 250 LET current_accel = test_accel
-260 IF current_accel &gt; max_tested_accel THEN LET max_tested_accel = current_accel
+260 LET max_tested_accel = MAX(max_tested_accel, current_accel)
 270 GOSUB 1000
 280 IF answer &lt;&gt; 0 THEN GOTO 400
 290 LET last_good = current_accel
@@ -343,7 +364,7 @@ REM VAR settle_ms=250
 440 PRINT "Starting fine search..."
 450 FOR test_accel = last_good + {fine_step} TO first_bad STEP {fine_step}
 460 LET current_accel = test_accel
-470 IF current_accel &gt; max_tested_accel THEN LET max_tested_accel = current_accel
+470 LET max_tested_accel = MAX(max_tested_accel, current_accel)
 480 GOSUB 1000
 490 IF answer &lt;&gt; 0 THEN GOTO 600
 500 LET fine_good = current_accel

@@ -827,20 +827,40 @@
   INPUT(prompt)    Prompt user for a value (returns number or string)
   READ(timeout)    Read next serial line (returns string, timeout in ms)
   SETTING(n)       Read GRBL setting $n (returns numeric value)
+  GCODE_PARAM(k)   Read cached CNC-style parameter (#100, "100", "_x", "#<_x>")
+  GCODE_PARAM(k,d) Read cached param with fallback default d
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
   STR(n)           Convert number to string
   INT(n)           Truncate to integer
+  TRUNC(n)         Truncate to integer (alias of INT)
   ABS(n)           Absolute value
-  RND(n)           Random number in [0, n)
+  CEIL(n)          Round up to nearest integer
+  FLOOR(n)         Round down to nearest integer
+  SIGN(n)          Sign of number: -1, 0, or 1
+  RND(n)           Random integer in [1, n]
+  EXP(n)           Exponential function e^n
+  LOG(n), LN(n)    Natural logarithm
+  LOG10(n)         Base-10 logarithm
+  MAX(a, b)        Maximum of two values
+  MIN(a, b)        Minimum of two values
+  MOD(a, b)        Modulus (same as a % b)
+  CLAMP(v, lo, hi) Clamp value to range [lo, hi]
+  HYPOT(x, y)      Euclidean length sqrt(x^2 + y^2)
   SIN(deg)         Sine (argument in degrees)
   COS(deg)         Cosine (argument in degrees)
   TAN(deg)         Tangent (argument in degrees)
+  SINH(x)          Hyperbolic sine
+  COSH(x)          Hyperbolic cosine
+  TANH(x)          Hyperbolic tangent
   ASIN(x)          Arc sine, result in degrees
   ACOS(x)          Arc cosine, result in degrees
   ATAN(x)          Arc tangent, result in degrees
   ATAN2(y, x)      Two-argument arc tangent, result in degrees
+  ASINH(x)         Inverse hyperbolic sine
+  ACOSH(x)         Inverse hyperbolic cosine
+  ATANH(x)         Inverse hyperbolic tangent
   SQRT(x)          Square root
-  ROUND(x)         Round to nearest integer
+  ROUND(x[, d])    Round to nearest integer or to d decimal places
   RAD(deg)         Convert degrees to radians
   DEG(rad)         Convert radians to degrees
   PI               The constant π (3.14159...)
@@ -875,11 +895,18 @@
   ------------
   Scripts can be previewed without a connected machine.
   The preview engine dry-runs the script synchronously:
-    - INPUT(), READ(), SETTING(), STATE() calls return 0 (noted in preview log)
+    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE() calls return 0 (noted in preview log)
     - SEND commands are displayed as motion command events
     - PRINT commands are shown in the preview timeline
     - WAIT commands are summarised, not actually delayed
   Preview is useful for verifying loop logic and inspecting generated GRBL sequences.
+
+  G-CODE CLIPBOARD IMPORT
+  -----------------------
+  BASIC clipboard import can auto-detect pasted G-code and offer conversion:
+    - If G-code patterns are detected, the app prompts to convert to BASIC.
+    - Converted scripts use numbered BASIC lines and SEND statements.
+    - O-word/macro structures are converted to a simplified, stepwise script form.
 
   SHARE URL SYSTEM
   ----------------
@@ -1355,6 +1382,36 @@ let basicResults = new Map();
 let basicCallStack = [];
 let basicForStack = [];
 let basicGrblSettings = {};   // cache of $N=value from READ/SETTING
+let basicGcodeParams = {};    // cache of G-code params: #100-#5000, #<_x>, #<_metric>, etc.
+
+function basicNormalizeGcodeParamKey(keyLike) {
+  const text = String(keyLike ?? '').trim();
+  if (!text) return '';
+
+  if (/^\d+$/.test(text)) return `#${text}`;
+  if (/^#\d+$/.test(text)) return text;
+
+  if (/^#<[^>]+>$/.test(text)) return text.toLowerCase();
+  if (/^<[^>]+>$/.test(text)) return `#${text}`.toLowerCase();
+
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) return `#<${text.toLowerCase()}>`;
+  return text;
+}
+
+function basicSetGcodeParam(keyLike, value) {
+  const key = basicNormalizeGcodeParamKey(keyLike);
+  if (!key) return;
+  basicGcodeParams[key] = value;
+}
+
+function basicGetGcodeParam(keyLike, fallbackValue = 0) {
+  const key = basicNormalizeGcodeParamKey(keyLike);
+  if (!key) return fallbackValue;
+  if (Object.prototype.hasOwnProperty.call(basicGcodeParams, key)) {
+    return basicGcodeParams[key];
+  }
+  return fallbackValue;
+}
 let previewWindowRef = null;
 let latestPreviewTimeline = null;
 let gcodeQueue       = [];
@@ -1669,6 +1726,10 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bSTR\s*\(/gi, '__str__(')
     .replace(/\bABS\s*\(/gi, '__abs__(')
     .replace(/\bINT\s*\(/gi, '__int__(')
+    .replace(/\bCEIL\s*\(/gi, '__ceil__(')
+    .replace(/\bFLOOR\s*\(/gi, '__floor__(')
+    .replace(/\bSIGN\s*\(/gi, '__sign__(')
+    .replace(/\bTRUNC\s*\(/gi, '__trunc__(')
     .replace(/\bSIN\s*\(/gi, '__sin__(')
     .replace(/\bCOS\s*\(/gi, '__cos__(')
     .replace(/\bTAN\s*\(/gi, '__tan__(')
@@ -1676,12 +1737,28 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bACOS\s*\(/gi, '__acos__(')
     .replace(/\bATAN2\s*\(/gi, '__atan2__(')
     .replace(/\bATAN\s*\(/gi, '__atan__(')
+    .replace(/\bSINH\s*\(/gi, '__sinh__(')
+    .replace(/\bCOSH\s*\(/gi, '__cosh__(')
+    .replace(/\bTANH\s*\(/gi, '__tanh__(')
+    .replace(/\bASINH\s*\(/gi, '__asinh__(')
+    .replace(/\bACOSH\s*\(/gi, '__acosh__(')
+    .replace(/\bATANH\s*\(/gi, '__atanh__(')
     .replace(/\bSQRT\s*\(/gi, '__sqrt__(')
+    .replace(/\bEXP\s*\(/gi, '__exp__(')
+    .replace(/\bLN\s*\(/gi, '__ln__(')
+    .replace(/\bLOG\s*\(/gi, '__log__(')
+    .replace(/\bLOG10\s*\(/gi, '__log10__(')
+    .replace(/\bHYPOT\s*\(/gi, '__hypot__(')
     .replace(/\bROUND\s*\(/gi, '__round__(')
+    .replace(/\bCLAMP\s*\(/gi, '__clamp__(')
+    .replace(/\bMIN\s*\(/gi, '__min__(')
+    .replace(/\bMAX\s*\(/gi, '__max__(')
+    .replace(/\bMOD\s*\(/gi, '__mod__(')
+    .replace(/\bGCODE_PARAM\s*\(/gi, '__gcode_param__(')
     .replace(/\bRAD\s*\(/gi, '__rad__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sqrt__', '__round__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -1691,7 +1768,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sqrt__ = value => Math.sqrt(Number(value)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -2376,9 +2453,22 @@ async function importBasicScriptFromFile(file) {
   }
 }
 
+function isLikelyGcode(text) {
+  // Check if text looks like G-code based on common patterns
+  const gcodePatterns = [
+    /^[GM]\d+/m,           // G0, G1, M3, M30, etc.
+    /^\s*o\d+\s+/im,       // o100 sub, o100 do, etc.
+    /^\s*#\d+/m,           // #100 = value (parameters)
+    /G[0-3].*[XYZ]/im,     // G motion with axis
+    /M[0-9]{1,3}(?:\s|$)/m // M-codes
+  ];
+  
+  return gcodePatterns.some(pattern => pattern.test(text));
+}
+
 async function importBasicScriptFromClipboard() {
   basicConfigBox.className = 'diag-box muted';
-  basicConfigBox.textContent = 'Reading BASIC script from clipboard...';
+  basicConfigBox.textContent = 'Reading from clipboard...';
 
   try {
     if (!window.isSecureContext || !navigator.clipboard?.readText) {
@@ -2386,6 +2476,54 @@ async function importBasicScriptFromClipboard() {
     }
 
     const text = await navigator.clipboard.readText();
+    
+    // Check if it looks like G-code
+    if (isLikelyGcode(text)) {
+      basicConfigBox.className = 'diag-box amber';
+      basicConfigBox.innerHTML = '<strong>G-code detected!</strong><br/>Would you like to convert this G-code file to BASIC? <button id="gcode-convert-yes" class="btn" style="margin-top:8px;">Convert G-code to BASIC</button> <button id="gcode-convert-no" class="btn" style="margin-top:8px;">Import as plain text</button>';
+      
+      return new Promise((resolve) => {
+        const yesBtn = document.getElementById('gcode-convert-yes');
+        const noBtn = document.getElementById('gcode-convert-no');
+        
+        yesBtn?.addEventListener('click', () => {
+          basicConfigBox.textContent = '';
+          const result = convertGcodeToBasic(text);
+          if (result.success) {
+            const payload = parseBasicImportText(result.basic, 'gcode-import.bas');
+            applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+            markBasicScriptStructuralDirty();
+            basicConfigBox.className = 'diag-box good';
+            basicConfigBox.textContent = 'G-code converted to BASIC successfully!';
+            addLine('Converted G-code to BASIC script', 'sys');
+            resolve(true);
+          } else {
+            basicConfigBox.className = 'diag-box';
+            basicConfigBox.textContent = `Conversion failed: ${result.error}`;
+            addLine(`G-code conversion failed: ${result.error}`, 'err');
+            resolve(false);
+          }
+        });
+        
+        noBtn?.addEventListener('click', () => {
+          try {
+            basicConfigBox.textContent = 'Importing as plain text...';
+            const payload = parseBasicImportText(text, 'clipboard.bas');
+            applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+            markBasicScriptStructuralDirty();
+            addLine(`Imported from clipboard: ${payload.title || 'Untitled'}`, 'sys');
+            resolve(true);
+          } catch (error) {
+            basicConfigBox.className = 'diag-box';
+            basicConfigBox.textContent = `Plain-text import failed: ${error.message}`;
+            addLine(`Plain-text import failed: ${error.message}`, 'err');
+            resolve(false);
+          }
+        });
+      });
+    }
+    
+    // Not G-code, import as BASIC
     const payload = parseBasicImportText(text, 'clipboard.bas');
     applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
     markBasicScriptStructuralDirty();
@@ -2422,6 +2560,177 @@ async function loadBasicScriptFromId(id, overrides = {}) {
 }
 
 // BASIC INTERPRETER
+
+// ─── G-code to BASIC Converter ──────────────────────────────────────────────
+// Converts G-code with o-codes (subroutines, loops, conditionals) into
+// structured BASIC scripts with parameters and loops that can be executed step-by-step.
+
+class GcodeToBasicConverter {
+  constructor(gcodeSource) {
+    this.gcodeSource = gcodeSource;
+    this.lines = this.parseGcodeLines();
+    this.subroutines = {};
+    this.variables = {};
+    this.basicLineNum = 10;
+  }
+
+  // Parse G-code lines, removing comments and normalizing whitespace
+  parseGcodeLines() {
+    return this.gcodeSource
+      .split('\n')
+      .map(line => {
+        // Remove comments (everything after ; or inside ())
+        let cleaned = line.split(/[;%]/)[0]; // Drop comments
+        cleaned = cleaned.replace(/\([^)]*\)/g, ''); // Remove parens comments
+        return cleaned.trim();
+      })
+      .filter(line => line && !line.match(/^%/)); // Remove % delimiters and blank lines
+  }
+
+  // Detect G-code patterns and convert to BASIC
+  convert() {
+    const basicLines = [];
+    let section = 'main';
+    let inLoop = null;
+    let conditionStack = [];
+    
+    // Add header comments
+    basicLines.push('REM TITLE: G-code Import');
+    basicLines.push('REM DESCRIPTION: Auto-converted from G-code with o-codes');
+    
+    // Scan for variables/parameters in G-code
+    this.extractVariables();
+    
+    // Add VAR declarations for extracted parameters
+    const [varNames, varDefaults] = this.generateVarDeclarations();
+    basicLines.push(...varNames);
+    
+    // Convert main program
+    let lineNum = 10;
+    for (const line of this.lines) {
+      const oMatch = line.match(/^o\s*(\d+|\w+)\s+(\w+)(.*)$/i);
+      if (oMatch) {
+        const [, label, cmd, args] = oMatch;
+        const cmdUpper = cmd.toUpperCase();
+        
+        if (cmdUpper === 'SUB') {
+          // Skip subroutine definitions in main
+          section = `sub_${label}`;
+          continue;
+        }
+        if (cmdUpper === 'ENDSUB') {
+          section = 'main';
+          continue;
+        }
+        if (cmdUpper === 'DO') {
+          inLoop = { start: lineNum, label };
+          basicLines.push(`${lineNum} REM DO loop: o${label}`);
+          lineNum += 10;
+          continue;
+        }
+        if (cmdUpper === 'WHILE' || cmdUpper === 'UNTIL') {
+          if (inLoop) {
+            const condition = this.convertGcodeCondition(args.trim());
+            const loopType = cmdUpper === 'WHILE' ? 'WHILE' : 'UNTIL';
+            basicLines.push(`${lineNum} REM ${loopType} o${label} ${condition}`);
+            inLoop.condition = condition;
+            inLoop.type = loopType;
+          }
+          lineNum += 10;
+          continue;
+        }
+      }
+      
+      // Skip empty or comment-only lines
+      if (!line || line.startsWith('(')) continue;
+      
+      // Convert regular G-code command
+      const basicCmd = this.convertGcodeCommand(line);
+      if (basicCmd) {
+        basicLines.push(`${lineNum} ${basicCmd}`);
+        lineNum += 10;
+      }
+    }
+    
+    // Add END
+    basicLines.push(`${lineNum} END`);
+    
+    return basicLines.join('\n');
+  }
+
+  extractVariables() {
+    // Look for #100-#5000 style parameters and #<_name> parameters
+    const paramRegex = /#(?:(\d+)|<([_a-zA-Z]\w*)>)/gi;
+    const seen = new Set();
+    
+    for (const line of this.lines) {
+      let m;
+      while ((m = paramRegex.exec(line)) !== null) {
+        const numParam = m[1];
+        const namedParam = m[2];
+        
+        if (numParam && !seen.has(`#${numParam}`)) {
+          this.variables[`param_${numParam}`] = 0;
+          seen.add(`#${numParam}`);
+        }
+        if (namedParam && !seen.has(`#<${namedParam}>`)) {
+          this.variables[namedParam] = 0;
+          seen.add(`#<${namedParam}>`);
+        }
+      }
+    }
+  }
+
+  generateVarDeclarations() {
+    const varNames = [];
+    const varDefaults = [];
+    
+    for (const [varName, defaultVal] of Object.entries(this.variables)) {
+      const cleanName = varName.replace(/^param_/, '').replace(/^_/, '');
+      varNames.push(`REM VAR ${cleanName}=${defaultVal}`);
+      varDefaults.push([cleanName, defaultVal]);
+    }
+    
+    return [varNames, varDefaults];
+  }
+
+  convertGcodeCondition(condStr) {
+    // Convert G-code conditional (#1 EQ 5) to BASIC (param_1 = 5)
+    const eqMatch = condStr.match(/#(\d+)\s*(EQ|NE|LT|LE|GT|GE)\s*([\d.]+)/i);
+    if (eqMatch) {
+      const [, paramNum, op, value] = eqMatch;
+      const opMap = { EQ: '=', NE: '<>', LT: '<', LE: '<=', GT: '>', GE: '>=' };
+      const basicOp = opMap[op.toUpperCase()];
+      return `param_${paramNum} ${basicOp} ${value}`;
+    }
+    return '';
+  }
+
+  convertGcodeCommand(line) {
+    // Convert G-code motion commands to BASIC SEND statements
+    // G0/G1 -> SEND "G0/G1 X... Y... Z..."
+    // G2/G3 -> SEND "G2/G3 X... Y... I... J..."
+    // M codes -> SEND "M3 S1000", etc.
+    
+    if (!line || line.startsWith('(') || line.startsWith(';')) return null;
+    
+    // Preserve the line as-is, wrapped in a SEND statement
+    const gcodeCmd = line.replace(/\s+/g, ' ').trim();
+    if (gcodeCmd) {
+      return `SEND "${gcodeCmd}" TIMEOUT 5000`;
+    }
+    return null;
+  }
+}
+
+function convertGcodeToBasic(gcodeSource) {
+  try {
+    const converter = new GcodeToBasicConverter(gcodeSource);
+    return { success: true, basic: converter.convert() };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
 
 function basicParseLines(source) {
   const lines = {};
@@ -2484,7 +2793,7 @@ function basicTokenize(expr) {
       }
     }
     // Single-char operators and punctuation
-    if ('+-*/()&<>=,'.includes(ch)) {
+    if ('+-*/%()&<>=,'.includes(ch)) {
       tokens.push({ type: 'OP', value: ch });
       i++;
       continue;
@@ -2515,6 +2824,17 @@ function basicEvalExpr(expr, vars) {
     return [argA, argB];
   }
 
+  function parseThreeArgFunctionArgs(name) {
+    expect('OP', '(');
+    const argA = parseExpr();
+    expect('OP', ',');
+    const argB = parseExpr();
+    expect('OP', ',');
+    const argC = parseExpr();
+    expect('OP', ')');
+    return [argA, argB, argC];
+  }
+
   function parseExpr() {
     let left = parseTerm();
     while (peek() && peek().type === 'OP' && ['+', '-', '&'].includes(peek().value)) {
@@ -2535,12 +2855,15 @@ function basicEvalExpr(expr, vars) {
 
   function parseTerm() {
     let left = parseUnary();
-    while (peek() && peek().type === 'OP' && ['*', '/'].includes(peek().value)) {
+    while (peek() && peek().type === 'OP' && ['*', '/', '%'].includes(peek().value)) {
       const op = consume().value;
       const right = parseUnary();
       if (op === '/') {
         if (right === 0) throw new Error('Division by zero');
         left = left / right;
+      } else if (op === '%') {
+        if (right === 0) throw new Error('Modulo by zero');
+        left = left % right;
       } else {
         left = left * right;
       }
@@ -2588,6 +2911,24 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         return Math.trunc(Number(inner));
       }
+      if (name === 'TRUNC' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.trunc(Number(inner));
+      }
+      if (name === 'CEIL' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.ceil(Number(inner));
+      }
+      if (name === 'FLOOR' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.floor(Number(inner));
+      }
       if (name === 'SIN' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
@@ -2628,6 +2969,42 @@ function basicEvalExpr(expr, vars) {
         const [yValue, xValue] = parseTwoArgFunctionArgs(name);
         return (Math.atan2(Number(yValue), Number(xValue)) * 180) / Math.PI;
       }
+      if (name === 'SINH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.sinh(Number(inner));
+      }
+      if (name === 'ASINH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.asinh(Number(inner));
+      }
+      if (name === 'COSH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.cosh(Number(inner));
+      }
+      if (name === 'ACOSH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.acosh(Number(inner));
+      }
+      if (name === 'TANH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.tanh(Number(inner));
+      }
+      if (name === 'ATANH' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.atanh(Number(inner));
+      }
       if (name === 'SQRT' && hasCallSyntax()) {
         expect('OP', '(');
         const inner = parseExpr();
@@ -2635,10 +3012,56 @@ function basicEvalExpr(expr, vars) {
         return Math.sqrt(Number(inner));
       }
       if (name === 'ROUND' && hasCallSyntax()) {
-        const [value, digits] = parseTwoArgFunctionArgs(name);
+        expect('OP', '(');
+        const value = parseExpr();
+        let digits = 0;
+        if (peek() && peek().type === 'OP' && peek().value === ',') {
+          consume();
+          digits = parseExpr();
+        }
+        expect('OP', ')');
         const precision = Math.trunc(Number(digits));
         const factor = Math.pow(10, Math.max(-9, Math.min(9, precision)));
         return Math.round(Number(value) * factor) / factor;
+      }
+      if (name === 'CLAMP' && hasCallSyntax()) {
+        const [value, minValue, maxValue] = parseThreeArgFunctionArgs(name);
+        return Math.min(Math.max(Number(value), Number(minValue)), Number(maxValue));
+      }
+      if (name === 'EXP' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.exp(Number(inner));
+      }
+      if (name === 'SIGN' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        const n = Number(inner);
+        return n > 0 ? 1 : n < 0 ? -1 : 0;
+      }
+      if (name === 'LOG' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.log(Number(inner));
+      }
+      if (name === 'LN' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.log(Number(inner));
+      }
+      if (name === 'LOG10' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return Math.log10(Number(inner));
+      }
+      if (name === 'HYPOT' && hasCallSyntax()) {
+        const [xValue, yValue] = parseTwoArgFunctionArgs(name);
+        return Math.hypot(Number(xValue), Number(yValue));
       }
       if (name === 'RAD' && hasCallSyntax()) {
         expect('OP', '(');
@@ -2658,6 +3081,30 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         const upper = Math.max(1, Math.trunc(Number(inner) || 0));
         return Math.floor(Math.random() * upper) + 1;
+      }
+      if (name === 'MAX' && hasCallSyntax()) {
+        const [a, b] = parseTwoArgFunctionArgs(name);
+        return Math.max(Number(a), Number(b));
+      }
+      if (name === 'MIN' && hasCallSyntax()) {
+        const [a, b] = parseTwoArgFunctionArgs(name);
+        return Math.min(Number(a), Number(b));
+      }
+      if (name === 'MOD' && hasCallSyntax()) {
+        const [a, b] = parseTwoArgFunctionArgs(name);
+        if (Number(b) === 0) throw new Error('Modulo by zero');
+        return Number(a) % Number(b);
+      }
+      if (name === 'GCODE_PARAM' && hasCallSyntax()) {
+        expect('OP', '(');
+        const keyExpr = parseExpr();
+        let fallback = 0;
+        if (peek() && peek().type === 'OP' && peek().value === ',') {
+          consume();
+          fallback = parseExpr();
+        }
+        expect('OP', ')');
+        return basicGetGcodeParam(keyExpr, fallback);
       }
       if (name === 'PI') {
         return Math.PI;
@@ -2846,7 +3293,9 @@ async function basicReadGrbl(settingStr, modeLabel = 'READ') {
       // Parse any $N=value line and cache it
       const m = line.match(/^\$(\d+)=([\d.]+)/);
       if (m) {
-        basicGrblSettings[`$${m[1]}`] = parseFloat(m[2]);
+        const value = parseFloat(m[2]);
+        basicGrblSettings[`$${m[1]}`] = value;
+        basicSetGcodeParam(m[1], value);
       }
       // When we see ok, the $$ dump is complete - resolve with the value
       if (/^ok$/i.test(line) && !done) {
@@ -3603,8 +4052,9 @@ function buildBasicPreviewTimeline(source) {
       continue;
     }
 
-    if (/^PRINT\s+/i.test(stmt)) {
-      const msg = String(previewEvalExpr(stmt.replace(/^PRINT\s+/i, '').trim(), previewVars, timeline, lineNum, stmt));
+    if (/^PRINT(?:\s|$)/i.test(stmt)) {
+      const previewArg = stmt.replace(/^PRINT\s*/i, '').trim();
+      const msg = previewArg ? String(previewEvalExpr(previewArg, previewVars, timeline, lineNum, stmt)) : '';
       previewPushEvent(timeline, 'note', {
         sourceLine: lineNum,
         message: `PRINT: ${msg}`
@@ -3709,15 +4159,28 @@ function buildBasicPreviewTimeline(source) {
     }
 
     if (/^IF\s+/i.test(stmt)) {
-      const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
-      if (ifM) {
-        const condResult = basicParseCondition(ifM[1], previewVars);
+      const thenPreviewM = stmt.match(/^IF\s+(.+)\s+THEN\s+([\s\S]+)$/i);
+      if (thenPreviewM) {
+        const condResult = basicParseCondition(thenPreviewM[1].trim(), previewVars);
         if (condResult) {
-          const target = parseInt(ifM[2], 10);
-          const targetIdx = order.indexOf(target);
-          if (targetIdx !== -1) { pc = targetIdx; continue; }
-          previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
-          break;
+          const thenBody = thenPreviewM[2].trim();
+          const gotoM = thenBody.match(/^GOTO\s+(\d+)$/i);
+          if (gotoM) {
+            const target = parseInt(gotoM[1], 10);
+            const targetIdx = order.indexOf(target);
+            if (targetIdx !== -1) { pc = targetIdx; continue; }
+            previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
+            break;
+          }
+          if (/^LET\s+\w+\s*=/i.test(thenBody) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(thenBody)) {
+            const body = thenBody.replace(/^LET\s+/i, '');
+            const eq = body.indexOf('=');
+            if (eq !== -1) {
+              const varName = body.slice(0, eq).trim();
+              const valExpr = body.slice(eq + 1).trim();
+              previewVars[basicNormalizeRuntimeVarName(varName)] = previewEvalExpr(valExpr, previewVars, timeline, lineNum, stmt);
+            }
+          }
         }
       }
       pc += 1;
@@ -4044,9 +4507,9 @@ async function runBasicScript(source) {
       }
 
       // PRINT
-      if (/^PRINT\s+/i.test(stmt)) {
-        const arg = stmt.replace(/^PRINT\s+/i, '').trim();
-        const msg = String(await basicEvalExprRuntime(arg, basicVars));
+      if (/^PRINT(?:\s|$)/i.test(stmt)) {
+        const arg = stmt.replace(/^PRINT\s*/i, '').trim();
+        const msg = arg ? String(await basicEvalExprRuntime(arg, basicVars)) : '';
         addLine(`PRINT: ${msg}`, 'basic');
         pc++;
         continue;
@@ -4222,16 +4685,56 @@ async function runBasicScript(source) {
         continue;
       }
 
-      // IF ... THEN GOTO
+      // IF ... THEN [GOTO n | LET ... | PRINT ... | GOSUB n | END]
       if (/^IF\s+/i.test(stmt)) {
-        const ifM = stmt.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)/i);
-        if (ifM) {
-          const condResult = await basicParseConditionRuntime(ifM[1], basicVars);
+        const thenM = stmt.match(/^IF\s+(.+)\s+THEN\s+([\s\S]+)$/i);
+        if (thenM) {
+          const condResult = await basicParseConditionRuntime(thenM[1].trim(), basicVars);
           if (condResult) {
-            const target = parseInt(ifM[2], 10);
-            const targetIdx = order.indexOf(target);
-            if (targetIdx !== -1) { pc = targetIdx; continue; }
-            addLine(`GOTO ${target}: line not found`, 'err');
+            const thenBody = thenM[2].trim();
+            const gotoM = thenBody.match(/^GOTO\s+(\d+)$/i);
+            if (gotoM) {
+              const target = parseInt(gotoM[1], 10);
+              const targetIdx = order.indexOf(target);
+              if (targetIdx !== -1) { pc = targetIdx; continue; }
+              addLine(`GOTO ${target}: line not found`, 'err');
+              break;
+            }
+            if (/^LET\s+\w+\s*=/i.test(thenBody) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(thenBody)) {
+              const body = thenBody.replace(/^LET\s+/i, '');
+              const eq = body.indexOf('=');
+              if (eq !== -1) {
+                const varName = body.slice(0, eq).trim();
+                const valExpr = body.slice(eq + 1).trim();
+                basicVars[basicNormalizeRuntimeVarName(varName)] = await basicEvalExprRuntime(valExpr, basicVars);
+              }
+              pc++;
+              continue;
+            }
+            if (/^PRINT(?:\s|$)/i.test(thenBody)) {
+              const arg = thenBody.replace(/^PRINT\s*/i, '').trim();
+              const msg = arg ? String(await basicEvalExprRuntime(arg, basicVars)) : '';
+              addLine(`PRINT: ${msg}`, 'basic');
+              pc++;
+              continue;
+            }
+            const gosubM = thenBody.match(/^GOSUB\s+(\d+)$/i);
+            if (gosubM) {
+              const target = parseInt(gosubM[1], 10);
+              const targetIdx = order.indexOf(target);
+              if (targetIdx !== -1) {
+                basicCallStack.push(pc + 1);
+                pc = targetIdx;
+                continue;
+              }
+              addLine(`GOSUB ${target}: line not found`, 'err');
+              break;
+            }
+            if (/^END$/i.test(thenBody)) {
+              addLine('--- Script ended ---', 'basic');
+              break;
+            }
+            addLine(`Line ${lineNum}: IF THEN: unsupported body: ${thenBody}`, 'err');
             break;
           }
         }
