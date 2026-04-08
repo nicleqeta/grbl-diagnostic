@@ -313,6 +313,29 @@
     color: var(--text-muted);
     margin-bottom: 8px;
   }
+  .basic-vars-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .basic-vars-header .section-label { margin-bottom: 0; }
+  .basic-add-var-btn {
+    width: auto;
+    padding: 4px 9px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-radius: 999px;
+    border: 1px solid #145b52;
+    background: #08151a;
+    color: var(--teal);
+    font-family: var(--sans);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .basic-add-var-btn:hover { background: #0b2026; border-color: var(--teal); color: #8ee9de; }
+  .basic-add-var-btn:active { transform: scale(0.98); }
 
   .help-text { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 
@@ -402,16 +425,47 @@
 
   .term-realtime-bar {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 10px;
     padding: 10px 16px;
     border-top: 1px solid var(--border);
     background: linear-gradient(180deg, rgba(26,29,39,0.98), rgba(15,17,23,0.98));
     flex-shrink: 0;
-    flex-wrap: wrap;
+  }
+  .term-realtime-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .term-quick-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .term-quick-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .term-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .term-quick-grid .cmd-btn {
+    padding: 5px 6px;
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .term-quick-grid .cmd-btn .cmd-label {
+    font-size: 9px;
+    margin-bottom: 1px;
   }
   .term-rt-btn {
-    flex: 1 1 140px;
-    min-width: 0;
+    width: 100%;
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--surface2);
@@ -657,7 +711,7 @@
 
   .var-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px 32px;
+    grid-template-columns: minmax(0, 1fr) 110px 26px;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
@@ -685,16 +739,16 @@
   }
   .var-row .var-value-input:focus { border-color: var(--amber); }
   .var-row-remove {
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     margin-bottom: 0;
-    border-radius: 6px;
+    border-radius: 5px;
     border: 1px solid #7f1d1d;
     background: var(--red-dim);
     color: #fecaca;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 13px;
     line-height: 1;
   }
   .var-row-remove:hover { background: #991b1b; border-color: #b91c1c; }
@@ -719,6 +773,8 @@
     .basic-input-bar { padding-left: 12px; padding-right: 12px; }
     .term-header { align-items: flex-start; flex-direction: column; }
     .term-header-actions { width: 100%; flex-wrap: wrap; }
+    .term-realtime-group { grid-template-columns: 1fr; }
+    .term-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .term-input-bar { flex-direction: column; }
     .send-btn { width: 100%; }
     .term-input-shell { min-height: 44px; }
@@ -1026,22 +1082,6 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
 
-    <div class="section">
-      <div class="section-label">Quick commands</div>
-      <div class="cmd-grid">
-        <button class="cmd-btn" data-cmd="\n"   disabled><span class="cmd-label">Wake</span>\n</button>
-        <button class="cmd-btn" data-cmd="?"    disabled><span class="cmd-label">Status</span>?</button>
-        <button class="cmd-btn" data-cmd="$X\n" disabled><span class="cmd-label">Clear alarm</span>$X</button>
-        <button class="cmd-btn" data-cmd="$H\n" disabled><span class="cmd-label">Home</span>$H</button>
-        <button class="cmd-btn" data-cmd="$$\n" disabled><span class="cmd-label">Get settings</span>$$</button>
-        <button class="cmd-btn" data-cmd="$C\n" disabled><span class="cmd-label">Check</span>$C</button>
-        <button class="cmd-btn" data-cmd="$#\n" disabled><span class="cmd-label">Coord offsets</span>$#</button>
-        <button class="cmd-btn" data-cmd="$G\n" disabled><span class="cmd-label">GCode state</span>$G</button>
-        <button class="cmd-btn" data-cmd="$I\n" disabled><span class="cmd-label">Build info</span>$I</button>
-        <button class="cmd-btn" data-cmd="\x18" disabled><span class="cmd-label">Soft reset</span>^X</button>
-      </div>
-    </div>
-
     <!-- BASIC Script section -->
     <details class="section section-collapsible" id="basic-section">
       <summary class="section-toggle">
@@ -1057,9 +1097,11 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <textarea id="basic-description-input" placeholder="Plain-English description. Use {start}, {step}, or other variable placeholders to reflect current defaults in the generated forum post." style="min-height:88px;"></textarea>
         <div class="diag-box muted" id="basic-config-box">Write a title, description, variables, and script to create a shareable program.</div>
         <div id="basic-vars-section">
-          <div class="section-label" style="margin-bottom:6px;">Variables</div>
+          <div class="basic-vars-header">
+            <div class="section-label">Variables</div>
+            <button class="basic-add-var-btn" id="basic-add-var-btn" type="button" title="Add variable default">+ Variable</button>
+          </div>
           <div id="basic-vars-list"></div>
-          <button class="btn" id="basic-add-var-btn">Add Variable</button>
         </div>
         <textarea id="basic-script-input" placeholder="10 LET maxRPM = READ(&quot;$30&quot;)
 20 LET speed = {start}
@@ -1127,7 +1169,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       </div>
     </div>
     <!-- GCode Queue -->
-    <div class="gcode-queue-panel" id="gcode-queue-panel">
+    <div class="gcode-queue-panel" id="gcode-queue-panel" style="display:none;">
       <div class="gcode-queue-header">
         <span class="gcode-queue-title">GCode Queue</span>
         <span class="gcode-queue-count" id="gcode-queue-count">0 jobs</span>
@@ -1143,15 +1185,32 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
     </div>
 
     <div class="term-realtime-bar">
-      <button class="term-rt-btn hold" id="hold-btn" data-cmd="!" disabled title="Immediately send feed hold (!)">
-        <span class="cmd-label">Feed Hold</span>!
-      </button>
-      <button class="term-rt-btn resume" id="resume-btn" data-cmd="~" disabled title="Immediately send cycle start / resume (~)">
-        <span class="cmd-label">Start / Resume</span>~
-      </button>
-      <button class="term-rt-btn reset" id="soft-reset-btn" data-cmd="\x18" disabled title="Immediately send GRBL soft reset (Ctrl-X)">
-        <span class="cmd-label">Soft Reset</span>^X
-      </button>
+      <div class="term-realtime-group">
+        <button class="term-rt-btn hold" id="hold-btn" data-cmd="!" disabled title="Immediately send feed hold (!)">
+          <span class="cmd-label">Feed Hold</span>!
+        </button>
+        <button class="term-rt-btn resume" id="resume-btn" data-cmd="~" disabled title="Immediately send cycle start / resume (~)">
+          <span class="cmd-label">Start / Resume</span>~
+        </button>
+        <button class="term-rt-btn reset" id="soft-reset-btn" data-cmd="\x18" disabled title="Immediately send GRBL soft reset (Ctrl-X)">
+          <span class="cmd-label">Soft Reset</span>^X
+        </button>
+      </div>
+      <div class="term-quick-group">
+        <div class="term-quick-label">Quick commands</div>
+        <div class="term-quick-grid">
+          <button class="cmd-btn" data-cmd="\n"   disabled><span class="cmd-label">Wake</span>\n</button>
+          <button class="cmd-btn" data-cmd="?"    disabled><span class="cmd-label">Status</span>?</button>
+          <button class="cmd-btn" data-cmd="$X\n" disabled><span class="cmd-label">Clear alarm</span>$X</button>
+          <button class="cmd-btn" data-cmd="$H\n" disabled><span class="cmd-label">Home</span>$H</button>
+          <button class="cmd-btn" data-cmd="$$\n" disabled><span class="cmd-label">Get settings</span>$$</button>
+          <button class="cmd-btn" data-cmd="$C\n" disabled><span class="cmd-label">Check</span>$C</button>
+          <button class="cmd-btn" data-cmd="$#\n" disabled><span class="cmd-label">Coord offsets</span>$#</button>
+          <button class="cmd-btn" data-cmd="$G\n" disabled><span class="cmd-label">GCode state</span>$G</button>
+          <button class="cmd-btn" data-cmd="$I\n" disabled><span class="cmd-label">Build info</span>$I</button>
+          <button class="cmd-btn" data-cmd="\x18" disabled><span class="cmd-label">Soft reset</span>^X</button>
+        </div>
+      </div>
     </div>
 
     <!-- BASIC inline input bar (hidden until INPUT statement hit) -->
@@ -1266,6 +1325,7 @@ const gcodeAddBtn       = document.getElementById('gcode-add-btn');
 const gcodePreviewBtn   = document.getElementById('gcode-preview-btn');
 const gcodeClearBtn     = document.getElementById('gcode-clear-btn');
 const gcodeExecMode     = document.getElementById('gcode-exec-mode');
+const gcodeQueuePanel   = document.getElementById('gcode-queue-panel');
 const gcodeQueueList    = document.getElementById('gcode-queue-list');
 const gcodeQueueEmpty   = document.getElementById('gcode-queue-empty');
 const gcodeQueueCount   = document.getElementById('gcode-queue-count');
@@ -1316,7 +1376,7 @@ const APP_TITLE = 'GRBL Serial Diagnostic';
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
 const SIDEBAR_WIDTH_KEY = 'grbl-diagnostic-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
-const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_MAX_WIDTH = 680;
 const RESERVED_SCRIPT_QUERY_KEYS = new Set([
   'script', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
   'delay', 'banner_timeout', 'banner_wait', 'show_req_resp', 'source', 'scrape',
@@ -4856,6 +4916,7 @@ function updateGcodeJobStatus(id, status, error) {
 }
 
 function renderGcodeQueue() {
+  if (gcodeQueuePanel) gcodeQueuePanel.style.display = gcodeQueue.length ? '' : 'none';
   gcodeQueueCount.textContent = gcodeQueue.length === 1 ? '1 job' : gcodeQueue.length + ' jobs';
   gcodeQueueClearBtn.disabled = gcodeRunning || gcodeQueue.length === 0;
   const hasInput = Boolean(gcodeInputEl.value.trim());
