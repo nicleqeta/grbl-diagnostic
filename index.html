@@ -1065,9 +1065,9 @@
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
   BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
-    CLOCK()          Current timestamp in milliseconds (performance.now()). Use with ELAPSED().
-    ELAPSED(t0)      Milliseconds elapsed since t0 (a value returned by CLOCK()).
-    FORMAT_MS(ms)    Format a millisecond value as a readable string: "456 ms" or "1.23 s".
+  CLOCK()          Current timestamp in milliseconds (performance.now()). Use with ELAPSED().
+  ELAPSED(t0)      Milliseconds elapsed since t0 (a value returned by CLOCK()).
+  FORMAT_MS(ms)    Format a millisecond value as a readable string: "456 ms" or "1.23 s".
   INT(n)           Truncate to integer
   TRUNC(n)         Truncate to integer (alias of INT)
   ABS(n)           Absolute value
@@ -1132,7 +1132,8 @@
   ------------
   Scripts can be previewed without a connected machine.
   The preview engine dry-runs the script synchronously:
-    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE(), BENCH_LAST_MS() calls return 0 (noted in preview log)
+    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE(), BENCH_LAST_MS(), CLOCK(), ELAPSED() calls return 0 (noted in preview log)
+    - FORMAT_MS() returns "0 ms" in preview expression validation contexts
     - SEND commands are displayed as motion command events
     - PRINT commands are shown in the preview timeline
     - WAIT commands are summarised, not actually delayed
