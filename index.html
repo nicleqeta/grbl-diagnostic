@@ -5313,6 +5313,11 @@ async function runBasicScript(source) {
   const configText = buildBasicPreviewText(false);
   const configVars = basicLoadedVars || {};
 
+  // Open benchmark preview window now, while still in the synchronous user-gesture context
+  // (popup blockers reject window.open() from async/worker callbacks, so this must happen
+  // before the first await).  Only open if the script actually contains BENCH markers.
+  if (/\bBENCH\s+(START|END)\b/i.test(scriptSource)) ensurePreviewWindow();
+
   // Show confirm dialog
   const confirmed = await basicShowConfirm(configText || 'Run the loaded BASIC script on your connected machine?', configVars);
   if (!confirmed) {
