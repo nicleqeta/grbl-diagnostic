@@ -763,6 +763,74 @@
   }
   .basic-confirm-run:hover { background: #0d9488; }
 
+  /* BASIC form-input modal (INPUT(FORM(...))) */
+  .basic-form-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .basic-form-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    max-width: 480px;
+    width: 92%;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .basic-form-message {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.8;
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 12px;
+    border-left: 3px solid var(--amber);
+    font-family: var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .basic-form-btn {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    border-radius: 5px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-family: var(--sans);
+    font-weight: 600;
+    cursor: pointer;
+    vertical-align: baseline;
+    line-height: 1.6;
+    margin: 0 2px;
+  }
+  .basic-form-btn:hover { background: var(--amber); color: #000; }
+  .basic-form-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .basic-form-input-row input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--blue);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: var(--mono);
+    outline: none;
+    margin-bottom: 0;
+  }
+  .basic-form-input-row input:focus { border-color: #60a5fa; }
+
 
   .var-row {
     display: grid;
@@ -1379,6 +1447,17 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
   </div>
 </div>
 
+<!-- BASIC form-input modal (INPUT(FORM(...))) -->
+<div class="basic-form-overlay" id="basic-form-overlay" style="display:none;">
+  <div class="basic-form-box">
+    <div class="basic-form-message" id="basic-form-message"></div>
+    <div class="basic-form-input-row">
+      <input type="text" id="basic-form-input-field" autocomplete="off" spellcheck="false">
+      <button class="basic-input-ok" id="basic-form-ok">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Version checking
 let currentVersion = null;
@@ -1498,6 +1577,10 @@ const basicConfirmDescription= document.getElementById('basic-confirm-descriptio
 const basicConfirmVars       = document.getElementById('basic-confirm-vars');
 const basicConfirmCancel     = document.getElementById('basic-confirm-cancel');
 const basicConfirmRun        = document.getElementById('basic-confirm-run');
+const basicFormOverlay       = document.getElementById('basic-form-overlay');
+const basicFormMessage       = document.getElementById('basic-form-message');
+const basicFormInputField    = document.getElementById('basic-form-input-field');
+const basicFormOkBtn         = document.getElementById('basic-form-ok');
 const gcodeInputEl      = document.getElementById('gcode-input');
 const gcodeAddBtn       = document.getElementById('gcode-add-btn');
 const gcodePreviewBtn   = document.getElementById('gcode-preview-btn');
@@ -1554,13 +1637,18 @@ let _terminalDivQueue = [];
 let _terminalFlushId = 0;
 let _lastPreviewPost = 0;
 let _previewPostPending = false;
+let _copyLogHasContent = false;
+let _lastBenchmarkPreviewSampleCount = -1;
+let basicBenchmarkUiQuiet = false;
 const PREVIEW_POST_THROTTLE_MS = 150;
 
 function _flushTerminalDivs() {
   _terminalFlushId = 0;
   if (!_terminalDivQueue.length) return;
   const frag = document.createDocumentFragment();
-  while (_terminalDivQueue.length) frag.appendChild(_terminalDivQueue.shift());
+  const queuedDivs = _terminalDivQueue;
+  _terminalDivQueue = [];
+  for (const div of queuedDivs) frag.appendChild(div);
   terminal.appendChild(frag);
   while (terminal.children.length > MAX_LOG_LINES) terminal.removeChild(terminal.firstChild);
   while (logLines.length > MAX_LOG_LINES) logLines.shift();
@@ -1631,6 +1719,7 @@ let basicPaused = false;
 let basicStopMessage = '--- Script stopped by user ---';
 let basicInputResolver = null;
 let basicConfirmResolver = null;
+let basicFormResolver = null;
 let basicVars = {};
 let basicResults = new Map();
 let basicCallStack = [];
@@ -1695,6 +1784,8 @@ function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function setBasicBenchmarkCaptureFromState(state) {
   if (!state) {
     basicBenchmarkCapture = null;
+    _lastBenchmarkPreviewSampleCount = -1;
+    basicBenchmarkUiQuiet = false;
     return;
   }
   basicBenchmarkCapture = {
@@ -1816,6 +1907,8 @@ function initBenchmarkRuntimeWorker() {
 
 async function resetBasicBenchmarkCapture(title) {
   const fallbackCapture = createBasicBenchmarkCapture(title);
+  _lastBenchmarkPreviewSampleCount = -1;
+  basicBenchmarkUiQuiet = false;
   basicBenchmarkCapture = fallbackCapture;
   const response = await postBenchmarkRuntimeRequest('benchmark-reset', { title });
   if (response?.capture) setBasicBenchmarkCaptureFromState(response.capture);
@@ -1889,7 +1982,7 @@ function buildBasicBenchmarkSummary(samples) {
 function buildBasicBenchmarkPreviewData(capture) {
   if (!capture) return null;
   const summary = Array.isArray(capture.summary)
-    ? capture.summary.map(point => ({ ...point }))
+    ? capture.summary
     : buildBasicBenchmarkSummary(capture.samples);
   return {
     version: capture.version,
@@ -1898,8 +1991,8 @@ function buildBasicBenchmarkPreviewData(capture) {
     updatedAtIso: capture.updatedAtIso,
     sampleCount: capture.samples.length,
     distanceCount: summary.length,
-    latestSample: capture.latestSample ? { ...capture.latestSample } : null,
-    samples: capture.samples.map(sample => ({ ...sample })),
+    latestSample: capture.latestSample || null,
+    samples: capture.samples,
     summary
   };
 }
@@ -1918,11 +2011,16 @@ function ensureBenchmarkPreviewTimeline() {
   return latestPreviewTimeline;
 }
 
-function refreshBasicBenchmarkPreview() {
+function refreshBasicBenchmarkPreview(force = false) {
   if (!basicBenchmarkCapture) return;
+  const sampleCount = Number(basicBenchmarkCapture.samples?.length || 0);
+  if (!force && sampleCount === _lastBenchmarkPreviewSampleCount) return;
+  _lastBenchmarkPreviewSampleCount = sampleCount;
   const timeline = ensureBenchmarkPreviewTimeline();
-  timeline.benchmark = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
-  ensurePreviewWindow();
+  const benchmarkData = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
+  timeline.benchmark = benchmarkData;
+  const hasRealBenchmarkData = Number(benchmarkData?.sampleCount || 0) > 0;
+  if (hasRealBenchmarkData) ensurePreviewWindow();
   postLatestPreviewTimeline();
 }
 
@@ -1931,6 +2029,8 @@ async function recordBasicBenchmarkMessage(message) {
   const text = String(message || '').trim();
   const markerMatch = text.match(/^BENCH\s+(START|END)\b\s*(.*)$/i);
   if (!markerMatch) return false;
+  const kind = markerMatch[1].toUpperCase();
+  basicBenchmarkUiQuiet = kind === 'START';
 
   if (benchmarkRuntimeWorkerReady) {
     const response = await postBenchmarkRuntimeRequest('benchmark-record', {
@@ -1942,7 +2042,6 @@ async function recordBasicBenchmarkMessage(message) {
     return Boolean(response?.handled);
   }
 
-  const kind = markerMatch[1].toUpperCase();
   const fields = parseBasicBenchmarkFields(markerMatch[2]);
   const markerKey = buildBasicBenchmarkMarkerKey(fields);
   if (!markerKey) return false;
@@ -1957,10 +2056,10 @@ async function recordBasicBenchmarkMessage(message) {
       startedAtIso: nowIso,
       startedPerfMs: nowPerfMs
     });
-    refreshBasicBenchmarkPreview();
     return true;
   }
 
+  basicBenchmarkUiQuiet = false;
   const activeMarker = basicBenchmarkCapture.activeMarkers.get(markerKey);
   if (!activeMarker) return false;
   basicBenchmarkCapture.activeMarkers.delete(markerKey);
@@ -2095,6 +2194,7 @@ let basicLoadedVars = {};
 let basicBaseVars = {};
 let basicSourceId = '';
 let basicValidationState = { errors: [], warnings: [], lines: {}, order: [] };
+let basicValidationDirty = false;
 let basicDescriptionTab = 'edit';
 let basicDescriptionScrollRatio = 0;
 
@@ -2681,6 +2781,38 @@ function basicValidateScript(source, paramNames = []) {
 
     if (/^PAUSE$/i.test(statement)) return;
 
+    // LET x = INPUT(FORM(...)) — validate FORM args
+    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\(FORM\(/i);
+    if (match) {
+      const formStart = statement.toUpperCase().indexOf('FORM(') + 5;
+      let fDepth = 0;
+      let fClose = -1;
+      let fInStr = false;
+      for (let fi = formStart - 1; fi < statement.length; fi++) {
+        const fc = statement[fi];
+        if (fc === '"') { fInStr = !fInStr; continue; }
+        if (fInStr) continue;
+        if (fc === '(') fDepth += 1;
+        else if (fc === ')') { fDepth -= 1; if (fDepth === 0) { fClose = fi; break; } }
+      }
+      if (fClose === -1) {
+        errors.push(`Line ${lineNum}: Unclosed FORM() in INPUT expression`);
+        return;
+      }
+      const formInner = statement.slice(formStart, fClose);
+      const formArgs = basicSplitFormArgs(formInner);
+      if (formArgs.length < 2) {
+        errors.push(`Line ${lineNum}: FORM() requires a message and at least one button value`);
+        return;
+      }
+      const labelMatches = [...formArgs[0].matchAll(/\[([^\]]+)\]/g)];
+      const valueCount = formArgs.length - 1;
+      if (labelMatches.length !== valueCount) {
+        errors.push(`Line ${lineNum}: FORM() has ${labelMatches.length} [label](s) but ${valueCount} value(s) — counts must match`);
+      }
+      return;
+    }
+
     match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\("([^"]*)"\)$/i);
     if (match) return;
 
@@ -2830,6 +2962,7 @@ function refreshBasicVariableViews(syncUrl = true) {
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
   basicValidationState = basicValidateDraft();
+  basicValidationDirty = false;
   basicConfigBox.className = basicRawProgram || basicRawConfigText || getBasicScriptMeta().title ? 'diag-box' : 'diag-box muted';
   basicConfigBox.textContent = buildBasicPreviewText(true);
   updateBasicValidationUi();
@@ -2841,6 +2974,7 @@ function refreshBasicVariableViews(syncUrl = true) {
 function markBasicScriptStructuralDirty() {
   startupScriptRequest = null;
   basicSourceId = '';
+  basicValidationDirty = true;
   refreshBasicVariableViews();
 }
 
@@ -3912,10 +4046,47 @@ async function basicResolveInputCallsInExpression(expr, vars) {
     }
 
     const promptExpr = inputCall.argExpr.trim();
-    const promptText = promptExpr
-      ? String(await basicEvalExprRuntime(promptExpr, vars))
-      : 'Input';
-    const rawValue = await basicPromptInput(promptText);
+    let rawValue;
+
+    // FORM() variant: INPUT(FORM(message\, text [BTN1] [BTN2], val1, val2))
+    if (/^FORM\s*\(/i.test(promptExpr)) {
+      // Extract the inner content of FORM(...)
+      const formOpen = promptExpr.indexOf('(');
+      let fDepth = 0;
+      let formClose = -1;
+      let fInStr = false;
+      for (let fi = formOpen; fi < promptExpr.length; fi++) {
+        const fc = promptExpr[fi];
+        if (fc === '"' && promptExpr[fi - 1] !== '\\') { fInStr = !fInStr; continue; }
+        if (fInStr) continue;
+        if (fc === '(') fDepth += 1;
+        else if (fc === ')') { fDepth -= 1; if (fDepth === 0) { formClose = fi; break; } }
+      }
+      if (formClose === -1) throw new Error('Unclosed FORM(...) in INPUT expression');
+      const formInner = promptExpr.slice(formOpen + 1, formClose);
+      const formArgs = basicSplitFormArgs(formInner);
+      if (formArgs.length < 2) throw new Error('FORM() requires a message and at least one button value');
+
+      const displayMessage = formArgs[0]; // \, already handled by basicSplitFormArgs
+      const labelMatches = [...displayMessage.matchAll(/\[([^\]]+)\]/g)];
+      const valueExprs = formArgs.slice(1);
+      const buttons = [];
+      const pairCount = Math.min(labelMatches.length, valueExprs.length);
+      if (pairCount !== labelMatches.length || pairCount !== valueExprs.length) {
+        addLine(`Warning: FORM() has ${labelMatches.length} label(s) but ${valueExprs.length} value(s) — using ${pairCount} pair(s)`, 'sys');
+      }
+      for (let bi = 0; bi < pairCount; bi++) {
+        const val = Number(await basicEvalExprRuntime(valueExprs[bi].trim(), vars));
+        buttons.push({ label: labelMatches[bi][1], value: val });
+      }
+      rawValue = await basicShowForm(displayMessage, buttons);
+    } else {
+      const promptText = promptExpr
+        ? String(await basicEvalExprRuntime(promptExpr, vars))
+        : 'Input';
+      rawValue = await basicPromptInput(promptText);
+    }
+
     if (basicStopRequested) {
       throw new Error('Script stopped during INPUT');
     }
@@ -4031,6 +4202,74 @@ async function basicReadGrbl(settingStr, modeLabel = 'READ') {
   });
 }
 
+// Split FORM() inner args on unescaped commas (paren-depth and string aware).
+// Returns array of raw arg strings; the first arg may contain \, escape sequences.
+function basicSplitFormArgs(rawArgs) {
+  const args = [];
+  let current = '';
+  let depth = 0;
+  let inStr = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const ch = rawArgs[i];
+    if (ch === '"' && rawArgs[i - 1] !== '\\') { inStr = !inStr; current += ch; continue; }
+    if (inStr) { current += ch; continue; }
+    if (ch === '(') { depth += 1; current += ch; continue; }
+    if (ch === ')') { depth -= 1; current += ch; continue; }
+    if (ch === ',' && depth === 0) {
+      // Check for escaped comma: preceding character is backslash
+      if (i > 0 && rawArgs[i - 1] === '\\') {
+        // Replace the trailing backslash in current with a literal comma
+        current = current.slice(0, -1) + ',';
+        continue;
+      }
+      args.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  args.push(current);
+  return args;
+}
+
+// Show FORM modal — message with inline [LABEL] buttons + text field fallback.
+// buttons = [{label: string, value: number}, ...]
+function basicShowForm(displayMessage, buttons) {
+  return new Promise((resolve) => {
+    // Build message DOM: split on [LABEL] tokens
+    basicFormMessage.textContent = '';
+    const parts = displayMessage.split(/(\[[^\]]+\])/);
+    let buttonIndex = 0;
+    parts.forEach(part => {
+      const btnMatch = part.match(/^\[([^\]]+)\]$/);
+      if (btnMatch && buttonIndex < buttons.length) {
+        const btn = document.createElement('button');
+        btn.className = 'basic-form-btn';
+        btn.textContent = btnMatch[1];
+        const resolveValue = buttons[buttonIndex].value;
+        btn.addEventListener('click', () => {
+          if (basicFormResolver) basicFormResolver(String(resolveValue));
+        });
+        basicFormMessage.appendChild(btn);
+        buttonIndex += 1;
+      } else {
+        basicFormMessage.appendChild(document.createTextNode(part));
+      }
+    });
+
+    basicFormInputField.value = '';
+    basicFormOverlay.style.display = 'flex';
+    scrollTerminalToBottom(true);
+    basicFormInputField.focus();
+    basicFormResolver = (val) => {
+      basicFormOverlay.style.display = 'none';
+      scrollTerminalToBottom(true);
+      basicFormResolver = null;
+      resolve(val);
+    };
+  });
+}
+
 // Show inline input bar and wait for user input
 function basicPromptInput(promptText) {
   return new Promise((resolve) => {
@@ -4112,6 +4351,12 @@ basicInputOk.addEventListener('click', () => {
 basicInputField.addEventListener('keydown', e => {
   if (e.key === 'Enter' && basicInputResolver) basicInputResolver(basicInputField.value);
 });
+basicFormOkBtn.addEventListener('click', () => {
+  if (basicFormResolver) basicFormResolver(basicFormInputField.value);
+});
+basicFormInputField.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && basicFormResolver) basicFormResolver(basicFormInputField.value);
+});
 
 function updateBasicControlUi() {
   const hasScript = Boolean(basicScriptInput.value.trim());
@@ -4140,6 +4385,7 @@ function requestBasicStop(statusLine = 'Stop requested...', stopMessage = '--- S
   basicStopMessage = stopMessage;
   syncRuntimeWorkerControlState();
   if (basicInputResolver) basicInputResolver('');
+  if (basicFormResolver) basicFormResolver('');
   addLine(statusLine, 'sys');
 }
 
@@ -5089,7 +5335,7 @@ async function runBasicScript(source) {
   basicForStack = [];
   syncRuntimeWorkerControlState();
   basicBenchmarkCapture = await resetBasicBenchmarkCapture(buildBasicDisplayName(getBasicScriptMeta()) || 'BASIC Benchmark');
-  refreshBasicBenchmarkPreview();
+  refreshBasicBenchmarkPreview(true);
   updateBasicControlUi();
   renderGcodeQueue();
   addLine('--- BASIC script started ---', 'basic');
@@ -5538,7 +5784,8 @@ async function runBasicScript(source) {
   } finally {
     if (basicBenchmarkCapture) {
       if (!benchmarkRuntimeWorkerReady) basicBenchmarkCapture.activeMarkers.clear();
-      refreshBasicBenchmarkPreview();
+      basicBenchmarkUiQuiet = false;
+      refreshBasicBenchmarkPreview(true);
     }
     basicRunning = false;
     basicStopRequested = false;
@@ -5546,6 +5793,7 @@ async function runBasicScript(source) {
     basicStopMessage = '--- Script stopped by user ---';
     basicForStack = [];
     basicInputBar.style.display = 'none';
+    basicFormOverlay.style.display = 'none';
     syncRuntimeWorkerControlState();
     if (benchmarkRuntimeWorkerReady) void postBenchmarkRuntimeRequest('benchmark-clear');
     basicBenchmarkCapture = null;
@@ -6319,6 +6567,8 @@ function updateSequenceDelayUi() {
 
 function updateCopyLogState() {
   const hasLog = logLines.length > 0;
+  if (_copyLogHasContent === hasLog) return;
+  _copyLogHasContent = hasLog;
   copyDiagBtn.classList.toggle('ready', hasLog);
   copyDiagBtn.title = hasLog ? 'Copy the diagnostics log formatted for Discourse forums' : 'No diagnostics log available yet';
   copyLogPlainBtn.classList.toggle('ready', hasLog);
@@ -6485,12 +6735,16 @@ async function copyTextPayload(text, successMessage, filenamePrefix) {
 }
 
 function collectBasicScriptPayload() {
-  basicValidationState = basicValidateDraft();
-  updateBasicValidationUi();
-  updateBasicControlUi();
   basicLoadedVars = collectBasicVarsFromEditor();
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
+
+  if (basicValidationDirty) {
+    basicValidationState = basicValidateDraft();
+    basicValidationDirty = false;
+    updateBasicValidationUi();
+    updateBasicControlUi();
+  }
 
   const meta = getBasicScriptMeta();
   if (!meta.title) throw new Error('Script title is required');
@@ -6538,8 +6792,9 @@ async function saveBasicScript() {
     basicBaseVars = { ...payload.vars };
     basicLoadedVars = { ...payload.vars };
     basicSourceId = id;
-    renderVarEditor(basicLoadedVars);
-    refreshBasicVariableViews();
+    basicConfigBox.className = 'diag-box';
+    basicConfigBox.textContent = buildBasicPreviewText(true);
+    updateBasicDocumentTitle();
     addLine(`Saved script snapshot ${id}`, 'sys');
     return true;
   } catch (error) {
@@ -6894,6 +7149,7 @@ function addLine(text, type = 'rx') {
   const time = formatLogTimestamp(now);
   const arrows = { tx: '\u2192', rx: '\u2190', sys: '\u25CF', err: '\u2715', basic: '\u2B21' };
   const arrow = arrows[type] || '\u2190';
+  const trimmedText = String(text || '').trim();
 
   if (benchmarkRuntimeWorkerReady && (type === 'tx' || type === 'rx')) {
     benchmarkRuntimeWorker.postMessage({ type: 'runtime-line', lineType: type, text });
@@ -6909,8 +7165,14 @@ function addLine(text, type = 'rx') {
   // lines to reduce DOM churn. Machine state is updated by the worker when active,
   // or by updateStatus below when falling back to the main thread.
   if (basicBenchmarkCapture) {
-    if (type === 'tx' && text.trim() === '?') { if (!benchmarkRuntimeWorkerReady) updateStatus(text); return; }
+    if (type === 'tx' && trimmedText === '?') { if (!benchmarkRuntimeWorkerReady) updateStatus(text); return; }
     if (type === 'rx' && /^<[A-Za-z]+[:|]/.test(text)) { if (!benchmarkRuntimeWorkerReady) updateStatus(text); return; }
+  }
+
+  if (basicBenchmarkUiQuiet) {
+    if (type === 'tx') return;
+    if (type === 'rx' && /^ok$/i.test(trimmedText)) return;
+    if (type === 'basic' && /^(SEND:|WAIT_IDLE\b|WAIT_STATE\b)/.test(trimmedText)) return;
   }
 
   logLines.push(`[${time}] ${arrow} ${text}`);
@@ -6938,7 +7200,7 @@ function addLine(text, type = 'rx') {
   _terminalDivQueue.push(div);
   if (!_terminalFlushId) _terminalFlushId = requestAnimationFrame(_flushTerminalDivs);
 
-  updateCopyLogState();
+  if (logLines.length === 1) updateCopyLogState();
   if (!benchmarkRuntimeWorkerReady) updateStatus(text);
 }
 
