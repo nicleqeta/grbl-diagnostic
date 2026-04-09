@@ -1035,6 +1035,7 @@
   STATEMENTS
   ----------
   LET var = expr              Assign a value to a variable. Variables are untyped.
+  stmtA : stmtB               Execute multiple statements on one numbered line (outside quoted strings).
   SEND expr                   Send a GRBL command string over serial.
   SEND expr BUFFERED          Stream a GRBL command using host-side RX buffer accounting.
   SEND expr WAIT FOR OK       Send and block until 'ok' response.
@@ -2697,6 +2698,7 @@ function basicValidateScript(source, paramNames = []) {
   const warnings = [];
   const lines = {};
   const order = [];
+  const parsedEntries = [];
   const jumpTargets = [];
   const definedParams = new Set(paramNames);
 
@@ -2711,9 +2713,9 @@ function basicValidateScript(source, paramNames = []) {
     }
 
     const lineNum = parseInt(match[1], 10);
-    const statement = match[2].trim();
+    const statements = basicSplitStatementChain(match[2]);
 
-    if (!statement) {
+    if (!statements.length) {
       errors.push(`Line ${lineNum}: statement is empty`);
       return;
     }
@@ -2722,14 +2724,14 @@ function basicValidateScript(source, paramNames = []) {
       return;
     }
 
-    lines[lineNum] = statement;
+    lines[lineNum] = statements[0];
     order.push(lineNum);
+    statements.forEach(statement => parsedEntries.push({ lineNum, statement }));
   });
 
   order.sort((a, b) => a - b);
 
-  order.forEach(lineNum => {
-    const statement = lines[lineNum];
+  parsedEntries.forEach(({ lineNum, statement }) => {
     let match;
 
     match = statement.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*READ\("([^"]+)"\)$/i);
@@ -3627,20 +3629,57 @@ function convertGcodeToBasic(gcodeSource) {
   }
 }
 
+function basicSplitStatementChain(statement) {
+  const source = String(statement || '').trim();
+  if (!source) return [];
+  const segments = [];
+  let inStr = false;
+  let start = 0;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (!inStr && ch === ':') {
+      const part = source.slice(start, i).trim();
+      if (part) segments.push(part);
+      start = i + 1;
+    }
+  }
+  const tail = source.slice(start).trim();
+  if (tail) segments.push(tail);
+  return segments;
+}
+
 function basicParseLines(source) {
   const lines = {};
   const order = [];
+  const statementsByLine = {};
   for (const raw of source.split('\n')) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
     const m = trimmed.match(/^(\d+)\s+(.*)/);
     if (!m) continue;
     const lineNum = parseInt(m[1], 10);
-    lines[lineNum] = m[2].trim();
+    const statements = basicSplitStatementChain(m[2]);
+    if (!statements.length) continue;
+    lines[lineNum] = statements[0];
+    statementsByLine[lineNum] = statements;
     order.push(lineNum);
   }
   order.sort((a, b) => a - b);
-  return { lines, order };
+
+  const sequence = [];
+  const lineStartIndex = new Map();
+  order.forEach(lineNum => {
+    const statements = statementsByLine[lineNum] || [];
+    if (!statements.length) return;
+    if (!lineStartIndex.has(lineNum)) lineStartIndex.set(lineNum, sequence.length);
+    statements.forEach(stmt => sequence.push({ lineNum, stmt }));
+  });
+
+  return { lines, order, statementsByLine, sequence, lineStartIndex };
 }
 
 // ─── BASIC Expression Evaluator (no eval) ───────────────────────────────────
@@ -5150,7 +5189,7 @@ function previewEvalExpr(expr, vars, timeline, sourceLine, stmt) {
 function buildBasicPreviewTimeline(source) {
   const scriptSource = substituteVars(source, basicLoadedVars);
   const timeline = createBasicPreviewTimeline(scriptSource);
-  const { lines, order } = basicParseLines(scriptSource);
+  const { sequence, lineStartIndex } = basicParseLines(scriptSource);
   const motionState = createPreviewMotionState();
   const previewVars = {};
   const previewResults = new Map();
@@ -5159,18 +5198,18 @@ function buildBasicPreviewTimeline(source) {
   let pc = 0;
   let instructionCount = 0;
 
-  while (pc < order.length) {
+  while (pc < sequence.length) {
     instructionCount += 1;
     if (instructionCount > BASIC_MAX_INSTRS) {
       previewPushEvent(timeline, 'error', {
-        sourceLine: order[pc],
+        sourceLine: sequence[pc]?.lineNum,
         message: `Preview aborted: exceeded ${BASIC_MAX_INSTRS.toLocaleString()} instruction limit`
       });
       break;
     }
 
-    const lineNum = order[pc];
-    const stmt = lines[lineNum];
+    const lineNum = sequence[pc].lineNum;
+    const stmt = sequence[pc].stmt;
 
     if (/^REM\b/i.test(stmt)) { pc += 1; continue; }
 
@@ -5370,7 +5409,7 @@ function buildBasicPreviewTimeline(source) {
           const gotoM = thenBody.match(/^GOTO\s+(\d+)$/i);
           if (gotoM) {
             const target = parseInt(gotoM[1], 10);
-            const targetIdx = order.indexOf(target);
+            const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
             if (targetIdx !== -1) { pc = targetIdx; continue; }
             previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
             break;
@@ -5392,7 +5431,7 @@ function buildBasicPreviewTimeline(source) {
 
     if (/^GOTO\s+\d+/i.test(stmt)) {
       const target = parseInt(stmt.match(/^GOTO\s+(\d+)/i)[1], 10);
-      const targetIdx = order.indexOf(target);
+      const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
       if (targetIdx !== -1) { pc = targetIdx; continue; }
       previewPushEvent(timeline, 'error', { sourceLine: lineNum, message: `Preview GOTO target ${target} not found` });
       break;
@@ -5400,7 +5439,7 @@ function buildBasicPreviewTimeline(source) {
 
     if (/^GOSUB\s+\d+/i.test(stmt)) {
       const target = parseInt(stmt.match(/^GOSUB\s+(\d+)/i)[1], 10);
-      const targetIdx = order.indexOf(target);
+      const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
       if (targetIdx !== -1) {
         previewCallStack.push(pc + 1);
         pc = targetIdx;
@@ -5630,8 +5669,8 @@ async function runBasicScript(source) {
   renderGcodeQueue();
   addLine('--- BASIC script started ---', 'basic');
 
-  const { lines, order } = basicParseLines(scriptSource);
-  let pc = 0; // index into order[]
+  const { sequence, lineStartIndex } = basicParseLines(scriptSource);
+  let pc = 0; // index into flattened statement sequence
   let activeLineNum = null;
   let stopLogged = false;
   let instrCount = 0;
@@ -5644,7 +5683,7 @@ async function runBasicScript(source) {
   };
 
   try {
-    while (pc < order.length) {
+    while (pc < sequence.length) {
       if (basicStopRequested) {
         stopScript();
         break;
@@ -5666,9 +5705,9 @@ async function runBasicScript(source) {
       }
       if (instrCount % BASIC_YIELD_EVERY === 0) await delay(0);
 
-      const lineNum = order[pc];
+      const lineNum = sequence[pc].lineNum;
       activeLineNum = lineNum;
-      const stmt = lines[lineNum];
+      const stmt = sequence[pc].stmt;
 
        // REM (comment)
        if (/^REM\b/i.test(stmt)) {
@@ -5991,7 +6030,7 @@ async function runBasicScript(source) {
             const gotoM = thenBody.match(/^GOTO\s+(\d+)$/i);
             if (gotoM) {
               const target = parseInt(gotoM[1], 10);
-              const targetIdx = order.indexOf(target);
+              const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
               if (targetIdx !== -1) { pc = targetIdx; continue; }
               addLine(`GOTO ${target}: line not found`, 'err');
               break;
@@ -6018,7 +6057,7 @@ async function runBasicScript(source) {
             const gosubM = thenBody.match(/^GOSUB\s+(\d+)$/i);
             if (gosubM) {
               const target = parseInt(gosubM[1], 10);
-              const targetIdx = order.indexOf(target);
+              const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
               if (targetIdx !== -1) {
                 basicCallStack.push(pc + 1);
                 pc = targetIdx;
@@ -6042,7 +6081,7 @@ async function runBasicScript(source) {
       // GOTO
       if (/^GOTO\s+\d+/i.test(stmt)) {
         const target = parseInt(stmt.match(/^GOTO\s+(\d+)/i)[1], 10);
-        const targetIdx = order.indexOf(target);
+        const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
         if (targetIdx !== -1) { pc = targetIdx; continue; }
         addLine(`GOTO ${target}: line not found`, 'err');
         break;
@@ -6051,7 +6090,7 @@ async function runBasicScript(source) {
       // GOSUB
       if (/^GOSUB\s+\d+/i.test(stmt)) {
         const target = parseInt(stmt.match(/^GOSUB\s+(\d+)/i)[1], 10);
-        const targetIdx = order.indexOf(target);
+        const targetIdx = lineStartIndex.has(target) ? lineStartIndex.get(target) : -1;
         if (targetIdx !== -1) {
           basicCallStack.push(pc + 1);
           pc = targetIdx;
