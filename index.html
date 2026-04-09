@@ -2692,10 +2692,43 @@ function basicValidateScript(source, paramNames = []) {
       return;
     }
 
-    match = statement.match(/^IF\s+(.+)\s+THEN\s+GOTO\s+(\d+)$/i);
+    match = statement.match(/^IF\s+(.+)\s+THEN\s+(.+)$/i);
     if (match) {
-      basicValidateConditionSyntax(match[1], lineNum, definedParams, errors);
-      jumpTargets.push({ fromLine: lineNum, target: parseInt(match[2], 10), condition: match[1] });
+      const conditionExpr = match[1];
+      const thenBody = String(match[2] || '').trim();
+      basicValidateConditionSyntax(conditionExpr, lineNum, definedParams, errors);
+
+      let thenMatch = thenBody.match(/^GOTO\s+(\d+)$/i);
+      if (thenMatch) {
+        jumpTargets.push({ fromLine: lineNum, target: parseInt(thenMatch[1], 10), condition: conditionExpr });
+        return;
+      }
+
+      thenMatch = thenBody.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+      if (thenMatch) {
+        if (/^INPUT\(/i.test(String(thenMatch[2] || '').trim())) {
+          errors.push(`Line ${lineNum}: IF THEN inline LET does not support INPUT(); use a separate INPUT line`);
+          return;
+        }
+        basicValidateExpressionSyntax(thenMatch[2], lineNum, `the IF THEN LET expression for ${thenMatch[1]}`, definedParams, errors);
+        return;
+      }
+
+      thenMatch = thenBody.match(/^PRINT\s+(.+)$/i);
+      if (thenMatch) {
+        basicValidateExpressionSyntax(thenMatch[1], lineNum, 'the IF THEN PRINT expression', definedParams, errors);
+        return;
+      }
+
+      thenMatch = thenBody.match(/^GOSUB\s+(\d+)$/i);
+      if (thenMatch) {
+        jumpTargets.push({ fromLine: lineNum, target: parseInt(thenMatch[1], 10), condition: conditionExpr });
+        return;
+      }
+
+      if (/^END$/i.test(thenBody)) return;
+
+      errors.push(`Line ${lineNum}: IF THEN body must be one of GOTO, LET, PRINT, GOSUB, or END`);
       return;
     }
 

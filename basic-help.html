@@ -506,14 +506,12 @@ REM VAR plateau_ms=20
 320 GOSUB 1000
 330 LET current_ms = BENCH_LAST_MS()
 340 PRINT "Measured distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " ms=" &amp; STR(ROUND(current_ms, 3))
-350 LET improved = 0
-360 IF best_batch_ms = 0 THEN LET improved = 1
-370 IF improved = 0 AND current_ms + {plateau_ms} &lt; best_batch_ms THEN LET improved = 1
-380 IF improved = 1 THEN GOTO 520
-390 LET stagnant_steps = stagnant_steps + 1
-400 IF stagnant_steps &lt; 2 THEN GOTO 600
-410 PRINT "Plateau reached for distance=" &amp; STR(current_distance)
-420 GOTO 700
+350 IF best_batch_ms = 0 THEN GOTO 520
+360 IF current_ms + {plateau_ms} &lt; best_batch_ms THEN GOTO 520
+370 LET stagnant_steps = stagnant_steps + 1
+380 IF stagnant_steps &lt; 2 THEN GOTO 600
+390 PRINT "Plateau reached for distance=" &amp; STR(current_distance)
+400 GOTO 700
 
 520 LET best_batch_ms = current_ms
 530 LET best_batch_accel = current_accel
