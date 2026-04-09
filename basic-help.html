@@ -274,6 +274,9 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>GCODE_PARAM(key[, fallback])</code>: Read cached CNC-style parameters such as <code>#100</code> or <code>#&lt;_x&gt;</code> with optional default fallback.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
         <li><code>BENCH_LAST_MS()</code>: Latest completed <code>BENCH START ...</code>/<code>BENCH END ...</code> batch duration captured by the app.</li>
+          <li><code>CLOCK()</code>: Current timestamp in milliseconds (<code>performance.now()</code>). Store the result in a variable to use as a lap-timer start point.</li>
+          <li><code>ELAPSED(t0)</code>: Milliseconds elapsed since <code>t0</code> (a value previously captured by <code>CLOCK()</code>). Returns a number so it can be used in further math.</li>
+          <li><code>FORMAT_MS(ms)</code>: Format a millisecond number as a human-readable string — <code>"456 ms"</code> or <code>"1.23 s"</code>. Returns a string; use only inside <code>PRINT</code> or string concatenation.</li>
       </ul>
       <pre><code>10 LET dx = 3
 20 LET dy = 4
