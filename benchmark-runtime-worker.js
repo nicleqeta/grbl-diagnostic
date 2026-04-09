@@ -1,0 +1,308 @@
+const BASIC_CONTROL_POLL_MS = 20;
+const BASIC_WAIT_POLL_MS = 50;
+
+function runtimeDelay(ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function createBenchmarkCapture(title = 'BASIC Benchmark') {
+  return {
+    version: 1,
+    title,
+    startedAtIso: new Date().toISOString(),
+    updatedAtIso: new Date().toISOString(),
+    latestSample: null,
+    samples: [],
+    activeMarkers: new Map()
+  };
+}
+
+function parseBenchmarkFields(text) {
+  const fields = {};
+  const pattern = /([A-Za-z_]+)=("(?:[^"\\]|\\.)*"|[^\s]+)/g;
+  let match = null;
+  while ((match = pattern.exec(String(text || '')))) {
+    const rawKey = String(match[1] || '').trim().toLowerCase();
+    let rawValue = String(match[2] || '').trim();
+    if (!rawKey) continue;
+    if (rawValue.startsWith('"') && rawValue.endsWith('"')) rawValue = rawValue.slice(1, -1);
+    const numericValue = Number(rawValue);
+    fields[rawKey] = Number.isFinite(numericValue) ? numericValue : rawValue;
+  }
+  return fields;
+}
+
+function buildBenchmarkMarkerKey(fields) {
+  const distance = Number(fields.distance ?? fields.dist ?? fields.d);
+  const accel = Number(fields.accel ?? fields.a);
+  const batch = Number(fields.batch ?? fields.passes ?? fields.p ?? 0);
+  const repeat = Number(fields.repeat ?? fields.r ?? 1);
+  if (!Number.isFinite(distance) || !Number.isFinite(accel)) return '';
+  return `${distance}|${accel}|${batch}|${repeat}`;
+}
+
+function buildBenchmarkSummary(samples) {
+  const byDistance = new Map();
+  samples.forEach(sample => {
+    if (!Number.isFinite(sample.distance)) return;
+    const key = String(sample.distance);
+    let bucket = byDistance.get(key);
+    if (!bucket) {
+      bucket = {
+        distance: sample.distance,
+        sampleCount: 0,
+        bestAccel: sample.accel,
+        bestElapsedMs: sample.elapsedMs,
+        latestElapsedMs: sample.elapsedMs
+      };
+      byDistance.set(key, bucket);
+    }
+    bucket.sampleCount += 1;
+    bucket.latestElapsedMs = sample.elapsedMs;
+    if (sample.elapsedMs < bucket.bestElapsedMs || (Math.abs(sample.elapsedMs - bucket.bestElapsedMs) < 0.0001 && sample.accel > bucket.bestAccel)) {
+      bucket.bestElapsedMs = sample.elapsedMs;
+      bucket.bestAccel = sample.accel;
+    }
+  });
+  return Array.from(byDistance.values()).sort((left, right) => left.distance - right.distance);
+}
+
+function buildCaptureSnapshot(capture) {
+  if (!capture) return null;
+  const summary = buildBenchmarkSummary(capture.samples);
+  return {
+    version: capture.version,
+    title: capture.title,
+    startedAtIso: capture.startedAtIso,
+    updatedAtIso: capture.updatedAtIso,
+    latestSample: capture.latestSample ? { ...capture.latestSample } : null,
+    samples: capture.samples.map(sample => ({ ...sample })),
+    summary,
+    sampleCount: capture.samples.length,
+    distanceCount: summary.length
+  };
+}
+
+let benchmarkCapture = null;
+let runtimeTransportState = 'disconnected';
+let runtimeMachineState = 'unknown';
+let runtimeBasicPaused = false;
+let runtimeBasicStopRequested = false;
+let runtimeMainRequestSeq = 0;
+const pendingMainRequests = new Map();
+
+function postBenchmarkState(action, requestId = null, handled = true) {
+  self.postMessage({
+    type: 'benchmark-state',
+    action,
+    requestId,
+    handled,
+    capture: buildCaptureSnapshot(benchmarkCapture)
+  });
+}
+
+function postRuntimeState() {
+  self.postMessage({
+    type: 'runtime-state',
+    transportState: runtimeTransportState,
+    machineState: runtimeMachineState
+  });
+}
+
+function setRuntimeStates(nextTransportState = runtimeTransportState, nextMachineState = runtimeMachineState) {
+  const changed = nextTransportState !== runtimeTransportState || nextMachineState !== runtimeMachineState;
+  runtimeTransportState = nextTransportState;
+  runtimeMachineState = nextMachineState;
+  if (changed) postRuntimeState();
+}
+
+function parseRuntimeStatusLine(text) {
+  const line = String(text || '');
+  if (/^grbl\s/i.test(line)) {
+    setRuntimeStates('connected', 'reset');
+    return;
+  }
+  if (line.includes('<Idle')) {
+    setRuntimeStates('connected', 'idle');
+    return;
+  }
+  if (line.includes('ALARM') || line.includes('Alarm') || line.includes('<Alarm')) {
+    setRuntimeStates('connected', 'alarm');
+    return;
+  }
+  if (line.includes('<Run') || line.includes('<Hold') || line.includes('<Jog') || line.includes('<Home')) {
+    setRuntimeStates('connected', 'busy');
+  }
+}
+
+function recordBenchmarkMessage(message, perfMs, iso) {
+  if (!benchmarkCapture) return false;
+  const text = String(message || '').trim();
+  const markerMatch = text.match(/^BENCH\s+(START|END)\b\s*(.*)$/i);
+  if (!markerMatch) return false;
+
+  const kind = markerMatch[1].toUpperCase();
+  const fields = parseBenchmarkFields(markerMatch[2]);
+  const markerKey = buildBenchmarkMarkerKey(fields);
+  if (!markerKey) return false;
+
+  const nowIso = iso || new Date().toISOString();
+  const nowPerfMs = Number.isFinite(Number(perfMs)) ? Number(perfMs) : performance.now();
+  benchmarkCapture.updatedAtIso = nowIso;
+
+  if (kind === 'START') {
+    benchmarkCapture.activeMarkers.set(markerKey, {
+      fields,
+      startedAtIso: nowIso,
+      startedPerfMs: nowPerfMs
+    });
+    return true;
+  }
+
+  const activeMarker = benchmarkCapture.activeMarkers.get(markerKey);
+  if (!activeMarker) return false;
+  benchmarkCapture.activeMarkers.delete(markerKey);
+
+  const sample = {
+    distance: Number(fields.distance ?? activeMarker.fields.distance ?? activeMarker.fields.dist ?? activeMarker.fields.d),
+    accel: Number(fields.accel ?? activeMarker.fields.accel ?? activeMarker.fields.a),
+    batch: Number(fields.batch ?? activeMarker.fields.batch ?? activeMarker.fields.passes ?? activeMarker.fields.p ?? 0),
+    repeat: Number(fields.repeat ?? activeMarker.fields.repeat ?? activeMarker.fields.r ?? 1),
+    feed: Number(fields.feed ?? activeMarker.fields.feed ?? 0),
+    elapsedMs: Math.max(0, nowPerfMs - activeMarker.startedPerfMs),
+    startedAtIso: activeMarker.startedAtIso,
+    endedAtIso: nowIso
+  };
+  benchmarkCapture.samples.push(sample);
+  benchmarkCapture.latestSample = sample;
+  return true;
+}
+
+function requestMainSendCommand(command, displayOverride = null) {
+  return new Promise(resolve => {
+    const requestId = `runtime-send-${++runtimeMainRequestSeq}`;
+    pendingMainRequests.set(requestId, resolve);
+    self.postMessage({
+      type: 'runtime-send-command',
+      requestId,
+      command,
+      displayOverride
+    });
+  });
+}
+
+async function runtimeWaitForResumeOrStop() {
+  while (runtimeBasicPaused && !runtimeBasicStopRequested) {
+    await runtimeDelay(BASIC_CONTROL_POLL_MS);
+  }
+  return !runtimeBasicStopRequested;
+}
+
+async function runtimeWaitForIdle(timeoutMs = null) {
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  let observedFreshStatus = false;
+
+  while (true) {
+    if (!(await runtimeWaitForResumeOrStop())) {
+      return { status: 'cancelled', line: 'WAIT_IDLE cancelled' };
+    }
+    if (observedFreshStatus && runtimeMachineState === 'idle') return { status: 'ok' };
+    if (runtimeMachineState === 'alarm') return { status: 'error', line: 'Machine entered ALARM while waiting for idle' };
+    if (runtimeTransportState === 'fault' || runtimeTransportState === 'disconnected') {
+      return { status: 'error', line: 'Connection fault while waiting for machine to become idle' };
+    }
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      return { status: 'error', line: `WAIT_IDLE timed out after ${normalizedTimeout} ms` };
+    }
+
+    const sent = await requestMainSendCommand('?', '?');
+    if (!sent) return { status: 'error', line: 'Failed to send realtime status poll while waiting for idle' };
+    observedFreshStatus = true;
+    await runtimeDelay(BASIC_WAIT_POLL_MS);
+  }
+}
+
+async function runtimeWaitForMachineState(targetState, timeoutMs = null) {
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+
+  while (true) {
+    if (!(await runtimeWaitForResumeOrStop())) {
+      return { status: 'cancelled', line: 'WAIT_STATE cancelled' };
+    }
+    if (runtimeMachineState === targetState) return { status: 'ok' };
+    if (runtimeTransportState === 'fault' || runtimeTransportState === 'disconnected') {
+      return { status: 'error', line: 'Connection fault while waiting for machine state' };
+    }
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      return { status: 'error', line: `WAIT_STATE timed out after ${normalizedTimeout} ms` };
+    }
+
+    const sent = await requestMainSendCommand('?', '?');
+    if (!sent) return { status: 'error', line: 'Failed to send realtime status poll while waiting for machine state' };
+    await runtimeDelay(BASIC_WAIT_POLL_MS);
+  }
+}
+
+self.addEventListener('message', event => {
+  const message = event.data || {};
+  switch (message.type) {
+    case 'runtime-send-command-result': {
+      const resolver = pendingMainRequests.get(message.requestId);
+      if (!resolver) break;
+      pendingMainRequests.delete(message.requestId);
+      resolver(Boolean(message.success));
+      break;
+    }
+    case 'runtime-set-connection-state':
+      setRuntimeStates(
+        String(message.transportState || runtimeTransportState),
+        String(message.machineState || runtimeMachineState)
+      );
+      break;
+    case 'runtime-control-state':
+      runtimeBasicPaused = Boolean(message.basicPaused);
+      runtimeBasicStopRequested = Boolean(message.basicStopRequested);
+      break;
+    case 'runtime-line':
+      if (message.lineType === 'rx') parseRuntimeStatusLine(message.text);
+      break;
+    case 'runtime-wait-idle':
+      void runtimeWaitForIdle(message.timeoutMs).then(result => {
+        self.postMessage({ type: 'runtime-wait-result', requestId: message.requestId, ...result });
+      });
+      break;
+    case 'runtime-wait-state':
+      void runtimeWaitForMachineState(String(message.targetState || 'unknown'), message.timeoutMs).then(result => {
+        self.postMessage({ type: 'runtime-wait-result', requestId: message.requestId, ...result });
+      });
+      break;
+    case 'benchmark-reset':
+      benchmarkCapture = createBenchmarkCapture(String(message.title || 'BASIC Benchmark'));
+      postBenchmarkState('reset', message.requestId);
+      break;
+    case 'benchmark-record': {
+      const handled = recordBenchmarkMessage(message.message, message.perfMs, message.iso);
+      postBenchmarkState('record', message.requestId, handled);
+      break;
+    }
+    case 'benchmark-clear':
+      benchmarkCapture = null;
+      postBenchmarkState('clear', message.requestId);
+      break;
+    case 'benchmark-get-state':
+      postBenchmarkState('get-state', message.requestId);
+      break;
+    default:
+      break;
+  }
+});
+
+self.postMessage({
+  type: 'benchmark-worker-ready',
+  capabilities: {
+    dedicatedWorker: true,
+    workerSerial: Boolean(self.navigator && 'serial' in self.navigator)
+  }
+});
