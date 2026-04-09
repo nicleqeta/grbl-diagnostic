@@ -17,8 +17,9 @@
     --amber: #f59e0b;
     --red: #ef4444;
   }
-
-  * { box-sizing: border-box; }
+        The script keeps track of the <em>best batch time seen so far</em> for each distance and the acceleration that produced it.
+        It stops testing higher acceleration at that distance once two consecutive steps fail to improve that best-so-far time by at least <code>{plateau_ms}</code>&nbsp;ms —
+        a practical diminishing-returns rule for that stroke length.
 
   body {
     margin: 0;
@@ -26,6 +27,10 @@
                 radial-gradient(900px 500px at 120% 20%, rgba(245, 158, 11, 0.12), transparent 55%),
                 var(--bg);
     color: var(--text);
+      <p>
+        The default <code>{plateau_ms}</code> value is intentionally conservative because host-side timing noise, USB latency, and controller-status polling can easily move a very short batch by several milliseconds.
+        If you are testing tiny stroke lengths, increase <code>{target_total_travel}</code> and/or <code>{plateau_ms}</code> so the stop condition reacts to a real trend rather than single-batch jitter.
+      </p>
     font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     line-height: 1.5;
   }
@@ -449,8 +454,9 @@ REM VAR settle_ms=250
         Each move is issued at feedrate <code>{x_feed}</code>&nbsp;mm/min and the script waits up to <code>{idle_timeout}</code>&nbsp;ms for the machine to reach idle before continuing.
       </p>
       <p>
-        The script stops testing higher acceleration at a given distance once two consecutive steps fail to beat the previous best batch time by at least <code>{plateau_ms}</code>&nbsp;ms —
-        the point of diminishing returns for that stroke length.
+        The script keeps track of the best batch time seen so far for each distance and the acceleration that produced it.
+        It stops testing higher acceleration at that distance once two consecutive steps fail to improve that best-so-far time by at least <code>{plateau_ms}</code>&nbsp;ms,
+        which acts as a practical diminishing-returns rule for that stroke length.
         When all distances are done (or the max is reached), <code>$120</code> is restored to its original value.
       </p>
       <p>
@@ -458,6 +464,10 @@ REM VAR settle_ms=250
         The app captures the wall-clock duration and exposes it back to the script via <code>BENCH_LAST_MS()</code>.
         The Preview window opens automatically on the first marker and switches to <strong>Benchmark</strong> view,
         where you can watch the best-acceleration-per-distance curve build in real time and copy the raw data as JSON for further analysis.
+      </p>
+      <p>
+        The default <code>{plateau_ms}</code> is deliberately conservative because host-side timing noise, USB latency, and controller-status polling can move a short batch by several milliseconds.
+        If you are testing very short strokes, increase <code>{target_total_travel}</code> and/or <code>{plateau_ms}</code> so the stop condition reacts to a real trend rather than one noisy batch.
       </p>
       <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
 REM AUTHOR: GitHub Copilot
@@ -473,7 +483,7 @@ REM VAR target_total_travel=80
 REM VAR min_batch_count=4
 REM VAR settle_ms=200
 REM VAR idle_timeout=12000
-REM VAR plateau_ms=5
+REM VAR plateau_ms=20
 
 10 PRINT "Distance-scaled acceleration plateau map"
 20 PRINT "Clear the machine so X can move symmetrically around the current point."
@@ -490,8 +500,8 @@ REM VAR plateau_ms=5
 210 LET batch_count = MAX({min_batch_count}, INT({target_total_travel} / current_distance))
 215 REM batch_count = number of passes per timed batch. {min_batch_count} ensures at least that many passes.
 216 REM Each pass = 1 forward move + 1 backward move. Total moves in batch = batch_count * 2.
-220 LET best_accel = 0
-230 LET best_ms = 0
+220 LET best_batch_accel = 0
+230 LET best_batch_ms = 0
 240 LET stagnant_steps = 0
 250 PRINT "Distance " &amp; STR(current_distance) &amp; " mm with batch_count=" &amp; STR(batch_count)
 
@@ -500,26 +510,25 @@ REM VAR plateau_ms=5
 320 GOSUB 1000
 330 LET current_ms = BENCH_LAST_MS()
 340 PRINT "Measured distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " ms=" &amp; STR(ROUND(current_ms, 3))
-350 IF best_ms = 0 THEN GOTO 500
-360 IF current_ms + {plateau_ms} &lt; best_ms THEN GOTO 520
-370 LET stagnant_steps = stagnant_steps + 1
-380 IF stagnant_steps &lt; 2 THEN GOTO 600
-390 PRINT "Plateau reached for distance=" &amp; STR(current_distance)
-400 GOTO 700
+350 LET improved = 0
+360 IF best_batch_ms = 0 THEN LET improved = 1
+370 IF improved = 0 AND current_ms + {plateau_ms} &lt; best_batch_ms THEN LET improved = 1
+380 IF improved = 1 THEN GOTO 520
+390 LET stagnant_steps = stagnant_steps + 1
+400 IF stagnant_steps &lt; 2 THEN GOTO 600
+410 PRINT "Plateau reached for distance=" &amp; STR(current_distance)
+420 GOTO 700
 
-500 LET best_ms = current_ms
-510 LET best_accel = current_accel
-515 GOTO 600
-
-520 LET best_ms = current_ms
-530 LET best_accel = current_accel
+520 LET best_batch_ms = current_ms
+530 LET best_batch_accel = current_accel
 540 LET stagnant_steps = 0
+550 PRINT "New best so far at distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(best_batch_accel) &amp; " batch_ms=" &amp; STR(ROUND(best_batch_ms, 3))
 
 600 NEXT test_accel
 
-700 PRINT "Best observed acceleration at distance=" &amp; STR(current_distance) &amp; " is " &amp; STR(best_accel) &amp; " with batch_ms=" &amp; STR(ROUND(best_ms, 3))
-710 LET final_best_accel = best_accel
-720 LET final_best_ms = best_ms
+700 PRINT "Best observed acceleration at distance=" &amp; STR(current_distance) &amp; " is " &amp; STR(best_batch_accel) &amp; " with batch_ms=" &amp; STR(ROUND(best_batch_ms, 3))
+710 LET final_best_accel = best_batch_accel
+720 LET final_best_ms = best_batch_ms
 730 LET current_distance = current_distance * 2
 740 GOTO 200
 
