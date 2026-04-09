@@ -1774,7 +1774,8 @@ const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
 const BASIC_TIMEOUT_MS      = 36_000_000; // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
-const BASIC_BUFFERED_RX_BYTES = 64;
+const BASIC_BUFFERED_RX_BYTES = 64; // fallback when Bf: has not been observed
+let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf: reports
 
 let basicBufferedStreamState = {
   inFlightBytes: 0,
@@ -4598,7 +4599,8 @@ async function basicWaitForBufferedCapacity(bytes, timeoutMs = null) {
     if (!port) throw new Error('Serial connection lost while waiting for buffered send capacity');
 
     const inFlight = Number(basicBufferedStreamState.inFlightBytes || 0);
-    if (inFlight === 0 || inFlight + bytes <= BASIC_BUFFERED_RX_BYTES) return true;
+    const rxBufLimit = grblObservedRxBufBytes || BASIC_BUFFERED_RX_BYTES;
+    if (inFlight === 0 || inFlight + bytes <= rxBufLimit) return true;
 
     if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
       throw new Error(`Buffered SEND timed out waiting for RX buffer space after ${normalizedTimeout} ms`);
@@ -7504,6 +7506,11 @@ function updateStatus(text) {
   if (text.includes('<Idle')) { setTransportState('connected'); setMachineState('idle'); }
   else if (text.includes('ALARM') || text.includes('Alarm') || text.includes('<Alarm')) { setTransportState('connected'); setMachineState('alarm'); }
   else if (text.includes('<Run') || text.includes('<Hold') || text.includes('<Jog') || text.includes('<Home')) { setTransportState('connected'); setMachineState('busy'); }
+  const bfMatch = text.match(/Bf:\d+,(\d+)/);
+  if (bfMatch) {
+    const rxBytes = parseInt(bfMatch[1], 10);
+    if (rxBytes > grblObservedRxBufBytes) grblObservedRxBufBytes = rxBytes;
+  }
 }
 
 function markConnectionFault(label) {
@@ -7630,6 +7637,7 @@ connectBtn.addEventListener('click', async () => {
       showRequestResponseCorrelation: showRequestResponseToggle.checked,
       portInfo, startupResolved: 'pending', startupReadyLine: null, startupBannerLine: null
     };
+    grblObservedRxBufBytes = 0;
 
     writer = port.writable.getWriter();
     readLoopPromise = startReadLoop();
