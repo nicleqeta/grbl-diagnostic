@@ -853,6 +853,33 @@ function loadTimeline(nextTimeline) {
   render();
 }
 
+function loadWaitingState(payload = null) {
+  const waitingTitle = String(payload?.title || 'GRBL Preview').trim() || 'GRBL Preview';
+  const waitingMessage = String(payload?.message || 'Waiting for benchmarking data...').trim() || 'Waiting for benchmarking data...';
+
+  timeline = null;
+  playback.playing = false;
+  playback.commandCursor = 0;
+  playback.accumulatorMs = 0;
+  playback.lastFrameAt = 0;
+  playback.viewMode = 'benchmark';
+
+  titleEl.textContent = waitingTitle;
+  statsEl.textContent = 'Waiting for benchmark data';
+  statusBox.textContent = `${waitingTitle}\n${waitingMessage}`;
+  emptyState.style.display = 'block';
+  emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a BASIC script with BENCH START / BENCH END markers.';
+  commandList.innerHTML = '';
+  commandProgress.textContent = '0 / 0';
+  benchmarkTapePanel.classList.remove('active');
+  _lastTapeSampleCount = -1;
+  _lastCommandListSampleCount = -1;
+
+  syncPlaybackUi();
+  syncQueuePanelUi();
+  render();
+}
+
 function stripCommandComments(text) {
   return String(text || '')
     .replace(/\([^)]*\)/g, ' ')
@@ -978,7 +1005,13 @@ let _timelineRafPending = false;
 
 window.addEventListener('message', event => {
   if (event.origin !== window.location.origin) return;
-  if (!event.data || event.data.type !== 'preview-load') return;
+  if (!event.data || typeof event.data !== 'object') return;
+  if (event.data.type === 'preview-waiting') {
+    loadWaitingState(event.data.payload || null);
+    _pendingTimelinePayload = null;
+    return;
+  }
+  if (event.data.type !== 'preview-load') return;
   // Coalesce rapid postMessage calls — only render the latest one per animation frame
   _pendingTimelinePayload = event.data.payload;
   if (!_timelineRafPending) {

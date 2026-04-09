@@ -1036,6 +1036,7 @@
   ----------
   LET var = expr              Assign a value to a variable. Variables are untyped.
   SEND expr                   Send a GRBL command string over serial.
+  SEND expr BUFFERED          Stream a GRBL command using host-side RX buffer accounting.
   SEND expr WAIT FOR OK       Send and block until 'ok' response.
   SEND expr WAIT FOR IDLE     Send and block until GRBL status is Idle.
   SEND expr WAIT FOR GRBL     Send and block until a GRBL startup banner appears.
@@ -1754,6 +1755,8 @@ function basicGetGcodeParam(keyLike, fallbackValue = 0) {
   return fallbackValue;
 }
 let previewWindowRef = null;
+let previewWindowCompact = false;
+let previewWaitingState = null;
 let latestPreviewTimeline = null;
 let basicBenchmarkCapture = null;
 let benchmarkRuntimeWorker = null;
@@ -1771,6 +1774,35 @@ const BASIC_MAX_INSTRS      = 1_000_000; // hard instruction limit per run
 const BASIC_TIMEOUT_MS      = 36_000_000; // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
+const BASIC_BUFFERED_RX_BYTES = 64;
+
+let basicBufferedStreamState = {
+  inFlightBytes: 0,
+  pendingBytes: [],
+  lastError: null
+};
+
+function resetBasicBufferedStream() {
+  basicBufferedStreamState = {
+    inFlightBytes: 0,
+    pendingBytes: [],
+    lastError: null
+  };
+}
+
+function handleBasicBufferedResponseLine(line) {
+  if (!basicBufferedStreamState.pendingBytes.length) return;
+  if (/^ok$/i.test(line)) {
+    basicBufferedStreamState.inFlightBytes -= basicBufferedStreamState.pendingBytes.shift() || 0;
+    if (basicBufferedStreamState.inFlightBytes < 0) basicBufferedStreamState.inFlightBytes = 0;
+    return;
+  }
+  if (/^error:\d+/i.test(line) || /ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) {
+    basicBufferedStreamState.lastError = String(line || 'Buffered send failed');
+    basicBufferedStreamState.pendingBytes.length = 0;
+    basicBufferedStreamState.inFlightBytes = 0;
+  }
+}
 
 if (!('serial' in navigator)) {
   noSerialSec.style.display = 'block';
@@ -2018,7 +2050,14 @@ function refreshBasicBenchmarkPreview(force = false) {
   const benchmarkData = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
   timeline.benchmark = benchmarkData;
   const hasRealBenchmarkData = Number(benchmarkData?.sampleCount || 0) > 0;
-  if (hasRealBenchmarkData) ensurePreviewWindow();
+  if (hasRealBenchmarkData) {
+    clearPreviewWaitingState();
+    ensurePreviewWindow({ compact: false });
+  }
+  if (previewWaitingState) {
+    postPreviewWaitingState(previewWaitingState);
+    return;
+  }
   postLatestPreviewTimeline();
 }
 
@@ -2180,6 +2219,28 @@ function substituteVars(program, vars) {
   return result;
 }
 
+function buildBasicDescriptionEvalVars(vars) {
+  const normalized = {};
+  Object.entries(vars || {}).forEach(([key, value]) => {
+    normalized[basicNormalizeRuntimeVarName(key)] = value;
+  });
+  return normalized;
+}
+
+function renderBasicDescriptionTemplate(rawText, vars) {
+  const source = String(rawText || '');
+  const evalVars = buildBasicDescriptionEvalVars(vars || {});
+  const withExpressions = source.replace(/\{\{([^{}]+)\}\}/g, (match, expr) => {
+    try {
+      const value = basicEvalExpr(String(expr || '').trim(), evalVars);
+      return String(value);
+    } catch {
+      return match;
+    }
+  });
+  return substituteVars(withExpressions, vars || {});
+}
+
 const BASIC_IMPORT_LINE_RE = /^\s*\d+\b/;
 const BASIC_IMPORT_HEADER_RE = /^\s*REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION)\s*:\s*(.*)$/i;
 const BASIC_IMPORT_VAR_RE = /^\s*REM\s+VAR\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/i;
@@ -2257,7 +2318,7 @@ function updateBasicDocumentTitle() {
 }
 
 function getBasicRenderedDescription() {
-  return basicRawConfigText ? substituteVars(basicRawConfigText, basicLoadedVars).trim() : '';
+  return basicRawConfigText ? renderBasicDescriptionTemplate(basicRawConfigText, basicLoadedVars).trim() : '';
 }
 
 function getBasicDescriptionScrollState(element) {
@@ -2507,6 +2568,12 @@ function basicParseSendOptions(sendBody) {
   let body = String(sendBody || '').trim();
   let requireOk = false;
   let timeoutExpr = null;
+  let buffered = false;
+
+  if (/\s+BUFFERED\s*$/i.test(body)) {
+    buffered = true;
+    body = body.replace(/\s+BUFFERED\s*$/i, '').trim();
+  }
 
   if (/\s+REQUIRE_OK\s*$/i.test(body)) {
     requireOk = true;
@@ -2522,7 +2589,8 @@ function basicParseSendOptions(sendBody) {
   return {
     expression: body,
     timeoutExpr,
-    requireOk
+    requireOk,
+    buffered
   };
 }
 
@@ -2689,6 +2757,10 @@ function basicValidateScript(source, paramNames = []) {
       const sendSpec = basicParseSendOptions(match[1]);
       if (!sendSpec.expression) {
         errors.push(`Line ${lineNum}: the SEND expression is empty`);
+        return;
+      }
+      if (sendSpec.buffered && sendSpec.requireOk) {
+        errors.push(`Line ${lineNum}: BUFFERED SEND cannot be combined with REQUIRE_OK`);
         return;
       }
       basicValidateExpressionSyntax(sendSpec.expression, lineNum, 'the SEND expression', definedParams, errors);
@@ -4042,6 +4114,7 @@ async function basicResolveFormCall(formInner, vars, allowTextInput = false) {
   if (displayMessage.startsWith('"') && displayMessage.endsWith('"')) {
     displayMessage = displayMessage.slice(1, -1);
   }
+  displayMessage = displayMessage.replace(/\\,/g, ',');
   const labelMatches = [...displayMessage.matchAll(/\[([^\]]+)\]/g)];
   const valueExprs = formArgs.slice(1);
   const buttons = [];
@@ -4511,11 +4584,72 @@ async function basicSendScriptCommand(commandText, { timeoutMs = null, requireOk
   return result;
 }
 
+async function basicWaitForBufferedCapacity(bytes, timeoutMs = null) {
+  const normalizedTimeout = timeoutMs == null
+    ? BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS
+    : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  const startedAt = Date.now();
+
+  while (true) {
+    if (!(await basicWaitForResumeOrStop())) return false;
+    if (basicBufferedStreamState.lastError) {
+      throw new Error(`Buffered stream failed: ${basicBufferedStreamState.lastError}`);
+    }
+    if (!port) throw new Error('Serial connection lost while waiting for buffered send capacity');
+
+    const inFlight = Number(basicBufferedStreamState.inFlightBytes || 0);
+    if (inFlight === 0 || inFlight + bytes <= BASIC_BUFFERED_RX_BYTES) return true;
+
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      throw new Error(`Buffered SEND timed out waiting for RX buffer space after ${normalizedTimeout} ms`);
+    }
+
+    if (!(await basicDelayWithControl(5))) return false;
+  }
+}
+
+async function basicSendBufferedCommand(commandText, { timeoutMs = null } = {}) {
+  const command = normalizeCommandInput(commandText);
+  if (!command) return { status: 'skipped', line: 'Empty buffered command' };
+  if (!command.waitForAck) {
+    throw new Error('BUFFERED SEND only supports line-based GRBL commands');
+  }
+
+  const bytes = command.payload.length;
+  if (!(await basicWaitForBufferedCapacity(bytes, timeoutMs))) return { status: 'cancelled', line: 'Buffered send cancelled' };
+
+  const sent = await sendCommand(command.payload, command.display);
+  if (!sent) throw new Error(`${command.display} failed to write`);
+
+  basicBufferedStreamState.inFlightBytes += bytes;
+  basicBufferedStreamState.pendingBytes.push(bytes);
+  return { status: 'sent', line: `${command.display} buffered`, command };
+}
+
+async function basicWaitForBufferedDrain(timeoutMs = null, startedAt = Date.now()) {
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  while (basicBufferedStreamState.pendingBytes.length || basicBufferedStreamState.inFlightBytes > 0) {
+    if (!(await basicWaitForResumeOrStop())) return false;
+    if (basicBufferedStreamState.lastError) {
+      throw new Error(`Buffered stream failed: ${basicBufferedStreamState.lastError}`);
+    }
+    if (!port) throw new Error('Serial connection lost while waiting for buffered command acknowledgements');
+    if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
+      throw new Error(`Buffered SEND drain timed out after ${normalizedTimeout} ms`);
+    }
+    if (!(await basicDelayWithControl(5))) return false;
+  }
+  return true;
+}
+
 async function basicWaitForIdle(timeoutMs = null) {
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  if (!(await basicWaitForBufferedDrain(normalizedTimeout, startedAt))) return false;
+
   if (benchmarkRuntimeWorkerReady) {
     syncRuntimeWorkerControlState();
     syncRuntimeWorkerConnectionState();
-    const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
     const response = await postBenchmarkRuntimeRequest(
       'runtime-wait-idle',
       { timeoutMs: normalizedTimeout },
@@ -4528,8 +4662,6 @@ async function basicWaitForIdle(timeoutMs = null) {
     }
   }
 
-  const startedAt = Date.now();
-  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
   let observedFreshStatus = false;
 
   while (true) {
@@ -4567,10 +4699,13 @@ async function basicWaitForMachineState(targetState, timeoutMs = null) {
     throw new Error(`WAIT_STATE target is not supported: ${targetState}`);
   }
 
+  const startedAt = Date.now();
+  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
+  if (!(await basicWaitForBufferedDrain(normalizedTimeout, startedAt))) return false;
+
   if (benchmarkRuntimeWorkerReady) {
     syncRuntimeWorkerControlState();
     syncRuntimeWorkerConnectionState();
-    const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
     const response = await postBenchmarkRuntimeRequest('runtime-wait-state', {
       targetState: normalizedTarget,
       timeoutMs: normalizedTimeout
@@ -4581,9 +4716,6 @@ async function basicWaitForMachineState(targetState, timeoutMs = null) {
       throw new Error(response.line || 'WAIT_STATE failed');
     }
   }
-
-  const startedAt = Date.now();
-  const normalizedTimeout = timeoutMs == null ? null : Math.max(0, Math.round(Number(timeoutMs) || 0));
 
   while (true) {
     if (!(await basicWaitForResumeOrStop())) return false;
@@ -5284,9 +5416,9 @@ function buildBasicPreviewTimeline(source) {
   return timeline;
 }
 
-function getPreviewWindowFeatures() {
-  const width = 1220;
-  const height = 840;
+function getPreviewWindowFeatures(compact = false) {
+  const width = compact ? 440 : 1220;
+  const height = compact ? 180 : 840;
   const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
   const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
   return [
@@ -5299,13 +5431,49 @@ function getPreviewWindowFeatures() {
   ].join(',');
 }
 
-function ensurePreviewWindow() {
-  if (previewWindowRef && !previewWindowRef.closed) return previewWindowRef;
-  previewWindowRef = window.open('preview.html', 'grbl-preview-window', getPreviewWindowFeatures());
+function resizePreviewWindow(compact = false) {
+  if (!previewWindowRef || previewWindowRef.closed) return;
+  try {
+    const width = compact ? 440 : 1220;
+    const height = compact ? 180 : 840;
+    const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+    const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+    previewWindowRef.resizeTo(width, height);
+    previewWindowRef.moveTo(left, top);
+  } catch {}
+}
+
+function postPreviewWaitingState(payload = null) {
+  previewWaitingState = payload || {
+    title: 'BASIC Benchmark',
+    message: 'Waiting for benchmarking data...'
+  };
+  if (!previewWindowRef || previewWindowRef.closed) return;
+  previewWindowRef.postMessage({
+    type: 'preview-waiting',
+    payload: previewWaitingState
+  }, window.location.origin);
+}
+
+function clearPreviewWaitingState() {
+  previewWaitingState = null;
+}
+
+function ensurePreviewWindow(options = {}) {
+  const compact = Boolean(options.compact);
+  if (previewWindowRef && !previewWindowRef.closed) {
+    if (previewWindowCompact !== compact) {
+      resizePreviewWindow(compact);
+      previewWindowCompact = compact;
+    }
+    return previewWindowRef;
+  }
+  previewWindowRef = window.open('preview.html', 'grbl-preview-window', getPreviewWindowFeatures(compact));
   if (!previewWindowRef) {
     addLine('Preview window blocked by browser popup settings', 'err');
     return null;
   }
+  previewWindowCompact = compact;
   return previewWindowRef;
 }
 
@@ -5339,6 +5507,7 @@ window.addEventListener('message', event => {
   if (!event.data || typeof event.data !== 'object') return;
   if (event.data.type === 'preview-closed') {
     previewWindowRef = null;
+    previewWindowCompact = false;
     return;
   }
   if (event.data.type === 'preview-queue-gcode') {
@@ -5355,6 +5524,10 @@ window.addEventListener('message', event => {
     return;
   }
   if (event.data.type === 'preview-ready' || event.data.type === 'preview-request-timeline') {
+    if (previewWaitingState) {
+      postPreviewWaitingState(previewWaitingState);
+      return;
+    }
     postLatestPreviewTimeline();
   }
 });
@@ -5375,7 +5548,8 @@ function openBasicPreview() {
   }
 
   latestPreviewTimeline = buildBasicPreviewTimeline(src);
-  const previewWindow = ensurePreviewWindow();
+  clearPreviewWaitingState();
+  const previewWindow = ensurePreviewWindow({ compact: false });
   if (!previewWindow) return;
   previewWindow.focus();
   postLatestPreviewTimeline();
@@ -5392,7 +5566,14 @@ async function runBasicScript(source) {
   // Open benchmark preview window now, while still in the synchronous user-gesture context
   // (popup blockers reject window.open() from async/worker callbacks, so this must happen
   // before the first await).  Only open if the script actually contains BENCH markers.
-  if (/\bBENCH\s+(START|END)\b/i.test(scriptSource)) ensurePreviewWindow();
+  if (/\bBENCH\s+(START|END)\b/i.test(scriptSource)) {
+    const previewTitle = buildBasicDisplayName(getBasicScriptMeta()) || 'BASIC Benchmark';
+    ensurePreviewWindow({ compact: true });
+    postPreviewWaitingState({
+      title: previewTitle,
+      message: 'Waiting for benchmarking data...'
+    });
+  }
 
   // Show confirm dialog
   const confirmed = await basicShowConfirm(configText || 'Run the loaded BASIC script on your connected machine?', configVars);
@@ -5414,6 +5595,7 @@ async function runBasicScript(source) {
   basicResults = new Map();
   basicCallStack = [];
   basicForStack = [];
+  resetBasicBufferedStream();
   syncRuntimeWorkerControlState();
   basicBenchmarkCapture = await resetBasicBenchmarkCapture(buildBasicDisplayName(getBasicScriptMeta()) || 'BASIC Benchmark');
   refreshBasicBenchmarkPreview(true);
@@ -5522,8 +5704,14 @@ async function runBasicScript(source) {
         const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
         const cmdStr = String(await basicEvalExprRuntime(sendSpec.expression, basicVars)).trim();
         const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(await basicEvalExprRuntime(sendSpec.timeoutExpr, basicVars)));
-        addLine(`SEND: ${cmdStr}`, 'basic');
-        await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
+        addLine(sendSpec.buffered ? `SEND: ${cmdStr} [buffered]` : `SEND: ${cmdStr}`, 'basic');
+        if (sendSpec.buffered) {
+          if (sendSpec.requireOk) throw new Error('BUFFERED SEND cannot be combined with REQUIRE_OK');
+          await basicSendBufferedCommand(cmdStr, { timeoutMs });
+        } else {
+          await basicWaitForBufferedDrain(timeoutMs);
+          await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
+        }
         if (!(await basicDelayWithControl(100))) {
           stopScript();
           break;
@@ -5875,6 +6063,7 @@ async function runBasicScript(source) {
       addLine(`Script error: ${message}`, 'err');
     }
   } finally {
+    resetBasicBufferedStream();
     if (basicBenchmarkCapture) {
       if (!benchmarkRuntimeWorkerReady) basicBenchmarkCapture.activeMarkers.clear();
       basicBenchmarkUiQuiet = false;
@@ -7320,6 +7509,7 @@ function updateStatus(text) {
 function markConnectionFault(label) {
   activeSequenceToken += 1;
   readLoopActive = false;
+  resetBasicBufferedStream();
   resetReadySignalState();
   currentRun.startupResolved = 'fault';
   currentRun.startupReadyLine = null;
@@ -7332,7 +7522,7 @@ function markConnectionFault(label) {
 }
 
 function resetAfterFailedOpen(reason) {
-  readLoopActive = false; resetReadySignalState();
+  readLoopActive = false; resetBasicBufferedStream(); resetReadySignalState();
   currentRun.startupResolved = 'not-run'; currentRun.startupReadyLine = null;
   port = null; reader = null; writer = null; readLoopPromise = null; dtrSupported = false;
   settlePendingSequenceResponse({ status: 'cancelled', line: reason });
@@ -7396,6 +7586,7 @@ async function startReadLoop() {
         if (trimmed) {
           addLine(trimmed, 'rx');
           handleSequenceResponseLine(trimmed);
+          handleBasicBufferedResponseLine(trimmed);
         }
       }
     }
