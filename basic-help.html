@@ -180,6 +180,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>SEND expr TIMEOUT expr</code>: Wait for terminal acknowledgement up to timeout ms.</li>
         <li><code>SEND expr REQUIRE_OK</code>: Fail statement if no <code>ok/error/ALARM</code> acknowledgement arrives.</li>
         <li><code>SEND expr TIMEOUT expr REQUIRE_OK</code>: Use both options together.</li>
+        <li><code>SEND expr BUFFERED</code>: Stream a normal line-based GRBL command using host-side RX buffer accounting. Buffered sends do not wait for machine idle after each line; use <code>WAIT_IDLE</code> after the final buffered command in a batch to flush all acknowledgements and then wait for motion to finish.</li>
         <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
       </ul>
       <pre><code>10 LET speed = 900
@@ -297,6 +298,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
       <ul>
         <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
         <li><code>REM DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
+        <li>Rendered descriptions support both simple placeholders like <code>{feed}</code> and inline expression placeholders like <code>{{min_batch_count * 2}}</code>.</li>
         <li><code>REM VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
         <li>If no title header exists, import falls back to the filename.</li>
         <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step BASIC automatically.</li>
@@ -458,14 +460,15 @@ REM VAR settle_ms=250
         This test answers the question: <em>at what acceleration does my machine stop getting faster for a given move distance?</em>
         It sweeps the X-axis acceleration setting (<code>$120</code>) upward from <code>{start_accel}</code> in steps of <code>{accel_step}</code> up to a ceiling of <code>{max_accel}</code>,
         while running a timed batch of back-and-forth moves at each level.
-        The stroke starts at 1&nbsp;mm and doubles each round — 1, 2, 4, 8&hellip; up to <code>{max_distance}</code>&nbsp;mm —
+        The stroke starts at <code>{min_distance}</code>&nbsp;mm and doubles each round — {min_distance}, 2&times;{min_distance}, 4&times;{min_distance}, 8&times;{min_distance}&hellip; up to <code>{max_distance}</code>&nbsp;mm —
         so you get a curve showing how the best usable acceleration scales with travel distance.
       </p>
       <p>
         For each distance, the script calculates how many passes are needed so the total travel stays close to <code>{target_total_travel}</code>&nbsp;mm,
         with a minimum of <code>{min_batch_count}</code> passes per batch.
         Before each batch it writes the new acceleration to <code>$120</code>, then waits <code>{settle_ms}</code>&nbsp;ms for the controller to absorb the change.
-        Each move is issued at feedrate <code>{x_feed}</code>&nbsp;mm/min and the script waits up to <code>{idle_timeout}</code>&nbsp;ms for the machine to reach idle before continuing.
+        Each pass issues <strong>two</strong> movement commands (forward, then reverse), so a timed batch sends <code>batch_count * 2</code> movement commands total, with a guaranteed minimum of <code>{{min_batch_count * 2}}</code> commands.
+        Those commands are streamed with <code>SEND ... BUFFERED</code> and then a single <code>WAIT_IDLE</code> confirms that the final command has been accepted and the machine has actually returned to idle.
       </p>
       <p>
         The script keeps track of the best batch time seen so far for each distance and the acceleration that produced it.
@@ -485,12 +488,14 @@ REM VAR settle_ms=250
       </p>
       <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
 REM AUTHOR: GitHub Copilot
-REM VERSION: 1
-REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths.
+REM VERSION: 2
+REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths from {min_distance} mm up to {max_distance} mm.
+REM DESCRIPTION: Each timed batch streams batch_count * 2 movement commands, with a guaranteed minimum of {{min_batch_count * 2}} moves per acceleration test.
 REM DESCRIPTION: Uses BENCH markers so the app can time each batch and plot best observed acceleration by distance in the Preview window.
 REM VAR start_accel=400
 REM VAR accel_step=100
 REM VAR max_accel=4000
+REM VAR min_distance=1
 REM VAR max_distance=400
 REM VAR x_feed=30000
 REM VAR target_total_travel=80
@@ -502,7 +507,7 @@ REM VAR plateau_ms=20
 10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
 50 LET original_accel = SETTING("$120")
-60 LET current_distance = 1
+60 LET current_distance = {min_distance}
 70 LET final_best_accel = original_accel
 80 LET final_best_ms = 0
 90 SEND "G21" TIMEOUT 1000 REQUIRE_OK
@@ -545,15 +550,14 @@ REM VAR plateau_ms=20
 1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
 1020 PRINT "BENCH START distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
-1025 REM Batch loop: each iteration of FOR pass_index performs 2 moves (forward at 1040/1050, backward at 1060/1070)
+1025 REM Batch loop: each pass performs 2 buffered moves; WAIT_IDLE runs once after the whole batch.
 1030 FOR pass_index = 1 TO batch_count
-1040 SEND "G1 X" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
-1050 WAIT_IDLE {idle_timeout}
-1060 SEND "G1 X-" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1040 SEND "G1 X" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) BUFFERED
+1050 SEND "G1 X-" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) BUFFERED
+1060 NEXT pass_index
 1070 WAIT_IDLE {idle_timeout}
-1080 NEXT pass_index
-1090 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
-1100 RETURN
+1080 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1090 RETURN
 
 8000 PRINT "Test complete. Best $120 at longest distance: " &amp; STR(final_best_accel) &amp; " (original: " &amp; STR(original_accel) &amp; ")"
 8010 LET apply_accel = INPUT(FORM("Apply $120 setting? [Apply Best] [Keep Original] — or type a custom value:", final_best_accel, original_accel))
