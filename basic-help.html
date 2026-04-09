@@ -467,7 +467,7 @@ REM VAR settle_ms=250
         For each distance, the script calculates how many passes are needed so the total travel stays close to <code>{target_total_travel}</code>&nbsp;mm,
         with a minimum of <code>{min_batch_count}</code> passes per batch.
         Before each batch it writes the new acceleration to <code>$120</code>, then waits <code>{settle_ms}</code>&nbsp;ms for the controller to absorb the change.
-        Each pass issues <strong>two</strong> movement commands (forward, then reverse), so a timed batch sends <code>batch_count * 2</code> movement commands total, with a guaranteed minimum of <code>{{min_batch_count * 2}}</code> commands.
+        Each pass issues <strong>two</strong> movement commands (forward, then reverse), so a timed batch sends <code>{{batch_count * 2}}</code> movement commands total, with a guaranteed minimum of <code>{{min_batch_count * 2}}</code> commands.
         Those commands are streamed with <code>SEND ... BUFFERED</code> and then a single <code>WAIT_IDLE</code> confirms that the final command has been accepted and the machine has actually returned to idle.
       </p>
       <p>
