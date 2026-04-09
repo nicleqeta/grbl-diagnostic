@@ -149,23 +149,28 @@
         <li><code>READ("$30") INTO name</code> or <code>LET name = READ("$30")</code>: Read a GRBL setting from <code>$$</code>.</li>
         <li><code>SETTING("$30") INTO name</code> or <code>LET name = SETTING("$30")</code>: Alias for <code>READ</code>.</li>
         <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input via a text field.</li>
-        <li><code>LET name = INPUT(FORM("message [Label1] [Label2]", val1, val2))</code>: Show a button-choice dialog. Each <code>[Label]</code> in the message becomes a button; the matching <code>val</code> argument is the numeric value returned when that button is clicked. Use <code>\,</code> to include a literal comma inside the message text.</li>
+        <li><code>LET name = FORM("message [Label1] [Label2]", val1, val2)</code>: Show a button-choice dialog. Each <code>[Label]</code> in the message becomes a button; the matching <code>val</code> argument is the numeric value returned when that button is clicked. Use <code>\,</code> to include a literal comma inside the message text. Can also be written as <code>INPUT(FORM(...))</code>.</li>
       </ul>
       <h3>FORM() Button Dialog</h3>
       <p>
-        <code>FORM()</code> is used inside <code>INPUT()</code> to replace a free-text prompt with a set of clickable buttons.
-        The first argument is the message string with embedded <code>[Label]</code> markers — one per button.
-        The remaining comma-separated arguments are the numeric values each button returns, in the same left-to-right order as the labels.
+        <code>FORM()</code> shows a modal dialog with clickable buttons derived from <code>[Label]</code> tokens embedded in the message string.
+        The remaining comma-separated arguments are the numeric values each button returns, matched left-to-right with the labels.
         Use <code>\,</code> to embed a literal comma in the message without splitting the argument list.
       </p>
-      <pre><code>10 LET max = READ("$30")
-    20 LET speed = INPUT("Enter speed")
-30 LET pct = INT((speed / max) * 100)
-
-REM FORM() example — presents three buttons; stores the chosen value in "choice"
-10 LET choice = INPUT(FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0))
+      <p>Two forms are supported:</p>
+      <ul>
+        <li><strong><code>LET x = FORM(...)</code></strong> — buttons only, no text field. The user must click a button. Use this for clear-cut choices where only the predefined values make sense.</li>
+        <li><strong><code>LET x = INPUT(FORM(...))</code></strong> — same buttons <em>plus</em> a text field. Buttons act as shortcuts that immediately resolve the dialog; the user can also type a custom value and press Enter. Use this when a free-form value should be possible alongside the presets.</li>
+      </ul>
+      <pre><code>REM FORM() — buttons only (no text field)
+10 LET choice = FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0)
 20 IF choice = 0 THEN GOTO 9000
-30 PRINT "Mode selected: " & STR(choice)</code></pre>
+30 PRINT "Mode: " &amp; STR(choice)
+
+REM INPUT(FORM()) — text field shown; buttons are shortcuts
+10 PRINT "Current $120 = " &amp; STR(SETTING("$120"))
+20 LET new_accel = INPUT(FORM("Set $120? [Keep Current] [Double It] — or type a value:", SETTING("$120"), SETTING("$120") * 2))
+30 SEND "$120=" &amp; STR(new_accel) TIMEOUT 2000 REQUIRE_OK</code></pre>
     </section>
 
     <section class="card">
@@ -494,7 +499,7 @@ REM VAR settle_ms=200
 REM VAR idle_timeout=12000
 REM VAR plateau_ms=20
 
-10 LET proceed = INPUT(FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0))
+10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
 50 LET original_accel = SETTING("$120")
 60 LET current_distance = 1
@@ -550,18 +555,18 @@ REM VAR plateau_ms=20
 1090 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
 1100 RETURN
 
-8000 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
-8010 WAIT {settle_ms}
-8020 PRINT "Restored original $120 = " &amp; STR(original_accel)
-8030 PRINT "Last completed best distance=" &amp; STR(current_distance / 2)
-8040 PRINT "Last completed best accel=" &amp; STR(final_best_accel)
-8050 PRINT "Last completed best batch ms=" &amp; STR(ROUND(final_best_ms, 3))
-8060 RESULT "restored_x_accel", original_accel
-8070 RESULT "last_distance_mm", current_distance / 2
-8080 RESULT "last_best_accel", final_best_accel
-8090 RESULT "last_best_batch_ms", ROUND(final_best_ms, 3)
-8100 REPORT
-8110 END
+8000 PRINT "Test complete. Best $120 at longest distance: " &amp; STR(final_best_accel) &amp; " (original: " &amp; STR(original_accel) &amp; ")"
+8010 LET apply_accel = INPUT(FORM("Apply $120 setting? [Apply Best] [Keep Original] — or type a custom value:", final_best_accel, original_accel))
+8020 SEND "$120=" &amp; STR(apply_accel) TIMEOUT 2000 REQUIRE_OK
+8030 WAIT {settle_ms}
+8040 PRINT "Set $120 = " &amp; STR(apply_accel)
+8060 RESULT "applied_x_accel", apply_accel
+8070 RESULT "original_x_accel", original_accel
+8080 RESULT "last_distance_mm", current_distance / 2
+8090 RESULT "last_best_accel", final_best_accel
+8100 RESULT "last_best_batch_ms", ROUND(final_best_ms, 3)
+8110 REPORT
+8120 END
 
 9000 PRINT "Test cancelled."
 9010 END</code></pre>

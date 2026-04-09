@@ -2781,8 +2781,8 @@ function basicValidateScript(source, paramNames = []) {
 
     if (/^PAUSE$/i.test(statement)) return;
 
-    // LET x = INPUT(FORM(...)) — validate FORM args
-    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\(FORM\(/i);
+    // LET x = INPUT(FORM(...)) or LET x = FORM(...) — validate FORM args
+    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:INPUT\()?FORM\(/i);
     if (match) {
       const formStart = statement.toUpperCase().indexOf('FORM(') + 5;
       let fDepth = 0;
@@ -4033,24 +4033,90 @@ function basicFindInputExpressionCall(exprText) {
   return null;
 }
 
+// Resolve a FORM(...) inner content and show the button dialog.
+// allowTextInput: passed through to basicShowForm to show/hide the text field.
+// Returns the string value chosen (button or typed text).
+async function basicResolveFormCall(formInner, vars, allowTextInput = false) {
+  const formArgs = basicSplitFormArgs(formInner);
+  if (formArgs.length < 2) throw new Error('FORM() requires a message and at least one button value');
+  // Strip surrounding quotes from the message string literal
+  let displayMessage = formArgs[0].trim();
+  if (displayMessage.startsWith('"') && displayMessage.endsWith('"')) {
+    displayMessage = displayMessage.slice(1, -1);
+  }
+  const labelMatches = [...displayMessage.matchAll(/\[([^\]]+)\]/g)];
+  const valueExprs = formArgs.slice(1);
+  const buttons = [];
+  const pairCount = Math.min(labelMatches.length, valueExprs.length);
+  if (pairCount !== labelMatches.length || pairCount !== valueExprs.length) {
+    addLine(`Warning: FORM() has ${labelMatches.length} label(s) but ${valueExprs.length} value(s) — using ${pairCount} pair(s)`, 'sys');
+  }
+  for (let bi = 0; bi < pairCount; bi++) {
+    const val = Number(await basicEvalExprRuntime(valueExprs[bi].trim(), vars));
+    buttons.push({ label: labelMatches[bi][1], value: val });
+  }
+  return await basicShowForm(displayMessage, buttons, allowTextInput);
+}
+
+// Find a bare FORM(...) token in exprText (not preceded by INPUT().
+// Returns {start, end, innerExpr} or null.
+function basicFindFormExpressionCall(exprText) {
+  const text = String(exprText || '');
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (text.slice(i, i + 4).toUpperCase() !== 'FORM') continue;
+    const before = i === 0 ? '' : text[i - 1];
+    const after4 = i + 4 < text.length ? text[i + 4] : '';
+    if (/[A-Za-z0-9_]/.test(before)) continue; // part of another identifier
+
+    // Skip INPUT(FORM — already handled by INPUT path
+    const precedingToken = text.slice(0, i).trimEnd();
+    if (/INPUT\s*\(\s*$/i.test(precedingToken)) continue;
+
+    let openIndex = i + 4;
+    while (openIndex < text.length && /\s/.test(text[openIndex])) openIndex += 1;
+    if (text[openIndex] !== '(') continue;
+
+    let depth = 0;
+    let inArgStr = false;
+    for (let k = openIndex; k < text.length; k++) {
+      const c = text[k];
+      if (c === '"') { inArgStr = !inArgStr; continue; }
+      if (inArgStr) continue;
+      if (c === '(') depth += 1;
+      else if (c === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          return { start: i, end: k + 1, innerExpr: text.slice(openIndex + 1, k) };
+        }
+      }
+    }
+    throw new Error('Unclosed FORM(...) expression');
+  }
+  return null;
+}
+
 async function basicResolveInputCallsInExpression(expr, vars) {
   let rewritten = String(expr || '');
   let guard = 0;
   let tempIndex = 0;
+
+  // First pass: resolve INPUT(...) calls (which may contain FORM() inside)
   while (true) {
     const inputCall = basicFindInputExpressionCall(rewritten);
     if (!inputCall) break;
     guard += 1;
-    if (guard > 64) {
-      throw new Error('Too many nested INPUT(...) calls in expression');
-    }
+    if (guard > 64) throw new Error('Too many nested INPUT(...) calls in expression');
 
     const promptExpr = inputCall.argExpr.trim();
     let rawValue;
 
-    // FORM() variant: INPUT(FORM(message\, text [BTN1] [BTN2], val1, val2))
+    // FORM() variant: INPUT(FORM(message, [BTN1] [BTN2], val1, val2))
     if (/^FORM\s*\(/i.test(promptExpr)) {
-      // Extract the inner content of FORM(...)
       const formOpen = promptExpr.indexOf('(');
       let fDepth = 0;
       let formClose = -1;
@@ -4063,23 +4129,8 @@ async function basicResolveInputCallsInExpression(expr, vars) {
         else if (fc === ')') { fDepth -= 1; if (fDepth === 0) { formClose = fi; break; } }
       }
       if (formClose === -1) throw new Error('Unclosed FORM(...) in INPUT expression');
-      const formInner = promptExpr.slice(formOpen + 1, formClose);
-      const formArgs = basicSplitFormArgs(formInner);
-      if (formArgs.length < 2) throw new Error('FORM() requires a message and at least one button value');
-
-      const displayMessage = formArgs[0]; // \, already handled by basicSplitFormArgs
-      const labelMatches = [...displayMessage.matchAll(/\[([^\]]+)\]/g)];
-      const valueExprs = formArgs.slice(1);
-      const buttons = [];
-      const pairCount = Math.min(labelMatches.length, valueExprs.length);
-      if (pairCount !== labelMatches.length || pairCount !== valueExprs.length) {
-        addLine(`Warning: FORM() has ${labelMatches.length} label(s) but ${valueExprs.length} value(s) — using ${pairCount} pair(s)`, 'sys');
-      }
-      for (let bi = 0; bi < pairCount; bi++) {
-        const val = Number(await basicEvalExprRuntime(valueExprs[bi].trim(), vars));
-        buttons.push({ label: labelMatches[bi][1], value: val });
-      }
-      rawValue = await basicShowForm(displayMessage, buttons);
+      // INPUT(FORM(...)) — show text field so user can also type a free value
+      rawValue = await basicResolveFormCall(promptExpr.slice(formOpen + 1, formClose), vars, true);
     } else {
       const promptText = promptExpr
         ? String(await basicEvalExprRuntime(promptExpr, vars))
@@ -4087,9 +4138,7 @@ async function basicResolveInputCallsInExpression(expr, vars) {
       rawValue = await basicPromptInput(promptText);
     }
 
-    if (basicStopRequested) {
-      throw new Error('Script stopped during INPUT');
-    }
+    if (basicStopRequested) throw new Error('Script stopped during INPUT');
 
     const parsedNumber = parseFloat(rawValue);
     let replacement;
@@ -4100,9 +4149,31 @@ async function basicResolveInputCallsInExpression(expr, vars) {
       vars[basicNormalizeRuntimeVarName(tempName)] = String(rawValue);
       replacement = tempName;
     }
-
     rewritten = rewritten.slice(0, inputCall.start) + replacement + rewritten.slice(inputCall.end);
   }
+
+  // Second pass: resolve bare FORM(...) calls (without INPUT() wrapper)
+  while (true) {
+    const formCall = basicFindFormExpressionCall(rewritten);
+    if (!formCall) break;
+    guard += 1;
+    if (guard > 64) throw new Error('Too many nested FORM(...) calls in expression');
+
+    const rawValue = await basicResolveFormCall(formCall.innerExpr, vars);
+    if (basicStopRequested) throw new Error('Script stopped during FORM');
+
+    const parsedNumber = parseFloat(rawValue);
+    let replacement;
+    if (Number.isFinite(parsedNumber)) {
+      replacement = String(parsedNumber);
+    } else {
+      const tempName = `__FORM_TMP_${Date.now()}_${tempIndex++}`;
+      vars[basicNormalizeRuntimeVarName(tempName)] = String(rawValue);
+      replacement = tempName;
+    }
+    rewritten = rewritten.slice(0, formCall.start) + replacement + rewritten.slice(formCall.end);
+  }
+
   return rewritten;
 }
 
@@ -4232,9 +4303,12 @@ function basicSplitFormArgs(rawArgs) {
   return args;
 }
 
-// Show FORM modal — message with inline [LABEL] buttons + text field fallback.
+// Show FORM modal — message with inline [LABEL] buttons.
 // buttons = [{label: string, value: number}, ...]
-function basicShowForm(displayMessage, buttons) {
+// allowTextInput: when true (INPUT(FORM(...)) usage) also shows the text field so
+// the user can type a value directly; buttons act as shortcuts that fill + submit it.
+// When false (bare FORM(...) usage) the input row is hidden — buttons are the only input.
+function basicShowForm(displayMessage, buttons, allowTextInput = false) {
   return new Promise((resolve) => {
     // Build message DOM: split on [LABEL] tokens
     basicFormMessage.textContent = '';
@@ -4257,12 +4331,16 @@ function basicShowForm(displayMessage, buttons) {
       }
     });
 
+    const inputRow = basicFormInputField.closest('.basic-form-input-row');
+    if (inputRow) inputRow.style.display = allowTextInput ? '' : 'none';
+
     basicFormInputField.value = '';
     basicFormOverlay.style.display = 'flex';
     scrollTerminalToBottom(true);
-    basicFormInputField.focus();
+    if (allowTextInput) basicFormInputField.focus();
     basicFormResolver = (val) => {
       basicFormOverlay.style.display = 'none';
+      if (inputRow) inputRow.style.display = '';
       scrollTerminalToBottom(true);
       basicFormResolver = null;
       resolve(val);
@@ -5642,10 +5720,11 @@ async function runBasicScript(source) {
         break;
       }
 
-      // INPUT
-      if (/^(LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt)) {
+      // INPUT / FORM
+      if (/^(LET\s+)?\w+\s*=\s*INPUT\(/i.test(stmt) || /^INPUT\s+/i.test(stmt) || /^(LET\s+)?\w+\s*=\s*FORM\s*\(/i.test(stmt)) {
         const inputLetM = stmt.match(/^(?:LET\s+)?(\w+)\s*=\s*INPUT\("([^"]*)"\)/i);
-        const inputShortM = stmt.match(/^INPUT\s+(\w+)(?:\s*,\s*(.+))?$/i);
+        const inputFormM = !inputLetM && stmt.match(/^(?:LET\s+)?(\w+)\s*=\s*((?:INPUT\(FORM|FORM)\s*\([\s\S]*)/i);
+        const inputShortM = !inputLetM && !inputFormM && stmt.match(/^INPUT\s+(\w+)(?:\s*,\s*(.+))?$/i);
         if (inputLetM) {
           const varName = inputLetM[1];
           const promptText = inputLetM[2];
@@ -5658,6 +5737,17 @@ async function runBasicScript(source) {
           const normalizedVarName = basicNormalizeRuntimeVarName(varName);
           basicVars[normalizedVarName] = Number.isFinite(numVal) ? numVal : val;
           addLine(`INPUT: ${varName} = ${basicVars[normalizedVarName]}`, 'basic');
+        } else if (inputFormM) {
+          const varName = inputFormM[1];
+          const result = await basicEvalExprRuntime(inputFormM[2], basicVars);
+          if (basicStopRequested) {
+            stopScript();
+            break;
+          }
+          const numVal = parseFloat(result);
+          const normalizedVarName = basicNormalizeRuntimeVarName(varName);
+          basicVars[normalizedVarName] = Number.isFinite(numVal) ? numVal : result;
+          addLine(`FORM: ${varName} = ${basicVars[normalizedVarName]}`, 'basic');
         } else if (inputShortM) {
           const varName = inputShortM[1];
           const promptExpr = inputShortM[2];
