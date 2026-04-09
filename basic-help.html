@@ -211,6 +211,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>PAUSE</code>: Pause script until resumed.</li>
         <li><code>RESULT name, expr</code>: Save a named result value.</li>
         <li><code>REPORT</code>: Print all saved results.</li>
+        <li><code>stmtA : stmtB</code>: Statement chaining on one numbered line. Execution is left-to-right; colons inside quoted strings are ignored.</li>
       </ul>
       <pre><code>10 LET speed = 1200
     20 PRINT "Starting run"
