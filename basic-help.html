@@ -148,11 +148,24 @@
         <li><code>LET name = expr</code>: Assign expression result to a variable.</li>
         <li><code>READ("$30") INTO name</code> or <code>LET name = READ("$30")</code>: Read a GRBL setting from <code>$$</code>.</li>
         <li><code>SETTING("$30") INTO name</code> or <code>LET name = SETTING("$30")</code>: Alias for <code>READ</code>.</li>
-        <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input.</li>
+        <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input via a text field.</li>
+        <li><code>LET name = INPUT(FORM("message [Label1] [Label2]", val1, val2))</code>: Show a button-choice dialog. Each <code>[Label]</code> in the message becomes a button; the matching <code>val</code> argument is the numeric value returned when that button is clicked. Use <code>\,</code> to include a literal comma inside the message text.</li>
       </ul>
+      <h3>FORM() Button Dialog</h3>
+      <p>
+        <code>FORM()</code> is used inside <code>INPUT()</code> to replace a free-text prompt with a set of clickable buttons.
+        The first argument is the message string with embedded <code>[Label]</code> markers — one per button.
+        The remaining comma-separated arguments are the numeric values each button returns, in the same left-to-right order as the labels.
+        Use <code>\,</code> to embed a literal comma in the message without splitting the argument list.
+      </p>
       <pre><code>10 LET max = READ("$30")
     20 LET speed = INPUT("Enter speed")
-30 LET pct = INT((speed / max) * 100)</code></pre>
+30 LET pct = INT((speed / max) * 100)
+
+REM FORM() example — presents three buttons; stores the chosen value in "choice"
+10 LET choice = INPUT(FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0))
+20 IF choice = 0 THEN GOTO 9000
+30 PRINT "Mode selected: " & STR(choice)</code></pre>
     </section>
 
     <section class="card">
@@ -481,10 +494,8 @@ REM VAR settle_ms=200
 REM VAR idle_timeout=12000
 REM VAR plateau_ms=20
 
-10 PRINT "Distance-scaled acceleration plateau map"
-20 PRINT "Clear the machine so X can move symmetrically around the current point."
-30 LET proceed = INPUT("Type 1 to begin, or 0 to cancel")
-40 IF proceed &lt;&gt; 1 THEN GOTO 9000
+10 LET proceed = INPUT(FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0))
+20 IF proceed &lt;&gt; 1 THEN GOTO 9000
 50 LET original_accel = SETTING("$120")
 60 LET current_distance = 1
 70 LET final_best_accel = original_accel
