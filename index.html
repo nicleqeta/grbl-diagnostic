@@ -1065,6 +1065,9 @@
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
   BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
+    CLOCK()          Current timestamp in milliseconds (performance.now()). Use with ELAPSED().
+    ELAPSED(t0)      Milliseconds elapsed since t0 (a value returned by CLOCK()).
+    FORMAT_MS(ms)    Format a millisecond value as a readable string: "456 ms" or "1.23 s".
   INT(n)           Truncate to integer
   TRUNC(n)         Truncate to integer (alias of INT)
   ABS(n)           Absolute value
@@ -2511,9 +2514,12 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bGCODE_PARAM\s*\(/gi, '__gcode_param__(')
     .replace(/\bBENCH_LAST_MS\s*\(/gi, '__bench_last_ms__(')
     .replace(/\bRAD\s*\(/gi, '__rad__(')
+      .replace(/\bCLOCK\s*\(/gi, '__clock__(')
+      .replace(/\bELAPSED\s*\(/gi, '__elapsed__(')
+      .replace(/\bFORMAT_MS\s*\(/gi, '__format_ms__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bench_last_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -2523,7 +2529,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bench_last_ms__ = () => 0; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -3998,6 +4004,24 @@ function basicEvalExpr(expr, vars) {
         expect('OP', '(');
         expect('OP', ')');
         return getLastBasicBenchmarkMs();
+      }
+      if (name === 'CLOCK' && hasCallSyntax()) {
+        expect('OP', '(');
+        expect('OP', ')');
+        return performance.now();
+      }
+      if (name === 'ELAPSED' && hasCallSyntax()) {
+        expect('OP', '(');
+        const t0 = await parseExpr();
+        expect('OP', ')');
+        return Math.max(0, performance.now() - Number(t0));
+      }
+      if (name === 'FORMAT_MS' && hasCallSyntax()) {
+        expect('OP', '(');
+        const ms = await parseExpr();
+        expect('OP', ')');
+        const n = Math.max(0, Number(ms));
+        return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms';
       }
       if (name === 'PI') {
         return Math.PI;
