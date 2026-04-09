@@ -3635,7 +3635,14 @@ function basicSplitStatementChain(statement) {
   const segments = [];
   let inStr = false;
   let start = 0;
+  const updateRemMode = () => {
+    let probe = start;
+    while (probe < source.length && /\s/.test(source[probe])) probe += 1;
+    return /^REM(?:\s|$)/i.test(source.slice(probe));
+  };
+  let remMode = updateRemMode();
   for (let i = 0; i < source.length; i++) {
+    if (!inStr && remMode) break;
     const ch = source[i];
     if (ch === '"') {
       inStr = !inStr;
@@ -3645,6 +3652,7 @@ function basicSplitStatementChain(statement) {
       const part = source.slice(start, i).trim();
       if (part) segments.push(part);
       start = i + 1;
+      remMode = updateRemMode();
     }
   }
   const tail = source.slice(start).trim();
