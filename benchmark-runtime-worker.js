@@ -59,13 +59,45 @@ function createBenchmarkCapture(title = 'BASIC Benchmark') {
 
 function parseBenchmarkFields(text) {
   const fields = {};
-  const pattern = /([A-Za-z_]+)=("(?:[^"\\]|\\.)*"|[^\s]+)/g;
-  let match = null;
-  while ((match = pattern.exec(String(text || '')))) {
-    const rawKey = String(match[1] || '').trim().toLowerCase();
-    let rawValue = String(match[2] || '').trim();
-    if (!rawKey) continue;
-    if (rawValue.startsWith('"') && rawValue.endsWith('"')) rawValue = rawValue.slice(1, -1);
+  const source = String(text || '');
+  const nextKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*\s*=/;
+  let index = 0;
+  while (index < source.length) {
+    while (index < source.length && /\s/.test(source[index])) index++;
+    if (index >= source.length) break;
+
+    const keyStart = index;
+    while (index < source.length && /[A-Za-z0-9_]/.test(source[index])) index++;
+    const rawKey = source.slice(keyStart, index).trim().toLowerCase();
+    if (!rawKey || index >= source.length || source[index] !== '=') {
+      index++;
+      continue;
+    }
+    index++; // skip '='
+
+    let rawValue = '';
+    if (source[index] === '"') {
+      index++; // skip opening quote
+      const valueStart = index;
+      while (index < source.length) {
+        if (source[index] === '"' && source[index - 1] !== '\\') break;
+        index++;
+      }
+      rawValue = source.slice(valueStart, index);
+      if (index < source.length && source[index] === '"') index++;
+    } else {
+      const valueStart = index;
+      while (index < source.length) {
+        if (/\s/.test(source[index])) {
+          let lookahead = index;
+          while (lookahead < source.length && /\s/.test(source[lookahead])) lookahead++;
+          if (nextKeyPattern.test(source.slice(lookahead))) break;
+        }
+        index++;
+      }
+      rawValue = source.slice(valueStart, index).trim();
+    }
+
     const numericValue = Number(rawValue);
     fields[rawKey] = Number.isFinite(numericValue) ? numericValue : rawValue;
   }
