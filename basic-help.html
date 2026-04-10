@@ -188,6 +188,8 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>SENDACK expr</code> or <code>SENDACK expr timeoutMs</code>: Shorthand for <code>SEND expr TIMEOUT timeoutMs REQUIRE_OK</code> — send and wait for ack (default timeout 12 s).</li>
         <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
       </ul>
+      <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
+      <p>Rule of thumb for sender mode selection: serial buffer below ~512 bytes usually benefits from buffered sends; serial buffer above ~512 bytes is often as fast or faster with ACK-gated sends (<code>SENDACK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
       <pre><code>10 LET speed = 900
     20 SEND "M3 S" & STR(speed) TIMEOUT 1200 REQUIRE_OK
     30 STATUS
@@ -244,24 +246,31 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
       <ul>
         <li><code>SET SEND_DELAY expr</code>: Pause in ms appended after each <code>SEND</code> (default&nbsp;100). Set to <code>0</code> to remove all inter-command delays — useful for benchmarks or when <code>WAIT_FOR_LINE</code> already manages pacing.</li>
         <li><code>SET ACK_TIMEOUT expr</code>: Default acknowledgement wait in ms (default&nbsp;12000). Affects bare <code>SEND</code> without an explicit <code>TIMEOUT</code>, and <code>WAIT_FOR_LINE</code>&nbsp;/&nbsp;<code>READ_LINE</code> without an explicit timeout argument.</li>
-        <li><code>SET RX_BUFFER expr</code>: Fallback RX buffer byte limit when no <code>Bf:</code> report has been observed (default&nbsp;64). Controls the <code>SEND &hellip; BUFFERED</code> window.</li>
+        <li><code>SET RX_BUFFER expr</code>: Fallback RX buffer byte limit when no <code>Bf:</code> report has been observed (default&nbsp;64). Controls the <code>SEND &hellip; BUFFERED</code> window. Once a real <code>Bf:</code> serial value is observed, runtime capacity estimates use observed values instead of this fallback.</li>
+        <li><code>SET SEND_MODE expr</code>: Select buffered-intent routing policy: <code>BUFFERED</code> (always buffered), <code>SENDACK</code> (route buffered-intent sends to ack-gated behavior), or <code>AUTO</code> (use ACK-gated when observed serial buffer is at least 512 bytes, otherwise buffered). If no serial <code>Bf:</code> has been observed yet, <code>AUTO</code> stays conservative and uses buffered mode.</li>
         <li><code>SET BANNER_TIMEOUT expr</code>: Milliseconds to wait for a startup banner after <code>CONNECT</code> (default&nbsp;3000).</li>
         <li><code>SET READY_SETTLE expr</code>: Post-connect idle settle time in ms (default&nbsp;150).</li>
         <li><code>SET SEQUENCE_DELAY expr</code>: Inter-command spacing in ms during startup sequences (default&nbsp;450).</li>
         <li><code>SET STATUS_DELAY expr</code>: Delay in ms between status polls (default&nbsp;600).</li>
         <li><code>RESET_SETTINGS</code>: Restore all runtime settings to their defaults mid-script.</li>
       </ul>
+      <p><strong>Why <code>SEND_MODE AUTO</code> exists:</strong> controller families differ a lot in serial buffering. Small-buffer controllers usually gain throughput from host-side buffered streaming, while large-buffer controllers often acknowledge so quickly that strict ACK-gated sends are equal or faster. <code>AUTO</code> keeps one script portable by choosing behavior from observed <code>Bf:</code> serial capacity instead of forcing authors to hardcode per-firmware send strategy.</p>
       <pre><code>REM Zero all delays for a fast benchmark run
 10 SET SEND_DELAY 0
 20 SET ACK_TIMEOUT 30000
-30 SET RX_BUFFER 128
-40 FOR i = 1 TO 100
-50 SEND "G0 X" &amp; STR(i) BUFFERED
-60 NEXT i
-70 WAIT_IDLE 30000
-80 RESET_SETTINGS
-90 PRINT "Done &mdash; settings restored to defaults"
-100 END</code></pre>
+30 STATUS
+40 LET serial_cap = BF_SERIAL()
+50 LET planner_cap = BF_PLANNER()
+60 PRINT "Serial buffer: " &amp; STR(serial_cap) &amp; " bytes"
+70 PRINT "Planner slots: " &amp; STR(planner_cap)
+80 SET SEND_MODE AUTO
+90 FOR i = 1 TO 100
+100 SEND "G0 X" &amp; STR(i) BUFFERED
+110 NEXT i
+120 WAIT_IDLE 30000
+130 RESET_SETTINGS
+140 PRINT "Done &mdash; settings restored to defaults"
+150 END</code></pre>
     </section>
 
     <section class="card">
@@ -334,6 +343,8 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>DEG(radValue)</code>: Convert radians to degrees.</li>
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
         <li><code>GCODE_PARAM(key[, fallback])</code>: Read cached CNC-style parameters such as <code>#100</code> or <code>#&lt;_x&gt;</code> with optional default fallback.</li>
+        <li><code>BF_SERIAL()</code>: Estimated serial RX capacity in bytes. Uses observed <code>Bf:</code> serial values; if none have been observed yet, returns the current <code>SET RX_BUFFER</code> fallback.</li>
+        <li><code>BF_PLANNER()</code>: Estimated planner capacity in slots from observed <code>Bf:</code> planner values. Returns <code>-1</code> when planner data is unavailable.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
         <li><code>BENCH_LAST_MS()</code>: Wall-clock duration of the most recently completed <code>BENCH START</code>&nbsp;&hellip;&nbsp;<code>BENCH END</code> pair, in milliseconds. See <em>Section&nbsp;9: Benchmark Markers</em> for the full marker protocol including <code>BENCH META</code> chart configuration.</li>
         <li><code>CLOCK()</code>: Current timestamp in milliseconds (<code>performance.now()</code>). Store the result in a variable to use as a lap-timer start point.</li>

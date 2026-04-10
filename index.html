@@ -1063,6 +1063,8 @@
   SETTING(n)       Read GRBL setting $n (returns numeric value)
   GCODE_PARAM(k)   Read cached CNC-style parameter (#100, "100", "_x", "#<_x>")
   GCODE_PARAM(k,d) Read cached param with fallback default d
+  BF_SERIAL()      Estimated serial RX capacity in bytes (from observed Bf serial field, fallback RX_BUFFER)
+  BF_PLANNER()     Estimated planner capacity in slots (from observed Bf planner field, or -1 when unknown)
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
   BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
@@ -1133,7 +1135,8 @@
   ------------
   Scripts can be previewed without a connected machine.
   The preview engine dry-runs the script synchronously:
-    - INPUT(), READ(), SETTING(), GCODE_PARAM(), STATE(), BENCH_LAST_MS(), CLOCK(), ELAPSED() calls return 0 (noted in preview log)
+    - INPUT(), READ(), SETTING(), GCODE_PARAM(), BF_SERIAL(), STATE(), BENCH_LAST_MS(), CLOCK(), ELAPSED() calls return 0 (noted in preview log)
+    - BF_PLANNER() is previewed as a non-live value; at runtime it returns -1 when planner capacity is unknown
     - FORMAT_MS() returns "0 ms" in preview expression validation contexts
     - SEND commands are displayed as motion command events
     - PRINT commands are shown in the preview timeline
@@ -1793,7 +1796,9 @@ const BASIC_TIMEOUT_MS      = 36_000_000; // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
 const BASIC_BUFFERED_RX_BYTES = 64; // fallback when Bf: has not been observed
+const BASIC_SEND_MODE_AUTO_THRESHOLD = 512;
 let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf: reports
+let grblObservedPlannerSlots = 0; // largest planner-available slots seen in Bf: reports
 
 // Scriptable runtime settings — scripts can change these with SET; they reset after each run.
 // Defaults reproduce historical hardcoded values so existing scripts are unaffected.
@@ -1801,6 +1806,7 @@ const _BASIC_SCRIPT_SETTING_DEFAULTS = Object.freeze({
   sendDelay:      100,                            // ms pause after each SEND  (SET SEND_DELAY)
   ackTimeout:     BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS, // SET ACK_TIMEOUT
   rxBuffer:       BASIC_BUFFERED_RX_BYTES,        // SET RX_BUFFER
+  sendMode:       'BUFFERED',                     // SET SEND_MODE (BUFFERED | SENDACK | AUTO)
   bannerTimeout:  3000,                           // SET BANNER_TIMEOUT — used by CONNECT
   readySettle:    150,                            // SET READY_SETTLE
   sequenceDelay:  450,                            // SET SEQUENCE_DELAY
@@ -1821,6 +1827,29 @@ function resetBasicBufferedStream() {
     pendingBytes: [],
     lastError: null
   };
+}
+
+function basicNormalizeSendMode(value) {
+  const mode = String(value == null ? '' : value).trim().replace(/^['"]|['"]$/g, '').toUpperCase();
+  return ['BUFFERED', 'SENDACK', 'AUTO'].includes(mode) ? mode : null;
+}
+
+function basicGetSerialBufferCapacityEstimate() {
+  return Number(grblObservedRxBufBytes || basicScriptSettings.rxBuffer || BASIC_BUFFERED_RX_BYTES);
+}
+
+function basicGetPlannerBufferCapacityEstimate() {
+  return grblObservedPlannerSlots > 0 ? Number(grblObservedPlannerSlots) : -1;
+}
+
+function basicResolveBufferedIntentMode() {
+  const selected = basicNormalizeSendMode(basicScriptSettings.sendMode) || 'BUFFERED';
+  if (selected === 'AUTO') {
+    // AUTO uses observed Bf serial capacity only; if unavailable, keep conservative buffered behavior.
+    if (grblObservedRxBufBytes >= BASIC_SEND_MODE_AUTO_THRESHOLD) return 'SENDACK';
+    return 'BUFFERED';
+  }
+  return selected;
 }
 
 function handleBasicBufferedResponseLine(line) {
@@ -2679,6 +2708,8 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bMAX\s*\(/gi, '__max__(')
     .replace(/\bMOD\s*\(/gi, '__mod__(')
     .replace(/\bGCODE_PARAM\s*\(/gi, '__gcode_param__(')
+    .replace(/\bBF_SERIAL\s*\(/gi, '__bf_serial__(')
+    .replace(/\bBF_PLANNER\s*\(/gi, '__bf_planner__(')
     .replace(/\bBENCH_LAST_MS\s*\(/gi, '__bench_last_ms__(')
     .replace(/\bRAD\s*\(/gi, '__rad__(')
     .replace(/\bCLOCK\s*\(/gi, '__clock__(')
@@ -2686,7 +2717,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bFORMAT_MS\s*\(/gi, '__format_ms__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bf_serial__', '__bf_planner__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -2696,7 +2727,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bf_serial__ = () => 0; const __bf_planner__ = () => -1; const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -4223,6 +4254,16 @@ function basicEvalExpr(expr, vars) {
         expect('OP', ')');
         return basicGetGcodeParam(keyExpr, fallback);
       }
+      if (name === 'BF_SERIAL' && hasCallSyntax()) {
+        expect('OP', '(');
+        expect('OP', ')');
+        return basicGetSerialBufferCapacityEstimate();
+      }
+      if (name === 'BF_PLANNER' && hasCallSyntax()) {
+        expect('OP', '(');
+        expect('OP', ')');
+        return basicGetPlannerBufferCapacityEstimate();
+      }
       if (name === 'BENCH_LAST_MS' && hasCallSyntax()) {
         expect('OP', '(');
         expect('OP', ')');
@@ -4901,7 +4942,7 @@ async function basicWaitForBufferedCapacity(bytes, timeoutMs = null) {
     if (!port) throw new Error('Serial connection lost while waiting for buffered send capacity');
 
     const inFlight = Number(basicBufferedStreamState.inFlightBytes || 0);
-    const rxBufLimit = grblObservedRxBufBytes || basicScriptSettings.rxBuffer;
+    const rxBufLimit = basicGetSerialBufferCapacityEstimate();
     if (inFlight === 0 || inFlight + bytes <= rxBufLimit) return true;
 
     if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
@@ -6012,8 +6053,14 @@ async function runBasicScript(source) {
       if (/^SENDBUFF\s+/i.test(stmt)) {
         const expr = stmt.replace(/^SENDBUFF\s+/i, '').trim();
         const cmdStr = String(await basicEvalExprRuntime(expr, basicVars)).trim();
-        addLine(`SEND: ${cmdStr} [buffered]`, 'basic');
-        await basicSendBufferedCommand(cmdStr, {});
+        const effectiveMode = basicResolveBufferedIntentMode();
+        addLine(`SEND: ${cmdStr}${effectiveMode === 'BUFFERED' ? ' [buffered]' : ' [sendack]'}`, 'basic');
+        if (effectiveMode === 'BUFFERED') {
+          await basicSendBufferedCommand(cmdStr, {});
+        } else {
+          await basicWaitForBufferedDrain(basicScriptSettings.ackTimeout);
+          await basicSendScriptCommand(cmdStr, { timeoutMs: basicScriptSettings.ackTimeout, requireOk: true });
+        }
         if (basicScriptSettings.sendDelay > 0) {
           if (!(await basicDelayWithControl(basicScriptSettings.sendDelay))) {
             stopScript();
@@ -6051,10 +6098,16 @@ async function runBasicScript(source) {
         const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
         const cmdStr = String(await basicEvalExprRuntime(sendSpec.expression, basicVars)).trim();
         const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(await basicEvalExprRuntime(sendSpec.timeoutExpr, basicVars)));
-        addLine(sendSpec.buffered ? `SEND: ${cmdStr} [buffered]` : `SEND: ${cmdStr}`, 'basic');
+        const effectiveMode = sendSpec.buffered ? basicResolveBufferedIntentMode() : 'SENDACK';
+        addLine(sendSpec.buffered ? `SEND: ${cmdStr}${effectiveMode === 'BUFFERED' ? ' [buffered]' : ' [sendack]'}` : `SEND: ${cmdStr}`, 'basic');
         if (sendSpec.buffered) {
           if (sendSpec.requireOk) throw new Error('BUFFERED SEND cannot be combined with REQUIRE_OK');
-          await basicSendBufferedCommand(cmdStr, { timeoutMs });
+          if (effectiveMode === 'BUFFERED') {
+            await basicSendBufferedCommand(cmdStr, { timeoutMs });
+          } else {
+            await basicWaitForBufferedDrain(timeoutMs);
+            await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: true });
+          }
         } else {
           await basicWaitForBufferedDrain(timeoutMs);
           await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
@@ -6405,11 +6458,12 @@ async function runBasicScript(source) {
         const setM = stmt.match(/^SET\s+(\w+)\s+([\s\S]+)$/i);
         if (setM) {
           const key = setM[1].toUpperCase();
-          const val = Number(await basicEvalExprRuntime(setM[2].trim(), basicVars));
+          const rawExpr = setM[2].trim();
           const keyMap = {
             SEND_DELAY:     'sendDelay',
             ACK_TIMEOUT:    'ackTimeout',
             RX_BUFFER:      'rxBuffer',
+            SEND_MODE:      'sendMode',
             BANNER_TIMEOUT: 'bannerTimeout',
             READY_SETTLE:   'readySettle',
             SEQUENCE_DELAY: 'sequenceDelay',
@@ -6417,8 +6471,24 @@ async function runBasicScript(source) {
           };
           const prop = keyMap[key];
           if (prop) {
-            basicScriptSettings[prop] = Math.max(0, Math.round(val));
-            addLine(`SET ${key} = ${basicScriptSettings[prop]}`, 'basic');
+            if (prop === 'sendMode') {
+              let sendMode = basicNormalizeSendMode(rawExpr);
+              if (!sendMode) {
+                const evaluated = await basicEvalExprRuntime(rawExpr, basicVars);
+                sendMode = basicNormalizeSendMode(evaluated);
+              }
+              if (!sendMode) {
+                addLine(`Line ${lineNum}: SET SEND_MODE must be BUFFERED, SENDACK, or AUTO`, 'err');
+                stopScript();
+                break;
+              }
+              basicScriptSettings.sendMode = sendMode;
+              addLine(`SET SEND_MODE = ${basicScriptSettings.sendMode}`, 'basic');
+            } else {
+              const val = Number(await basicEvalExprRuntime(rawExpr, basicVars));
+              basicScriptSettings[prop] = Math.max(0, Math.round(val));
+              addLine(`SET ${key} = ${basicScriptSettings[prop]}`, 'basic');
+            }
           } else {
             addLine(`Line ${lineNum}: SET: unknown setting "${key}"`, 'err');
             stopScript();
@@ -7957,9 +8027,11 @@ function updateStatus(text) {
   if (text.includes('<Idle')) { setTransportState('connected'); setMachineState('idle'); }
   else if (text.includes('ALARM') || text.includes('Alarm') || text.includes('<Alarm')) { setTransportState('connected'); setMachineState('alarm'); }
   else if (text.includes('<Run') || text.includes('<Hold') || text.includes('<Jog') || text.includes('<Home')) { setTransportState('connected'); setMachineState('busy'); }
-  const bfMatch = text.match(/Bf:\d+,(\d+)/);
+  const bfMatch = text.match(/Bf:(\d+),(\d+)/i);
   if (bfMatch) {
-    const rxBytes = parseInt(bfMatch[1], 10);
+    const plannerSlots = parseInt(bfMatch[1], 10);
+    const rxBytes = parseInt(bfMatch[2], 10);
+    if (plannerSlots > grblObservedPlannerSlots) grblObservedPlannerSlots = plannerSlots;
     if (rxBytes > grblObservedRxBufBytes) grblObservedRxBufBytes = rxBytes;
   }
 }
