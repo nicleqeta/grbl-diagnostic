@@ -335,7 +335,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>RND(max)</code>: Random integer from 1 to max.</li>
         <li><code>GCODE_PARAM(key[, fallback])</code>: Read cached CNC-style parameters such as <code>#100</code> or <code>#&lt;_x&gt;</code> with optional default fallback.</li>
         <li><code>STATE()</code> or <code>STATE</code>: Current machine state string.</li>
-        <li><code>BENCH_LAST_MS()</code>: Latest completed <code>BENCH START ...</code>/<code>BENCH END ...</code> batch duration captured by the app.</li>
+        <li><code>BENCH_LAST_MS()</code>: Wall-clock duration of the most recently completed <code>BENCH START</code>&nbsp;&hellip;&nbsp;<code>BENCH END</code> pair, in milliseconds. See <em>Section&nbsp;9: Benchmark Markers</em> for the full marker protocol including <code>BENCH META</code> chart configuration.</li>
         <li><code>CLOCK()</code>: Current timestamp in milliseconds (<code>performance.now()</code>). Store the result in a variable to use as a lap-timer start point.</li>
         <li><code>ELAPSED(t0)</code>: Milliseconds elapsed since <code>t0</code> (a value previously captured by <code>CLOCK()</code>). Returns a number so it can be used in further math.</li>
         <li><code>FORMAT_MS(ms)</code>: Format a millisecond number as a human-readable string — <code>"456 ms"</code> or <code>"1.23 s"</code>. Returns a string; use only inside <code>PRINT</code> or string concatenation.</li>
@@ -358,7 +358,56 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
     </section>
 
     <section class="card">
-      <h2>9. Import Header Format</h2>
+      <h2>9. Benchmark Markers</h2>
+      <p>
+        BENCH markers let a script time arbitrary sections of work and stream live results to the Preview window's Benchmark chart.
+        All three directives are emitted as plain <code>PRINT</code> output — the app intercepts them during script execution.
+      </p>
+      <h3>BENCH META key=value &hellip;</h3>
+      <p>
+        Sets chart metadata for the current run. Send this once before the first <code>BENCH START</code> to configure how the Preview chart is drawn.
+        Keys are case-insensitive. Available keys:
+      </p>
+      <ul>
+        <li><code>title=&hellip;</code> &mdash; chart title shown in the Preview banner.</li>
+        <li><code>subtitle=&hellip;</code> / <code>description=&hellip;</code> &mdash; secondary label text.</li>
+        <li><code>x=fieldName</code> or <code>xfield=fieldName</code> &mdash; which field from <code>BENCH START</code>/<code>END</code> to map on the X axis. Defaults to <code>sampleIndex</code> (1-based order of completed samples).</li>
+        <li><code>y=fieldName</code> or <code>yfield=fieldName</code> &mdash; which field to map on the Y axis. Defaults to <code>elapsedMs</code>.</li>
+        <li><code>series=fieldName</code> or <code>seriesfield=fieldName</code> &mdash; field whose value splits samples into named series (one chart line per distinct value). Omit for a single series.</li>
+        <li><code>xlabel=&hellip;</code> &mdash; X axis label shown on the chart.</li>
+        <li><code>ylabel=&hellip;</code> &mdash; Y axis label shown on the chart. Defaults to <code>Elapsed (ms)</code>.</li>
+        <li><code>chart=line</code> or <code>charthint=line</code> &mdash; chart rendering hint (currently only <code>line</code> is supported).</li>
+      </ul>
+      <h3>BENCH START key=value &hellip;</h3>
+      <p>
+        Opens a timed window. The key-value pairs can be any arbitrary fields; they are attached to the resulting sample record and can be referenced in <code>BENCH META</code> axis mappings.
+        The same set of keys is typically echoed in the matching <code>BENCH END</code> line.
+      </p>
+      <h3>BENCH END key=value &hellip;</h3>
+      <p>
+        Closes the timed window and records the sample. The app measures the wall-clock elapsed time as <code>elapsedMs</code>.
+        All key-value fields from both the START and END lines are merged into the sample record, alongside <code>elapsedMs</code>, <code>startedAtIso</code>, and <code>endedAtIso</code>.
+        The elapsed time is made available to the script via <code>BENCH_LAST_MS()</code>.
+        The completed record is streamed to the Preview window immediately.
+      </p>
+      <p>
+        The Preview Benchmark chart auto-scales to all recorded points and renders each series in a distinct colour.
+        The <strong>Copy JSON</strong> button in Preview exports the full record set with metadata in a self-describing format ready for downstream analysis or AI-assisted visualisation.
+      </p>
+      <pre><code>REM Chart: accel on X, elapsed ms on Y, one line per distance
+10 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Duration (ms) title=Accel vs Speed"
+20 LET accel = 400
+30 PRINT "BENCH START accel=" &amp; STR(accel) &amp; " distance=10"
+40 SEND "G1 X10 F5000" BUFFERED
+50 SEND "G1 X-10 F5000" BUFFERED
+60 WAIT_IDLE 8000
+70 PRINT "BENCH END accel=" &amp; STR(accel) &amp; " distance=10"
+80 LET ms = BENCH_LAST_MS()
+90 PRINT "Took " &amp; STR(ms) &amp; " ms"</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>10. Import Header Format</h2>
       <p>Plain-text BASIC imports can start with a short metadata header before the first numbered BASIC line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable BASIC.</p>
       <ul>
         <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
@@ -380,7 +429,7 @@ REM VAR coarse_step=50
     </section>
 
     <section class="card">
-      <h2>10. Authoring Rules In This App</h2>
+      <h2>11. Authoring Rules In This App</h2>
       <ul>
         <li><span class="warn">Validation:</span> save is blocked while syntax errors exist.</li>
         <li><span class="ok">Sharing:</span> saved scripts are loaded by <code>?script=...</code>.</li>
@@ -391,7 +440,7 @@ REM VAR coarse_step=50
     </section>
 
     <section class="card">
-      <h2>11. Example: X-Axis Acceleration Finder</h2>
+      <h2>12. Example: X-Axis Acceleration Finder</h2>
       <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
       <p>After reporting results, the script compares the original and suggested <code>$120</code> values and asks whether to apply the suggested value now or keep the original setting.</p>
       <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
@@ -520,7 +569,7 @@ REM VAR settle_ms=250
     </section>
 
     <section class="card">
-      <h2>12. Example: Distance-Scaled Acceleration Plateau Map</h2>
+      <h2>13. Example: Distance-Scaled Acceleration Plateau Map</h2>
       <p>
         This test answers the question: <em>at what acceleration does my machine stop getting faster for a given move distance?</em>
         It sweeps the X-axis acceleration setting (<code>$120</code>) upward from <code>{start_accel}</code> in steps of <code>{accel_step}</code> up to a ceiling of <code>{max_accel}</code>,
@@ -545,7 +594,8 @@ REM VAR settle_ms=250
         Timing is measured by wrapping each batch in <code>BENCH START&nbsp;…</code> / <code>BENCH END&nbsp;…</code> markers.
         The app captures the wall-clock duration and exposes it back to the script via <code>BENCH_LAST_MS()</code>.
         The Preview window opens automatically on the first marker and switches to <strong>Benchmark</strong> view,
-        where you can watch the best-acceleration-per-distance curve build in real time and copy the raw data as JSON for further analysis.
+        where you can watch the acceleration-vs-distance curve build in real time and copy the raw data as JSON for further analysis.
+        Each distance becomes its own series on the chart, with acceleration on the X axis and elapsed batch time on the Y axis.
       </p>
       <p>
         The default <code>{plateau_ms}</code> is deliberately conservative because host-side timing noise, USB latency, and controller-status polling can move a short batch by several milliseconds.
@@ -553,10 +603,10 @@ REM VAR settle_ms=250
       </p>
       <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
 REM AUTHOR: GitHub Copilot
-REM VERSION: 2
+REM VERSION: 3
 REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths from {min_distance} mm up to {max_distance} mm.
 REM DESCRIPTION: Each timed batch streams batch_count * 2 movement commands, with a guaranteed minimum of {{min_batch_count * 2}} moves per acceleration test.
-REM DESCRIPTION: Uses BENCH markers so the app can time each batch and plot best observed acceleration by distance in the Preview window.
+REM DESCRIPTION: Uses BENCH markers so the app can time each batch and chart batch duration vs acceleration per distance in the Preview window.
 REM VAR start_accel=400
 REM VAR accel_step=100
 REM VAR max_accel=4000
@@ -571,6 +621,7 @@ REM VAR plateau_ms=20
 
 10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
+30 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Batch Duration (ms) title=Distance-Scaled Acceleration Plateau"
 50 LET original_accel = SETTING("$120")
 60 LET current_distance = {min_distance}
 70 LET final_best_accel = original_accel
@@ -641,7 +692,7 @@ REM VAR plateau_ms=20
 9010 END</code></pre>
     </section>
     <section class="card">
-      <h2>13. Example: FluidNC Startup Flowchart</h2>
+      <h2>14. Example: FluidNC Startup Flowchart</h2>
       <p>This script implements the <a href="https://wiki.fluidnc.com/en/support/gcode_senders" target="_blank" rel="noopener">FluidNC sender startup flowchart</a>: open the port, send a status poll to wake the controller, wait for a banner (<code>Grbl&nbsp;&hellip;</code> or <code>FluidNC&nbsp;&hellip;</code>) or a live-state response (<code>&lt;Idle|&hellip;&gt;</code>), then read <code>$30</code> to confirm two-way comms. A graceful <code>DISCONNECT</code> handles the no-response case.</p>
       <p><code>SET SEND_DELAY 0</code> removes the default 100&nbsp;ms inter-command pause. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout, making the explicit delay redundant.</p>
       <pre><code>REM TITLE: FluidNC Startup Flowchart

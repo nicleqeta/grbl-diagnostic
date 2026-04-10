@@ -5,6 +5,45 @@ function runtimeDelay(ms) {
   return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
+const DEFAULT_BENCHMARK_META = {
+  chartHint: 'line',
+  xField: 'sampleIndex',
+  yField: 'elapsedMs',
+  seriesField: '',
+  xLabel: 'Sample',
+  yLabel: 'Elapsed (ms)',
+  title: '',
+  subtitle: '',
+  description: ''
+};
+
+function applyBenchmarkMeta(capture, fields) {
+  if (!capture || !fields) return;
+  const map = {
+    chart: 'chartHint',
+    charthint: 'chartHint',
+    x: 'xField',
+    xfield: 'xField',
+    y: 'yField',
+    yfield: 'yField',
+    series: 'seriesField',
+    seriesfield: 'seriesField',
+    xlabel: 'xLabel',
+    ylabel: 'yLabel',
+    title: 'title',
+    subtitle: 'subtitle',
+    description: 'description'
+  };
+  Object.entries(fields).forEach(([key, value]) => {
+    const mapped = map[String(key || '').toLowerCase()];
+    if (!mapped) return;
+    capture.meta[mapped] = value;
+    if (mapped === 'title' && String(value || '').trim()) {
+      capture.title = String(value).trim();
+    }
+  });
+}
+
 function createBenchmarkCapture(title = 'BASIC Benchmark') {
   return {
     version: 1,
@@ -13,7 +52,8 @@ function createBenchmarkCapture(title = 'BASIC Benchmark') {
     updatedAtIso: new Date().toISOString(),
     latestSample: null,
     samples: [],
-    activeMarkers: new Map()
+    activeMarkers: new Map(),
+    meta: { ...DEFAULT_BENCHMARK_META }
   };
 }
 
@@ -58,35 +98,54 @@ function buildBenchmarkMarkerKey(fields) {
   return entries.map(([key, value]) => `${key}=${String(value)}`).join('|');
 }
 
-function buildBenchmarkSummary(samples) {
-  const byDistance = new Map();
-  samples.forEach(sample => {
-    if (!Number.isFinite(sample.distance)) return;
-    const key = String(sample.distance);
-    let bucket = byDistance.get(key);
-    if (!bucket) {
-      bucket = {
-        distance: sample.distance,
-        sampleCount: 0,
-        bestAccel: sample.accel,
-        bestElapsedMs: sample.elapsedMs,
-        latestElapsedMs: sample.elapsedMs
-      };
-      byDistance.set(key, bucket);
-    }
-    bucket.sampleCount += 1;
-    bucket.latestElapsedMs = sample.elapsedMs;
-    if (sample.elapsedMs < bucket.bestElapsedMs || (Math.abs(sample.elapsedMs - bucket.bestElapsedMs) < 0.0001 && sample.accel > bucket.bestAccel)) {
-      bucket.bestElapsedMs = sample.elapsedMs;
-      bucket.bestAccel = sample.accel;
-    }
+function buildBenchmarkSeries(samples, meta) {
+  const groups = new Map();
+  const xField = String(meta?.xField || 'sampleIndex').toLowerCase();
+  const yField = String(meta?.yField || 'elapsedMs').toLowerCase();
+  const seriesField = String(meta?.seriesField || '').toLowerCase();
+
+  samples.forEach((sample, sampleIndex) => {
+    const fields = sample.fields || {};
+    const xRaw = xField === 'sampleindex' ? (sampleIndex + 1) : fields[xField];
+    const yRaw = yField === 'elapsedms' ? sample.elapsedMs : fields[yField];
+    const x = Number(xRaw);
+    const y = Number(yRaw);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    const seriesName = seriesField ? String(fields[seriesField] ?? 'default') : 'default';
+    if (!groups.has(seriesName)) groups.set(seriesName, []);
+    groups.get(seriesName).push({ x, y, sampleIndex, elapsedMs: sample.elapsedMs, fields });
   });
-  return Array.from(byDistance.values()).sort((left, right) => left.distance - right.distance);
+
+  return Array.from(groups.entries()).map(([name, points]) => ({
+    name,
+    points: points.sort((a, b) => (a.x - b.x) || (a.sampleIndex - b.sampleIndex))
+  }));
+}
+
+function buildBenchmarkSummary(series) {
+  return series.map(item => {
+    const ys = item.points.map(point => Number(point.y)).filter(Number.isFinite);
+    if (!ys.length) {
+      return { series: item.name, sampleCount: 0, minY: 0, maxY: 0, avgY: 0, latestY: 0 };
+    }
+    const sum = ys.reduce((acc, value) => acc + value, 0);
+    return {
+      series: item.name,
+      sampleCount: ys.length,
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+      avgY: sum / ys.length,
+      latestY: ys[ys.length - 1]
+    };
+  });
 }
 
 function buildCaptureSnapshot(capture) {
   if (!capture) return null;
-  const summary = buildBenchmarkSummary(capture.samples);
+  const meta = { ...DEFAULT_BENCHMARK_META, ...(capture.meta || {}) };
+  const series = buildBenchmarkSeries(capture.samples, meta);
+  const summary = buildBenchmarkSummary(series);
   const activeMarkers = capture.activeMarkers instanceof Map
     ? Array.from(capture.activeMarkers.entries()).map(([key, marker]) => ({
         key,
@@ -102,10 +161,13 @@ function buildCaptureSnapshot(capture) {
     updatedAtIso: capture.updatedAtIso,
     latestSample: capture.latestSample ? { ...capture.latestSample } : null,
     samples: capture.samples.map(sample => ({ ...sample })),
+    records: capture.samples.map(sample => ({ ...sample })),
+    meta,
+    series,
     summary,
     activeMarkers,
     sampleCount: capture.samples.length,
-    distanceCount: summary.length
+    seriesCount: series.length
   };
 }
 
@@ -164,6 +226,12 @@ function parseRuntimeStatusLine(text) {
 function recordBenchmarkMessage(message, perfMs, iso) {
   if (!benchmarkCapture) return false;
   const text = String(message || '').trim();
+  const metaMatch = text.match(/^BENCH\s+META\b\s*(.*)$/i);
+  if (metaMatch) {
+    applyBenchmarkMeta(benchmarkCapture, parseBenchmarkFields(metaMatch[1]));
+    benchmarkCapture.updatedAtIso = iso || new Date().toISOString();
+    return true;
+  }
   const markerMatch = text.match(/^BENCH\s+(START|END)\b\s*(.*)$/i);
   if (!markerMatch) return false;
 
@@ -190,14 +258,8 @@ function recordBenchmarkMessage(message, perfMs, iso) {
   benchmarkCapture.activeMarkers.delete(markerKey);
 
   const sample = {
-    distance: Number(fields.distance ?? activeMarker.fields.distance ?? activeMarker.fields.dist ?? activeMarker.fields.d),
-    accel: Number(fields.accel ?? activeMarker.fields.accel ?? activeMarker.fields.a),
-    method: String(fields.method ?? activeMarker.fields.method ?? '').trim(),
-    round: Number(fields.round ?? activeMarker.fields.round ?? 0),
-    cmds: Number(fields.cmds ?? fields.commands ?? activeMarker.fields.cmds ?? activeMarker.fields.commands ?? 0),
-    batch: Number(fields.batch ?? activeMarker.fields.batch ?? activeMarker.fields.passes ?? activeMarker.fields.p ?? 0),
-    repeat: Number(fields.repeat ?? activeMarker.fields.repeat ?? activeMarker.fields.r ?? 1),
-    feed: Number(fields.feed ?? activeMarker.fields.feed ?? 0),
+    markerKey,
+    fields: { ...activeMarker.fields, ...fields },
     elapsedMs: Math.max(0, nowPerfMs - activeMarker.startedPerfMs),
     startedAtIso: activeMarker.startedAtIso,
     endedAtIso: nowIso
