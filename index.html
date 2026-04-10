@@ -1782,6 +1782,20 @@ const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
 const BASIC_BUFFERED_RX_BYTES = 64; // fallback when Bf: has not been observed
 let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf: reports
 
+// Scriptable runtime settings — scripts can change these with SET; they reset after each run.
+// Defaults reproduce historical hardcoded values so existing scripts are unaffected.
+const _BASIC_SCRIPT_SETTING_DEFAULTS = Object.freeze({
+  sendDelay:      100,                            // ms pause after each SEND  (SET SEND_DELAY)
+  ackTimeout:     BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS, // SET ACK_TIMEOUT
+  rxBuffer:       BASIC_BUFFERED_RX_BYTES,        // SET RX_BUFFER
+  bannerTimeout:  3000,                           // SET BANNER_TIMEOUT — used by CONNECT
+  readySettle:    150,                            // SET READY_SETTLE
+  sequenceDelay:  450,                            // SET SEQUENCE_DELAY
+  statusDelay:    600,                            // SET STATUS_DELAY
+});
+let basicScriptSettings = { ..._BASIC_SCRIPT_SETTING_DEFAULTS };
+function resetBasicScriptSettings() { basicScriptSettings = { ..._BASIC_SCRIPT_SETTING_DEFAULTS }; }
+
 let basicBufferedStreamState = {
   inFlightBytes: 0,
   pendingBytes: [],
@@ -2963,6 +2977,14 @@ function basicValidateScript(source, paramNames = []) {
     if (/^END$/i.test(statement)) return;
 
    if (/^REM\b/i.test(statement)) return;
+
+    // Phase 1-3 script-settable runtime / connection statements
+    if (/^SET\s+\w+\b/i.test(statement)) return;
+    if (/^RESET_SETTINGS$/i.test(statement)) return;
+    if (/^CONNECT(?:\s|$)/i.test(statement)) return;
+    if (/^DISCONNECT$/i.test(statement)) return;
+    if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?WAIT_FOR_LINE\s*\(/i.test(statement)) return;
+    if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?READ_LINE\s*\(/i.test(statement)) return;
 
     errors.push(`Line ${lineNum}: unknown or unsupported statement`);
   });
@@ -4417,6 +4439,60 @@ async function basicReadGrbl(settingStr, modeLabel = 'READ') {
   });
 }
 
+// Wait for an incoming serial line matching pattern (regex or plain substring).
+// Returns the matched line string, or "" on timeout / script stop.
+async function basicWaitForLine(pattern, timeoutMs) {
+  const timeout = Math.max(0, Math.round(Number(timeoutMs) || 0));
+  if (incomingLineInterceptor) throw new Error('WAIT_FOR_LINE: another interceptor is already active');
+  let re;
+  try { re = new RegExp(String(pattern), 'i'); } catch { re = null; }
+  addLine(`WAIT_FOR_LINE ${JSON.stringify(String(pattern))} timeout=${timeout}ms`, 'basic');
+  return new Promise((resolve) => {
+    let done = false;
+    let tid = null;
+    const finish = (val) => {
+      if (done) return;
+      done = true;
+      clearTimeout(tid);
+      incomingLineInterceptor = null;
+      resolve(val);
+    };
+    incomingLineInterceptor = (line) => {
+      const hit = re ? re.test(line) : line.includes(String(pattern));
+      if (hit) finish(line);
+    };
+    if (timeout > 0) {
+      tid = setTimeout(() => {
+        if (!done) { addLine(`WAIT_FOR_LINE: timeout after ${timeout}ms`, 'basic'); finish(''); }
+      }, timeout);
+    }
+  });
+}
+
+// Return the next incoming serial line, regardless of content. Returns "" on timeout.
+async function basicReadLine(timeoutMs) {
+  const timeout = Math.max(0, Math.round(Number(timeoutMs) || 0));
+  if (incomingLineInterceptor) throw new Error('READ_LINE: another interceptor is already active');
+  addLine(`READ_LINE timeout=${timeout}ms`, 'basic');
+  return new Promise((resolve) => {
+    let done = false;
+    let tid = null;
+    const finish = (val) => {
+      if (done) return;
+      done = true;
+      clearTimeout(tid);
+      incomingLineInterceptor = null;
+      resolve(val);
+    };
+    incomingLineInterceptor = (line) => { finish(line); };
+    if (timeout > 0) {
+      tid = setTimeout(() => {
+        if (!done) { addLine(`READ_LINE: timeout after ${timeout}ms`, 'basic'); finish(''); }
+      }, timeout);
+    }
+  });
+}
+
 // Split FORM() inner args on unescaped commas (paren-depth and string aware).
 // Returns array of raw arg strings; the first arg may contain \, escape sequences.
 function basicSplitFormArgs(rawArgs) {
@@ -4584,12 +4660,13 @@ function updateBasicControlUi() {
   const hasScript = Boolean(basicScriptInput.value.trim());
   const hasTitle = Boolean(basicTitleInput.value.trim());
   const hasSyntaxErrors = basicValidationState.errors.length > 0;
+  const scriptAllowsSelfConnect = /^\s*\d+\s+CONNECT\b/im.test(basicScriptInput.value);
   basicSaveBtn.disabled = !hasTitle || !hasScript || basicRunning || hasSyntaxErrors;
   basicSaveBtn.title = hasSyntaxErrors ? 'Fix BASIC syntax errors before saving' : '';
   basicCopyShareBtn.disabled = !basicSourceId;
   basicCopyForumBtn.disabled = !basicSourceId;
   basicPreviewBtn.disabled = !hasScript || basicRunning || hasSyntaxErrors;
-  basicRunBtn.disabled = !port || !hasScript || basicRunning || gcodeRunning || hasSyntaxErrors;
+  basicRunBtn.disabled = (!port && !scriptAllowsSelfConnect) || !hasScript || basicRunning || gcodeRunning || hasSyntaxErrors;
   basicStopBtn.disabled = !basicRunning;
 }
 
@@ -4637,7 +4714,7 @@ async function basicSendRealtimeCommand(rawCommand, displayOverride = null) {
 
 async function basicSendScriptCommand(commandText, { timeoutMs = null, requireOk = false } = {}) {
   const normalizedTimeout = timeoutMs == null
-    ? BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS
+    ? basicScriptSettings.ackTimeout
     : Math.max(0, Math.round(Number(timeoutMs) || 0));
   const result = await executeSequenceCommand(commandText, {
     timeoutMs: normalizedTimeout,
@@ -4671,7 +4748,7 @@ async function basicWaitForBufferedCapacity(bytes, timeoutMs = null) {
     if (!port) throw new Error('Serial connection lost while waiting for buffered send capacity');
 
     const inFlight = Number(basicBufferedStreamState.inFlightBytes || 0);
-    const rxBufLimit = grblObservedRxBufBytes || BASIC_BUFFERED_RX_BYTES;
+    const rxBufLimit = grblObservedRxBufBytes || basicScriptSettings.rxBuffer;
     if (inFlight === 0 || inFlight + bytes <= rxBufLimit) return true;
 
     if (normalizedTimeout !== null && (Date.now() - startedAt) > normalizedTimeout) {
@@ -5656,8 +5733,8 @@ async function runBasicScript(source) {
     return;
   }
 
-  if (!port) {
-    addLine('No serial connection. Connect to your machine first.', 'err');
+  if (!port && !/^\s*\d+\s+CONNECT\b/im.test(scriptSource)) {
+    addLine('No serial connection. Connect to your machine first, or add a CONNECT statement to your script.', 'err');
     return;
   }
 
@@ -5761,7 +5838,7 @@ async function runBasicScript(source) {
       }
 
       // LET
-      if (/^LET\s+/i.test(stmt) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(stmt)) {
+      if (/^LET\s+/i.test(stmt) && !/^LET\s+\w+\s*=\s*INPUT\(/i.test(stmt) && !/^LET\s+\w+\s*=\s*(WAIT_FOR_LINE|READ_LINE)\s*\(/i.test(stmt)) {
         const body = stmt.replace(/^LET\s+/i, '');
         const eq = body.indexOf('=');
         if (eq !== -1) {
@@ -5786,9 +5863,11 @@ async function runBasicScript(source) {
           await basicWaitForBufferedDrain(timeoutMs);
           await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
         }
-        if (!(await basicDelayWithControl(100))) {
-          stopScript();
-          break;
+        if (basicScriptSettings.sendDelay > 0) {
+          if (!(await basicDelayWithControl(basicScriptSettings.sendDelay))) {
+            stopScript();
+            break;
+          }
         }
         pc++;
         continue;
@@ -6125,6 +6204,109 @@ async function runBasicScript(source) {
         break;
       }
 
+      // SET <key> <value-expr>
+      if (/^SET\s+\w+\b/i.test(stmt)) {
+        const setM = stmt.match(/^SET\s+(\w+)\s+([\s\S]+)$/i);
+        if (setM) {
+          const key = setM[1].toUpperCase();
+          const val = Number(await basicEvalExprRuntime(setM[2].trim(), basicVars));
+          const keyMap = {
+            SEND_DELAY:     'sendDelay',
+            ACK_TIMEOUT:    'ackTimeout',
+            RX_BUFFER:      'rxBuffer',
+            BANNER_TIMEOUT: 'bannerTimeout',
+            READY_SETTLE:   'readySettle',
+            SEQUENCE_DELAY: 'sequenceDelay',
+            STATUS_DELAY:   'statusDelay',
+          };
+          const prop = keyMap[key];
+          if (prop) {
+            basicScriptSettings[prop] = Math.max(0, Math.round(val));
+            addLine(`SET ${key} = ${basicScriptSettings[prop]}`, 'basic');
+          } else {
+            addLine(`Line ${lineNum}: SET: unknown setting "${key}"`, 'err');
+            stopScript();
+            break;
+          }
+        }
+        pc++;
+        continue;
+      }
+
+      // RESET_SETTINGS
+      if (/^RESET_SETTINGS$/i.test(stmt)) {
+        resetBasicScriptSettings();
+        addLine('RESET_SETTINGS: runtime settings restored to defaults', 'basic');
+        pc++;
+        continue;
+      }
+
+      // CONNECT [BAUD expr] [DTR expr] [WAIT expr] [OBSERVE]
+      if (/^CONNECT(?:\s|$)/i.test(stmt)) {
+        const connectParams = { baud: 115200, dtr: 'default', waitMs: 0, observe: false };
+        let tail = stmt.replace(/^CONNECT\s*/i, '').trim();
+        const baudM = tail.match(/BAUD\s+(\S+)/i);
+        if (baudM) {
+          connectParams.baud = Math.round(Number(await basicEvalExprRuntime(baudM[1], basicVars)));
+          tail = tail.replace(baudM[0], '').trim();
+        }
+        const dtrMParam = tail.match(/DTR\s+("(?:[^"\\]|\\.)*"|\S+)/i);
+        if (dtrMParam) {
+          connectParams.dtr = String(await basicEvalExprRuntime(dtrMParam[1], basicVars)).replace(/^["']|["']$/g, '');
+          tail = tail.replace(dtrMParam[0], '').trim();
+        }
+        const waitMParam = tail.match(/WAIT\s+(\S+)/i);
+        if (waitMParam) {
+          connectParams.waitMs = Math.round(Number(await basicEvalExprRuntime(waitMParam[1], basicVars)));
+          tail = tail.replace(waitMParam[0], '').trim();
+        }
+        if (/\bOBSERVE\b/i.test(tail)) connectParams.observe = true;
+        const ok = await basicDoConnect(connectParams);
+        if (!ok) { stopScript(); break; }
+        pc++;
+        continue;
+      }
+
+      // DISCONNECT
+      if (/^DISCONNECT$/i.test(stmt)) {
+        addLine('DISCONNECT', 'basic');
+        await disconnectPort('Script DISCONNECT');
+        pc++;
+        continue;
+      }
+
+      // LET x = WAIT_FOR_LINE(pattern, timeout) | WAIT_FOR_LINE(pattern, timeout) [INTO x]
+      if (/^(?:LET\s+\w+\s*=\s*)?WAIT_FOR_LINE\s*\(/i.test(stmt)) {
+        const letM = stmt.match(/^LET\s+(\w+)\s*=\s*WAIT_FOR_LINE\s*\(\s*([\s\S]+?)\s*\)\s*$/i);
+        const plainM = !letM && stmt.match(/^WAIT_FOR_LINE\s*\(\s*([\s\S]+?)\s*\)(?:\s+INTO\s+(\w+))?\s*$/i);
+        const varName = letM ? letM[1] : (plainM ? plainM[2] || null : null);
+        const argsStr = letM ? letM[2] : (plainM ? plainM[1] : null);
+        if (argsStr != null) {
+          const args = basicSplitFormArgs(argsStr);
+          const pattern = args[0] ? String(await basicEvalExprRuntime(args[0].trim(), basicVars)).replace(/^["']|["']$/g, '') : '';
+          const timeoutMs = args[1] ? Number(await basicEvalExprRuntime(args[1].trim(), basicVars)) : basicScriptSettings.ackTimeout;
+          const result = await basicWaitForLine(pattern, timeoutMs);
+          if (basicStopRequested) { stopScript(); break; }
+          if (varName) basicVars[basicNormalizeRuntimeVarName(varName)] = result;
+        }
+        pc++;
+        continue;
+      }
+
+      // LET x = READ_LINE(timeout) | READ_LINE(timeout) [INTO x]
+      if (/^(?:LET\s+\w+\s*=\s*)?READ_LINE\s*\(/i.test(stmt)) {
+        const letM = stmt.match(/^LET\s+(\w+)\s*=\s*READ_LINE\s*\(\s*([\s\S]*?)\s*\)\s*$/i);
+        const plainM = !letM && stmt.match(/^READ_LINE\s*\(\s*([\s\S]*?)\s*\)(?:\s+INTO\s+(\w+))?\s*$/i);
+        const varName = letM ? letM[1] : (plainM ? plainM[2] || null : null);
+        const timeoutStr = letM ? letM[2] : (plainM ? plainM[1] : null);
+        const timeoutMs = timeoutStr && timeoutStr.trim() ? Number(await basicEvalExprRuntime(timeoutStr.trim(), basicVars)) : basicScriptSettings.ackTimeout;
+        const result = await basicReadLine(timeoutMs);
+        if (basicStopRequested) { stopScript(); break; }
+        if (varName) basicVars[basicNormalizeRuntimeVarName(varName)] = result;
+        pc++;
+        continue;
+      }
+
       // Unknown statement - skip with warning
       addLine(`Line ${lineNum}: unknown statement: ${stmt}`, 'err');
       pc++;
@@ -6137,6 +6319,7 @@ async function runBasicScript(source) {
       addLine(`Script error: ${message}`, 'err');
     }
   } finally {
+    resetBasicScriptSettings();
     resetBasicBufferedStream();
     if (basicBenchmarkCapture) {
       if (!benchmarkRuntimeWorkerReady) basicBenchmarkCapture.activeMarkers.clear();
@@ -7675,6 +7858,75 @@ async function startReadLoop() {
     if (reader === activeReader) reader = null;
     try { activeReader.releaseLock(); } catch {}
     if (streamEnded && port && readLoopActive) { addLine('Serial stream ended', 'err'); markConnectionFault('Stream ended'); }
+  }
+}
+
+// Open a serial port from within a BASIC script. Called by the CONNECT statement.
+// Returns true on success, false if the user cancelled or an error occurred.
+async function basicDoConnect({ baud = 115200, dtr = 'default', waitMs = 0, observe = false } = {}) {
+  if (port) { addLine('CONNECT: already connected; use DISCONNECT first', 'err'); return false; }
+  const dtrNorm = normalizeDtrMode(dtr);
+  try {
+    addLine(`CONNECT: requesting port (baud=${baud}, dtr=${dtrNorm}, wait=${waitMs}ms, observe=${observe})`, 'basic');
+    setConnectionUi('connecting');
+    setTransportState('connecting');
+    setMachineState('unknown');
+    syncRuntimeWorkerConnectionState('connecting', 'unknown');
+    resetReadySignalState();
+    setStartupBanner(null);
+    port = await navigator.serial.requestPort();
+    const portInfo = typeof port.getInfo === 'function' ? port.getInfo() : null;
+    addLine(`CONNECT: port selected — ${formatPortInfo(portInfo)}`, 'basic');
+    await port.open({ baudRate: baud });
+    addLine(`CONNECT: port open at ${baud} baud`, 'basic');
+    await logControlSignals('CONNECT: signals after open', true);
+    dtrSupported = typeof port.setSignals === 'function';
+    currentRun = {
+      name: 'script', description: 'Script-driven connection', source: 'script',
+      baud, dtrMode: dtrNorm, observeOnly: observe,
+      showRequestResponseCorrelation: false,
+      waitMs, bannerTimeoutMs: basicScriptSettings.bannerTimeout,
+      sequenceDelayMs: basicScriptSettings.sequenceDelay,
+      statusDelayMs: basicScriptSettings.statusDelay,
+      commands: [], invalidCommands: [],
+      presetSummary: `Script connect at ${baud} baud`,
+      startupResolved: 'pending', startupReadyLine: null, startupBannerLine: null,
+      portInfo
+    };
+    grblObservedRxBufBytes = 0;
+    writer = port.writable.getWriter();
+    readLoopPromise = startReadLoop();
+    setConnectionUi('connected');
+    setTransportState('connected');
+    setMachineState('unknown');
+    syncRuntimeWorkerConnectionState('connected', 'unknown');
+    addLine(`CONNECT: connected at ${baud} baud`, 'sys');
+    if (dtrNorm !== 'default' && dtrSupported) {
+      addLine(`CONNECT: applying DTR mode "${dtrNorm}"`, 'basic');
+      await applyDtrMode(dtrNorm, 'CONNECT DTR');
+    } else if (dtrNorm !== 'default' && !dtrSupported) {
+      addLine('CONNECT: DTR control not supported by this port', 'basic');
+    }
+    if (waitMs > 0) {
+      addLine(`CONNECT: waiting ${waitMs} ms`, 'basic');
+      if (!(await basicDelayWithControl(waitMs))) return false;
+    }
+    return true;
+  } catch(e) {
+    if (e.name === 'NotSelectedError' || e.name === 'NotFoundError') {
+      setConnectionUi('disconnected'); setTransportState('disconnected'); setMachineState('unknown');
+      syncRuntimeWorkerConnectionState('disconnected', 'unknown');
+      addLine('CONNECT: port selection cancelled', 'basic');
+      return false;
+    }
+    if (isPortBusyOpenError(e, 'open')) {
+      resetAfterFailedOpen('CONNECT failed');
+      addLine(`CONNECT: port busy — ${e.message}`, 'err');
+      return false;
+    }
+    addLine(`CONNECT: failed — ${e.message}`, 'err');
+    if (port) { await disconnectPort('CONNECT failed'); } else { resetAfterFailedOpen('CONNECT failed'); }
+    return false;
   }
 }
 

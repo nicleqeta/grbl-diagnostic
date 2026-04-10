@@ -139,6 +139,9 @@
         <span class="chip">Line-numbered scripts</span>
         <span class="chip">Case-insensitive commands</span>
         <span class="chip">Numbers + strings</span>
+        <span class="chip">CONNECT / DISCONNECT</span>
+        <span class="chip">SET runtime settings</span>
+        <span class="chip">WAIT_FOR_LINE / READ_LINE</span>
       </div>
     </section>
 
@@ -192,19 +195,75 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
     </section>
 
     <section class="card">
-      <h2>3. Timing And State Waiting</h2>
+      <h2>3. Timing, State, And Incoming Lines</h2>
       <ul>
         <li><code>WAIT expr</code>: Delay for N ms.</li>
         <li><code>WAIT_IDLE</code> or <code>WAIT_IDLE timeoutMs</code>: Wait until machine is idle.</li>
         <li><code>WAIT_STATE target</code> or <code>WAIT_STATE target TIMEOUT timeoutMs</code>: Wait for specific state.</li>
+        <li><code>LET name = WAIT_FOR_LINE(pattern, timeoutMs)</code> or <code>WAIT_FOR_LINE(pattern, timeoutMs) INTO name</code>: Block until an incoming serial line matches <em>pattern</em> (regex or plain substring). Returns the matched line, or <code>""</code> on timeout. Pass 0 for no timeout.</li>
+        <li><code>LET name = READ_LINE(timeoutMs)</code> or <code>READ_LINE(timeoutMs) INTO name</code>: Return the very next incoming serial line regardless of content; <code>""</code> on timeout.</li>
       </ul>
       <pre><code>10 SEND "G0 X0 Y0" TIMEOUT 1500 REQUIRE_OK
 20 WAIT_IDLE 20000
-30 WAIT_STATE "idle" TIMEOUT 5000</code></pre>
+30 WAIT_STATE "idle" TIMEOUT 5000
+40 REM Wait for controller to ack a specific setting change
+50 SEND "$30=1000"
+60 LET ack = WAIT_FOR_LINE("ok|error", 2000)
+70 PRINT "Got: " &amp; ack</code></pre>
     </section>
 
     <section class="card">
-      <h2>4. User Messaging And Results</h2>
+      <h2>4. Connection Management</h2>
+      <p>Scripts can open the serial port themselves using <code>CONNECT</code>, enabling fully scriptable connection sequences without the Connection sidebar. A script containing <code>CONNECT</code> may run even when no port is currently open.</p>
+      <ul>
+        <li><code>CONNECT</code>: Show the browser serial port picker and connect at 115200&nbsp;baud with default settings.</li>
+        <li><code>CONNECT BAUD expr</code>: Connect at the specified baud rate.</li>
+        <li><code>CONNECT BAUD expr DTR "mode"</code>: Apply a DTR signal mode after opening. Accept: <code>"default"</code>, <code>"pulse"</code>, <code>"low"</code>, <code>"high"</code>.</li>
+        <li><code>CONNECT BAUD expr DTR "mode" WAIT expr</code>: Pause N&nbsp;ms post-connect (useful when a DTR pulse reboots the controller — gives it time to boot).</li>
+        <li><code>CONNECT &hellip; OBSERVE</code>: Connect in observe-only mode; no commands are sent.</li>
+        <li><code>DISCONNECT</code>: Close the current serial connection.</li>
+      </ul>
+      <p>All keyword arguments are optional and combinable in any order. If the user cancels the port picker the script stops gracefully.</p>
+      <pre><code>10 SET SEND_DELAY 0
+20 CONNECT BAUD 115200
+30 STATUS
+40 LET reply = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", 3000)
+50 IF reply = "" THEN GOTO 9000
+60 PRINT "Connected: " &amp; reply
+70 END
+9000 PRINT "No response — check cable."
+9010 DISCONNECT
+9020 END</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>5. Runtime Settings</h2>
+      <p>Script-level settings tune timing and buffer parameters. All settings reset to their defaults at the end of every script run, so changes never leak into subsequent runs.</p>
+      <ul>
+        <li><code>SET SEND_DELAY expr</code>: Pause in ms appended after each <code>SEND</code> (default&nbsp;100). Set to <code>0</code> to remove all inter-command delays — useful for benchmarks or when <code>WAIT_FOR_LINE</code> already manages pacing.</li>
+        <li><code>SET ACK_TIMEOUT expr</code>: Default acknowledgement wait in ms (default&nbsp;12000). Affects bare <code>SEND</code> without an explicit <code>TIMEOUT</code>, and <code>WAIT_FOR_LINE</code>&nbsp;/&nbsp;<code>READ_LINE</code> without an explicit timeout argument.</li>
+        <li><code>SET RX_BUFFER expr</code>: Fallback RX buffer byte limit when no <code>Bf:</code> report has been observed (default&nbsp;64). Controls the <code>SEND &hellip; BUFFERED</code> window.</li>
+        <li><code>SET BANNER_TIMEOUT expr</code>: Milliseconds to wait for a startup banner after <code>CONNECT</code> (default&nbsp;3000).</li>
+        <li><code>SET READY_SETTLE expr</code>: Post-connect idle settle time in ms (default&nbsp;150).</li>
+        <li><code>SET SEQUENCE_DELAY expr</code>: Inter-command spacing in ms during startup sequences (default&nbsp;450).</li>
+        <li><code>SET STATUS_DELAY expr</code>: Delay in ms between status polls (default&nbsp;600).</li>
+        <li><code>RESET_SETTINGS</code>: Restore all runtime settings to their defaults mid-script.</li>
+      </ul>
+      <pre><code>REM Zero all delays for a fast benchmark run
+10 SET SEND_DELAY 0
+20 SET ACK_TIMEOUT 30000
+30 SET RX_BUFFER 128
+40 FOR i = 1 TO 100
+50 SEND "G0 X" &amp; STR(i) BUFFERED
+60 NEXT i
+70 WAIT_IDLE 30000
+80 RESET_SETTINGS
+90 PRINT "Done &mdash; settings restored to defaults"
+100 END</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>6. User Messaging And Results</h2>
       <ul>
         <li><code>PRINT [expr]</code>: Log a message to terminal. Omit the expression for a blank separator line.</li>
         <li><code>CONFIRM expr</code>: Show confirmation dialog. If canceled, script stops.</li>
@@ -222,7 +281,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
     </section>
 
     <section class="card">
-      <h2>5. Program Flow</h2>
+      <h2>7. Program Flow</h2>
       <ul>
         <li><code>FOR name = start TO end [STEP step]</code> and <code>NEXT [name]</code>: Counter loop with optional explicit step.</li>
         <li><code>IF condition THEN GOTO line</code>: Conditional jump. Also accepts <code>IF cond THEN LET</code>, <code>IF cond THEN PRINT</code>, <code>IF cond THEN GOSUB</code>, and <code>IF cond THEN END</code> as single-line inline statements.</li>
@@ -239,7 +298,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
     </section>
 
     <section class="card">
-      <h2>6. Expression Functions</h2>
+      <h2>8. Expression Functions</h2>
       <ul>
         <li><code>PI</code>: Circle constant (3.141592653589793).</li>
         <li><code>STR(expr)</code>: Convert value to string.</li>
@@ -297,7 +356,7 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
     </section>
 
     <section class="card">
-      <h2>7. Import Header Format</h2>
+      <h2>9. Import Header Format</h2>
       <p>Plain-text BASIC imports can start with a short metadata header before the first numbered BASIC line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable BASIC.</p>
       <ul>
         <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
@@ -319,7 +378,7 @@ REM VAR coarse_step=50
     </section>
 
     <section class="card">
-      <h2>8. Authoring Rules In This App</h2>
+      <h2>10. Authoring Rules In This App</h2>
       <ul>
         <li><span class="warn">Validation:</span> save is blocked while syntax errors exist.</li>
         <li><span class="ok">Sharing:</span> saved scripts are loaded by <code>?script=...</code>.</li>
@@ -330,7 +389,7 @@ REM VAR coarse_step=50
     </section>
 
     <section class="card">
-      <h2>9. Example: X-Axis Acceleration Finder</h2>
+      <h2>11. Example: X-Axis Acceleration Finder</h2>
       <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
       <p>After reporting results, the script compares the original and suggested <code>$120</code> values and asks whether to apply the suggested value now or keep the original setting.</p>
       <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
@@ -459,7 +518,7 @@ REM VAR settle_ms=250
     </section>
 
     <section class="card">
-      <h2>10. Example: Distance-Scaled Acceleration Plateau Map</h2>
+      <h2>12. Example: Distance-Scaled Acceleration Plateau Map</h2>
       <p>
         This test answers the question: <em>at what acceleration does my machine stop getting faster for a given move distance?</em>
         It sweeps the X-axis acceleration setting (<code>$120</code>) upward from <code>{start_accel}</code> in steps of <code>{accel_step}</code> up to a ceiling of <code>{max_accel}</code>,
@@ -578,6 +637,49 @@ REM VAR plateau_ms=20
 
 9000 PRINT "Test cancelled."
 9010 END</code></pre>
+    </section>
+    <section class="card">
+      <h2>13. Example: FluidNC Startup Flowchart</h2>
+      <p>This script implements the <a href="https://wiki.fluidnc.com/en/support/gcode_senders" target="_blank" rel="noopener">FluidNC sender startup flowchart</a>: open the port, send a status poll to wake the controller, wait for a banner (<code>Grbl&nbsp;&hellip;</code> or <code>FluidNC&nbsp;&hellip;</code>) or a live-state response (<code>&lt;Idle|&hellip;&gt;</code>), then read <code>$30</code> to confirm two-way comms. A graceful <code>DISCONNECT</code> handles the no-response case.</p>
+      <p><code>SET SEND_DELAY 0</code> removes the default 100&nbsp;ms inter-command pause. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout, making the explicit delay redundant.</p>
+      <pre><code>REM TITLE: FluidNC Startup Flowchart
+REM AUTHOR: GitHub Copilot
+REM VERSION: 1
+REM DESCRIPTION: Opens a serial port and runs the recommended FluidNC/GRBL sender startup
+REM DESCRIPTION: sequence from wiki.fluidnc.com/en/support/gcode_senders.
+REM DESCRIPTION: Polls with ? after connecting, waits up to {banner_timeout} ms for a banner
+REM DESCRIPTION: or state response, then reads $30 to confirm two-way comms.
+REM VAR baud=115200
+REM VAR banner_timeout=3000
+REM VAR settle_ms=200
+
+10 REM Disable the default 100 ms inter-SEND pause; WAIT_FOR_LINE manages pacing
+20 SET SEND_DELAY 0
+
+30 REM Open the browser serial port picker and connect
+40 CONNECT BAUD {baud}
+
+50 REM ? is a realtime status poll &mdash; safe on any firmware state, provokes a response
+60 STATUS
+
+70 REM Wait for a startup banner (Grbl / FluidNC) or a live-state report (&lt;Idle|...&gt;)
+80 LET first_line = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", {banner_timeout})
+90 IF first_line = "" THEN GOTO 9000
+
+100 PRINT "Controller responded: " &amp; first_line
+110 WAIT {settle_ms}
+
+120 REM Read $30 to confirm full two-way (command + response) comms are working
+130 LET max_rpm = READ("$30")
+140 PRINT "Max spindle RPM ($30) = " &amp; STR(max_rpm)
+150 PRINT "Startup complete &mdash; add machine-specific steps below."
+160 STATUS
+170 END
+
+9000 PRINT "No response within " &amp; STR({banner_timeout}) &amp; " ms."
+9010 PRINT "Check baud rate ({baud}) and USB cable, then retry."
+9020 DISCONNECT
+9030 END</code></pre>
     </section>
   </main>
 </body>
