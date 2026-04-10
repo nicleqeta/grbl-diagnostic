@@ -2194,6 +2194,15 @@ async function recordBasicBenchmarkMessage(message) {
   if (metaMatch) {
     applyBasicBenchmarkMeta(basicBenchmarkCapture, parseBasicBenchmarkFields(metaMatch[1]));
     basicBenchmarkCapture.updatedAtIso = new Date().toISOString();
+    if (benchmarkRuntimeWorkerReady) {
+      // Keep the worker's capture in sync so it builds series/summary with the right meta
+      const response = await postBenchmarkRuntimeRequest('benchmark-record', {
+        message: text,
+        perfMs: performance.now(),
+        iso: new Date().toISOString()
+      });
+      if (response?.capture) setBasicBenchmarkCaptureFromState(response.capture);
+    }
     refreshBasicBenchmarkPreview(true);
     return true;
   }
