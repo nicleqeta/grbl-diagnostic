@@ -1643,6 +1643,7 @@ let _lastPreviewPost = 0;
 let _previewPostPending = false;
 let _copyLogHasContent = false;
 let _lastBenchmarkPreviewSampleCount = -1;
+let _lastBenchmarkPreviewActiveCount = -1;
 let basicBenchmarkUiQuiet = false;
 const PREVIEW_POST_THROTTLE_MS = 150;
 
@@ -1835,9 +1836,11 @@ function setBasicBenchmarkCaptureFromState(state) {
   if (!state) {
     basicBenchmarkCapture = null;
     _lastBenchmarkPreviewSampleCount = -1;
+    _lastBenchmarkPreviewActiveCount = -1;
     basicBenchmarkUiQuiet = false;
     return;
   }
+  const activeEntries = Array.isArray(state.activeMarkers) ? state.activeMarkers : [];
   basicBenchmarkCapture = {
     version: Number(state.version || 1),
     title: String(state.title || 'BASIC Benchmark'),
@@ -1846,7 +1849,14 @@ function setBasicBenchmarkCaptureFromState(state) {
     latestSample: state.latestSample ? { ...state.latestSample } : null,
     samples: Array.isArray(state.samples) ? state.samples.map(sample => ({ ...sample })) : [],
     summary: Array.isArray(state.summary) ? state.summary.map(point => ({ ...point })) : [],
-    activeMarkers: new Map()
+    activeMarkers: new Map(activeEntries.map(entry => [
+      String(entry.key || ''),
+      {
+        fields: { ...(entry.fields || {}) },
+        startedAtIso: entry.startedAtIso || null,
+        startedPerfMs: Number(entry.startedPerfMs || 0)
+      }
+    ]))
   };
 }
 
@@ -1958,6 +1968,7 @@ function initBenchmarkRuntimeWorker() {
 async function resetBasicBenchmarkCapture(title) {
   const fallbackCapture = createBasicBenchmarkCapture(title);
   _lastBenchmarkPreviewSampleCount = -1;
+  _lastBenchmarkPreviewActiveCount = -1;
   basicBenchmarkUiQuiet = false;
   basicBenchmarkCapture = fallbackCapture;
   const response = await postBenchmarkRuntimeRequest('benchmark-reset', { title });
@@ -1999,8 +2010,25 @@ function buildBasicBenchmarkMarkerKey(fields) {
   const accel = Number(fields.accel ?? fields.a);
   const batch = Number(fields.batch ?? fields.passes ?? fields.p ?? 0);
   const repeat = Number(fields.repeat ?? fields.r ?? 1);
-  if (!Number.isFinite(distance) || !Number.isFinite(accel)) return '';
-  return `${distance}|${accel}|${batch}|${repeat}`;
+  if (Number.isFinite(distance) && Number.isFinite(accel)) {
+    return `${distance}|${accel}|${batch}|${repeat}`;
+  }
+
+  // Generic BENCH markers (e.g. method=buffered round=1 cmds=500)
+  const method = String(fields.method ?? fields.m ?? '').trim().toLowerCase();
+  const round = Number(fields.round ?? fields.iter ?? fields.run ?? 0);
+  const cmds = Number(fields.cmds ?? fields.commands ?? fields.n ?? 0);
+  if (method) {
+    return `method:${method}|round:${Number.isFinite(round) ? round : 0}|cmds:${Number.isFinite(cmds) ? cmds : 0}|batch:${batch}|repeat:${repeat}`;
+  }
+
+  // Last-resort stable key: all non-timing fields sorted by key.
+  const ignoredKeys = new Set(['ms', 'elapsed', 'elapsedms', 'time', 'timestamp', 't']);
+  const entries = Object.entries(fields)
+    .filter(([key]) => !ignoredKeys.has(String(key).toLowerCase()))
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  if (!entries.length) return '';
+  return entries.map(([key, value]) => `${key}=${String(value)}`).join('|');
 }
 
 function buildBasicBenchmarkSummary(samples) {
@@ -2034,6 +2062,13 @@ function buildBasicBenchmarkPreviewData(capture) {
   const summary = Array.isArray(capture.summary)
     ? capture.summary
     : buildBasicBenchmarkSummary(capture.samples);
+  const activeMarkers = capture.activeMarkers instanceof Map
+    ? Array.from(capture.activeMarkers.entries()).map(([key, marker]) => ({
+        key,
+        fields: { ...(marker?.fields || {}) },
+        startedAtIso: marker?.startedAtIso || null
+      }))
+    : [];
   return {
     version: capture.version,
     title: capture.title,
@@ -2043,7 +2078,8 @@ function buildBasicBenchmarkPreviewData(capture) {
     distanceCount: summary.length,
     latestSample: capture.latestSample || null,
     samples: capture.samples,
-    summary
+    summary,
+    activeMarkers
   };
 }
 
@@ -2064,15 +2100,18 @@ function ensureBenchmarkPreviewTimeline() {
 function refreshBasicBenchmarkPreview(force = false) {
   if (!basicBenchmarkCapture) return;
   const sampleCount = Number(basicBenchmarkCapture.samples?.length || 0);
-  if (!force && sampleCount === _lastBenchmarkPreviewSampleCount) return;
+  const activeCount = Number(basicBenchmarkCapture.activeMarkers?.size || 0);
+  if (!force && sampleCount === _lastBenchmarkPreviewSampleCount && activeCount === _lastBenchmarkPreviewActiveCount) return;
   _lastBenchmarkPreviewSampleCount = sampleCount;
+  _lastBenchmarkPreviewActiveCount = activeCount;
   const timeline = ensureBenchmarkPreviewTimeline();
   const benchmarkData = buildBasicBenchmarkPreviewData(basicBenchmarkCapture);
   timeline.benchmark = benchmarkData;
   const hasRealBenchmarkData = Number(benchmarkData?.sampleCount || 0) > 0;
   if (hasRealBenchmarkData) {
     clearPreviewWaitingState();
-    ensurePreviewWindow({ compact: false });
+    const previewWin = ensurePreviewWindow({ compact: false });
+    try { if (previewWin && !previewWin.closed) previewWin.focus(); } catch {}
   }
   if (previewWaitingState) {
     postPreviewWaitingState(previewWaitingState);
@@ -2124,6 +2163,9 @@ async function recordBasicBenchmarkMessage(message) {
   const sample = {
     distance: Number(fields.distance ?? activeMarker.fields.distance ?? activeMarker.fields.dist ?? activeMarker.fields.d),
     accel: Number(fields.accel ?? activeMarker.fields.accel ?? activeMarker.fields.a),
+    method: String(fields.method ?? activeMarker.fields.method ?? '').trim(),
+    round: Number(fields.round ?? activeMarker.fields.round ?? 0),
+    cmds: Number(fields.cmds ?? fields.commands ?? activeMarker.fields.cmds ?? activeMarker.fields.commands ?? 0),
     batch: Number(fields.batch ?? activeMarker.fields.batch ?? activeMarker.fields.passes ?? activeMarker.fields.p ?? 0),
     repeat: Number(fields.repeat ?? activeMarker.fields.repeat ?? activeMarker.fields.r ?? 1),
     feed: Number(fields.feed ?? activeMarker.fields.feed ?? 0),
