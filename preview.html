@@ -859,9 +859,19 @@ function renderCommandList() {
       const item = document.createElement('li');
       item.className = 'command-item';
 
+      const sampleDistance = Number(sample.distance);
+      const sampleAccel = Number(sample.accel);
+      const fallbackLabel = [
+        sample.method ? `method=${sample.method}` : '',
+        Number.isFinite(Number(sample.round)) && Number(sample.round) > 0 ? `round=${Number(sample.round)}` : '',
+        Number.isFinite(Number(sample.cmds)) && Number(sample.cmds) > 0 ? `cmds=${Number(sample.cmds)}` : ''
+      ].filter(Boolean).join(' ');
+
       const line = document.createElement('div');
       line.className = 'command-line';
-      line.textContent = `${Number(sample.distance)} mm @ ${Number(sample.accel)} accel`;
+      line.textContent = Number.isFinite(sampleDistance) && Number.isFinite(sampleAccel)
+        ? `${sampleDistance} mm @ ${sampleAccel} accel`
+        : (fallbackLabel || 'Generic benchmark sample');
 
       const text = document.createElement('div');
       text.className = 'command-text';
@@ -914,19 +924,49 @@ function renderCommandList() {
   });
 }
 
+function isBenchmarkOnlyTimeline(candidate) {
+  return Boolean(
+    candidate &&
+    candidate.benchmark &&
+    !Number(candidate.commandCount || 0) &&
+    (!Array.isArray(candidate.segments) || !candidate.segments.length)
+  );
+}
+
 function loadTimeline(nextTimeline) {
+  const previousTimeline = timeline;
+  const previousViewMode = playback.viewMode;
+
+  // If an update arrives without benchmark payload, retain the existing benchmark
+  // data so the chart doesn't disappear at script completion due unrelated refreshes.
+  if (!nextTimeline?.benchmark && previousTimeline?.benchmark) {
+    nextTimeline = { ...nextTimeline, benchmark: previousTimeline.benchmark };
+  }
+
   timeline = nextTimeline;
   titleEl.textContent = timeline.title || 'GRBL Preview';
   const benchmarkSampleCount = Number(timeline?.benchmark?.sampleCount || 0);
+  const benchmarkActiveCount = Number(timeline?.benchmark?.activeMarkers?.length || 0);
   statsEl.textContent = benchmarkSampleCount
     ? `${timeline.stats.motionCommandCount} motion command(s) | ${benchmarkSampleCount} benchmark sample(s)`
     : `${timeline.stats.motionCommandCount} motion command(s) | ${timeline.stats.errorCount} error(s)`;
-  if (benchmarkSampleCount && !timeline.segments.length) {
+
+  const nextIsBenchmarkOnly = isBenchmarkOnlyTimeline(timeline);
+  const prevIsBenchmarkOnly = isBenchmarkOnlyTimeline(previousTimeline);
+
+  if (nextIsBenchmarkOnly && (benchmarkSampleCount > 0 || benchmarkActiveCount > 0 || previousViewMode === 'benchmark')) {
     playback.viewMode = 'benchmark';
-  } else if (playback.viewMode === 'benchmark') {
+  } else if (!timeline?.benchmark && playback.viewMode === 'benchmark') {
     playback.viewMode = 'perspective';
   }
-  resetPlayback();
+
+  // Avoid visual flicker during live benchmark updates by not rewinding playback
+  // when we are receiving successive benchmark-only payloads.
+  if (!(prevIsBenchmarkOnly && nextIsBenchmarkOnly)) {
+    resetPlayback();
+  } else {
+    syncPlaybackUi();
+  }
   renderCommandList();
   syncQueuePanelUi();
   render();
