@@ -2985,6 +2985,8 @@ function basicValidateScript(source, paramNames = []) {
     if (/^DISCONNECT$/i.test(statement)) return;
     if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?WAIT_FOR_LINE\s*\(/i.test(statement)) return;
     if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?READ_LINE\s*\(/i.test(statement)) return;
+    if (/^SENDBUFF\s+/i.test(statement)) return;
+    if (/^SENDACK\s+/i.test(statement)) return;
 
     errors.push(`Line ${lineNum}: unknown or unsupported statement`);
   });
@@ -5845,6 +5847,44 @@ async function runBasicScript(source) {
           const varName = body.slice(0, eq).trim();
           const valExpr = body.slice(eq + 1).trim();
           basicVars[basicNormalizeRuntimeVarName(varName)] = await basicEvalExprRuntime(valExpr, basicVars);
+        }
+        pc++;
+        continue;
+      }
+
+      // SENDBUFF "expr" — shorthand for SEND "expr" BUFFERED
+      if (/^SENDBUFF\s+/i.test(stmt)) {
+        const expr = stmt.replace(/^SENDBUFF\s+/i, '').trim();
+        const cmdStr = String(await basicEvalExprRuntime(expr, basicVars)).trim();
+        addLine(`SEND: ${cmdStr} [buffered]`, 'basic');
+        await basicSendBufferedCommand(cmdStr, {});
+        if (basicScriptSettings.sendDelay > 0) {
+          if (!(await basicDelayWithControl(basicScriptSettings.sendDelay))) {
+            stopScript();
+            break;
+          }
+        }
+        pc++;
+        continue;
+      }
+
+      // SENDACK "expr" [timeoutMs] — shorthand for SEND "expr" TIMEOUT timeoutMs REQUIRE_OK
+      if (/^SENDACK\s+/i.test(stmt)) {
+        const rest = stmt.replace(/^SENDACK\s+/i, '').trim();
+        const match = rest.match(/^(.+?)(?:\s+(\S+))?$/);
+        if (!match) { addLine(`Line ${lineNum}: SENDACK syntax error`, 'err'); stopScript(); break; }
+        const exprStr = match[1];
+        const timeoutStr = match[2];
+        const cmdStr = String(await basicEvalExprRuntime(exprStr, basicVars)).trim();
+        const timeoutMs = timeoutStr ? Math.round(Number(await basicEvalExprRuntime(timeoutStr, basicVars))) : basicScriptSettings.ackTimeout;
+        addLine(`SEND: ${cmdStr}`, 'basic');
+        await basicWaitForBufferedDrain(timeoutMs);
+        await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: true });
+        if (basicScriptSettings.sendDelay > 0) {
+          if (!(await basicDelayWithControl(basicScriptSettings.sendDelay))) {
+            stopScript();
+            break;
+          }
         }
         pc++;
         continue;
