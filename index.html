@@ -1774,6 +1774,7 @@ function basicGetGcodeParam(keyLike, fallbackValue = 0) {
 let previewWindowRef = null;
 let previewWindowCompact = false;
 let previewWaitingState = null;
+let previewPopupBlockedNotified = false;
 let latestPreviewTimeline = null;
 let basicBenchmarkCapture = null;
 let benchmarkRuntimeWorker = null;
@@ -2189,7 +2190,7 @@ function refreshBasicBenchmarkPreview(force = false) {
 
 async function recordBasicBenchmarkMessage(message) {
   if (!basicBenchmarkCapture) return false;
-  const text = String(message || '').trim();
+  const text = String(message || '').trim().replace(/^PRINT:\s*/i, '').trim();
   const metaMatch = text.match(/^BENCH\s+META\b\s*(.*)$/i);
   if (metaMatch) {
     applyBasicBenchmarkMeta(basicBenchmarkCapture, parseBasicBenchmarkFields(metaMatch[1]));
@@ -5743,9 +5744,14 @@ function ensurePreviewWindow(options = {}) {
   }
   previewWindowRef = window.open('preview.html', 'grbl-preview-window', getPreviewWindowFeatures(compact));
   if (!previewWindowRef) {
-    addLine('Preview window blocked by browser popup settings', 'err');
+    if (!previewPopupBlockedNotified) {
+      addLine('Preview window blocked by browser popup settings', 'err');
+      addLine('Benchmark capture continues in the background. Allow popups for this site, then click Preview to open the chart.', 'warn');
+      previewPopupBlockedNotified = true;
+    }
     return null;
   }
+  previewPopupBlockedNotified = false;
   previewWindowCompact = compact;
   return previewWindowRef;
 }

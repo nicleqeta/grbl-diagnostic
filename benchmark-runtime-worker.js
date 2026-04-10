@@ -225,7 +225,7 @@ function parseRuntimeStatusLine(text) {
 
 function recordBenchmarkMessage(message, perfMs, iso) {
   if (!benchmarkCapture) return false;
-  const text = String(message || '').trim();
+  const text = String(message || '').trim().replace(/^PRINT:\s*/i, '').trim();
   const metaMatch = text.match(/^BENCH\s+META\b\s*(.*)$/i);
   if (metaMatch) {
     applyBenchmarkMeta(benchmarkCapture, parseBenchmarkFields(metaMatch[1]));
