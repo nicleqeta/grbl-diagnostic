@@ -184,6 +184,8 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li><code>SEND expr REQUIRE_OK</code>: Fail statement if no <code>ok/error/ALARM</code> acknowledgement arrives.</li>
         <li><code>SEND expr TIMEOUT expr REQUIRE_OK</code>: Use both options together.</li>
         <li><code>SEND expr BUFFERED</code>: Stream a normal line-based GRBL command using host-side RX buffer accounting. Buffered sends do not wait for machine idle after each line; use <code>WAIT_IDLE</code> after the final buffered command in a batch to flush all acknowledgements and then wait for motion to finish.</li>
+        <li><code>SENDBUFF expr</code>: Shorthand for <code>SEND expr BUFFERED</code> — stream a command without waiting for ack.</li>
+        <li><code>SENDACK expr</code> or <code>SENDACK expr timeoutMs</code>: Shorthand for <code>SEND expr TIMEOUT timeoutMs REQUIRE_OK</code> — send and wait for ack (default timeout 12 s).</li>
         <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
       </ul>
       <pre><code>10 LET speed = 900
