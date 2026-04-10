@@ -37,8 +37,25 @@ function buildBenchmarkMarkerKey(fields) {
   const accel = Number(fields.accel ?? fields.a);
   const batch = Number(fields.batch ?? fields.passes ?? fields.p ?? 0);
   const repeat = Number(fields.repeat ?? fields.r ?? 1);
-  if (!Number.isFinite(distance) || !Number.isFinite(accel)) return '';
-  return `${distance}|${accel}|${batch}|${repeat}`;
+  if (Number.isFinite(distance) && Number.isFinite(accel)) {
+    return `${distance}|${accel}|${batch}|${repeat}`;
+  }
+
+  // Generic BENCH markers (e.g. method=buffered round=1 cmds=500)
+  const method = String(fields.method ?? fields.m ?? '').trim().toLowerCase();
+  const round = Number(fields.round ?? fields.iter ?? fields.run ?? 0);
+  const cmds = Number(fields.cmds ?? fields.commands ?? fields.n ?? 0);
+  if (method) {
+    return `method:${method}|round:${Number.isFinite(round) ? round : 0}|cmds:${Number.isFinite(cmds) ? cmds : 0}|batch:${batch}|repeat:${repeat}`;
+  }
+
+  // Last-resort stable key: all non-timing fields sorted by key.
+  const ignoredKeys = new Set(['ms', 'elapsed', 'elapsedms', 'time', 'timestamp', 't']);
+  const entries = Object.entries(fields)
+    .filter(([key]) => !ignoredKeys.has(String(key).toLowerCase()))
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  if (!entries.length) return '';
+  return entries.map(([key, value]) => `${key}=${String(value)}`).join('|');
 }
 
 function buildBenchmarkSummary(samples) {
@@ -70,6 +87,14 @@ function buildBenchmarkSummary(samples) {
 function buildCaptureSnapshot(capture) {
   if (!capture) return null;
   const summary = buildBenchmarkSummary(capture.samples);
+  const activeMarkers = capture.activeMarkers instanceof Map
+    ? Array.from(capture.activeMarkers.entries()).map(([key, marker]) => ({
+        key,
+        fields: { ...(marker?.fields || {}) },
+        startedAtIso: marker?.startedAtIso || null,
+        startedPerfMs: Number(marker?.startedPerfMs || 0)
+      }))
+    : [];
   return {
     version: capture.version,
     title: capture.title,
@@ -78,6 +103,7 @@ function buildCaptureSnapshot(capture) {
     latestSample: capture.latestSample ? { ...capture.latestSample } : null,
     samples: capture.samples.map(sample => ({ ...sample })),
     summary,
+    activeMarkers,
     sampleCount: capture.samples.length,
     distanceCount: summary.length
   };
@@ -166,6 +192,9 @@ function recordBenchmarkMessage(message, perfMs, iso) {
   const sample = {
     distance: Number(fields.distance ?? activeMarker.fields.distance ?? activeMarker.fields.dist ?? activeMarker.fields.d),
     accel: Number(fields.accel ?? activeMarker.fields.accel ?? activeMarker.fields.a),
+    method: String(fields.method ?? activeMarker.fields.method ?? '').trim(),
+    round: Number(fields.round ?? activeMarker.fields.round ?? 0),
+    cmds: Number(fields.cmds ?? fields.commands ?? activeMarker.fields.cmds ?? activeMarker.fields.commands ?? 0),
     batch: Number(fields.batch ?? activeMarker.fields.batch ?? activeMarker.fields.passes ?? activeMarker.fields.p ?? 0),
     repeat: Number(fields.repeat ?? activeMarker.fields.repeat ?? activeMarker.fields.r ?? 1),
     feed: Number(fields.feed ?? activeMarker.fields.feed ?? 0),
