@@ -5791,8 +5791,8 @@ function buildBasicPreviewTimeline(source) {
 }
 
 function getPreviewWindowFeatures(compact = false) {
-  const width = compact ? 440 : 1220;
-  const height = compact ? 180 : 840;
+  const width = compact ? 440 : 1000;
+  const height = compact ? 180 : 730;
   const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
   const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
   return [
@@ -5808,8 +5808,8 @@ function getPreviewWindowFeatures(compact = false) {
 function resizePreviewWindow(compact = false) {
   if (!previewWindowRef || previewWindowRef.closed) return;
   try {
-    const width = compact ? 440 : 1220;
-    const height = compact ? 180 : 840;
+    const width = compact ? 440 : 1000;
+    const height = compact ? 180 : 730;
     const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
     const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
     previewWindowRef.resizeTo(width, height);
