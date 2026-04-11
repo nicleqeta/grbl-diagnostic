@@ -5718,6 +5718,15 @@ function buildBasicPreviewTimeline(source) {
       continue;
     }
 
+    if (/^RESET_SETTINGS$/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: 'Preview skipped runtime settings reset'
+      });
+      pc += 1;
+      continue;
+    }
+
     if (/^WAIT\s+/i.test(stmt)) {
       previewPushEvent(timeline, 'note', {
         sourceLine: lineNum,
