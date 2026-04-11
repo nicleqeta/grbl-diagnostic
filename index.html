@@ -5022,6 +5022,18 @@ function requestBasicStop(statusLine = 'Stop requested...', stopMessage = '--- S
   addLine(statusLine, 'sys');
 }
 
+async function basicEmergencyStopFromUi() {
+  requestBasicStop('Stop requested. Sending soft reset (^X)...', '--- Script stopped by user ---');
+  if (!port || !writer) {
+    addLine('Soft reset skipped: no active serial connection', 'sys');
+    return;
+  }
+  const sent = await basicSendRealtimeCommand('^X', '^X (Soft Reset)');
+  if (!sent) {
+    addLine('Soft reset failed to send', 'err');
+  }
+}
+
 async function basicWaitForResumeOrStop() {
   while (basicPaused && !basicStopRequested) {
     await delay(BASIC_CONTROL_POLL_MS);
@@ -7128,7 +7140,7 @@ gcodeQueueClearBtn.addEventListener('click', clearGcodeQueue);
 gcodeQueueList.addEventListener('click', handleGcodeQueueAction);
 
 basicStopBtn.addEventListener('click', () => {
-  requestBasicStop();
+  void basicEmergencyStopFromUi();
 });
 
 // Enable/disable run button based on connection and script content
