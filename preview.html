@@ -101,6 +101,7 @@
   }
 
   .status-box {
+    display: none;
     position: absolute;
     left: 12px;
     top: 12px;
@@ -139,6 +140,9 @@
     padding: 0;
     overflow-y: auto;
     flex: 1;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.35;
   }
 
   .queue-panel {
@@ -180,13 +184,16 @@
   }
 
   .command-item {
-    border-bottom: 1px solid rgba(46, 51, 71, 0.5);
-    padding: 10px 12px;
+    border-bottom: 1px solid rgba(46, 51, 71, 0.35);
+    padding: 6px 10px;
     cursor: pointer;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
-  .command-item:hover { background: rgba(34, 38, 58, 0.75); }
-  .command-item.active { background: rgba(20, 184, 166, 0.14); border-left: 3px solid var(--teal); padding-left: 9px; }
+  .command-item:hover { background: rgba(34, 38, 58, 0.6); }
+  .command-item.active { background: rgba(20, 184, 166, 0.14); border-left: 2px solid var(--teal); color: var(--text); padding-left: 8px; }
   .command-line { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
   .command-text { color: var(--text); font-family: Consolas, monospace; font-size: 12px; word-break: break-word; }
   .command-meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
@@ -280,10 +287,8 @@
   body.benchmark-mode #fit-btn,
   body.benchmark-mode .queue-panel { display: none; }
 
-  body.benchmark-mode .toolbar { display: none; }
   body.benchmark-mode .shell { grid-template-columns: minmax(0, 1fr) 320px; }
   body.benchmark-mode .benchmark-info-panel { display: block; }
-  body.benchmark-mode .status-box { display: none; }
 </style>
 </head>
 <body>
@@ -376,6 +381,8 @@ const queueStatus = document.getElementById('queue-status');
 let timeline = null;
 let commandItems = [];
 let lastActiveCommandId = -1;
+const PREVIEW_MIN_ZOOM = 0.2;
+const PREVIEW_MAX_ZOOM = 6;
 let playback = {
   playing: false,
   commandCursor: 0,
@@ -434,6 +441,18 @@ function stepCommands(delta) {
 
 function fitPreview() {
   playback.zoom = 1;
+  render();
+}
+
+function applyWheelZoom(event) {
+  if (playback.viewMode === 'benchmark') return;
+  if (!timeline) return;
+  event.preventDefault();
+  const direction = event.deltaY > 0 ? -1 : 1;
+  const factor = direction > 0 ? 1.1 : 1 / 1.1;
+  const nextZoom = Math.max(PREVIEW_MIN_ZOOM, Math.min(PREVIEW_MAX_ZOOM, playback.zoom * factor));
+  if (nextZoom === playback.zoom) return;
+  playback.zoom = nextZoom;
   render();
 }
 
@@ -842,23 +861,10 @@ function renderCommandList() {
         Number.isFinite(Number(fields.cmds ?? fields.commands)) && Number(fields.cmds ?? fields.commands) > 0 ? `cmds=${Number(fields.cmds ?? fields.commands)}` : ''
       ].filter(Boolean).join(' ');
 
-      const line = document.createElement('div');
-      line.className = 'command-line';
-      line.textContent = Number.isFinite(sampleDistance) && Number.isFinite(sampleAccel)
+      const head = Number.isFinite(sampleDistance) && Number.isFinite(sampleAccel)
         ? `${sampleDistance} mm @ ${sampleAccel} accel`
         : (fallbackLabel || 'Generic benchmark sample');
-
-      const text = document.createElement('div');
-      text.className = 'command-text';
-  text.textContent = `${Number(sample.elapsedMs || 0).toFixed(1)} ms ${Object.keys(fields).slice(0, 4).map(key => `${key}=${fields[key]}`).join(' ')}`;
-
-      const meta = document.createElement('div');
-      meta.className = 'command-meta';
-      meta.textContent = sample.startedAtIso || 'Live benchmark sample';
-
-      item.appendChild(line);
-      item.appendChild(text);
-      item.appendChild(meta);
+      item.textContent = `${head} | ${Number(sample.elapsedMs || 0).toFixed(1)} ms ${Object.keys(fields).slice(0, 4).map(key => `${key}=${fields[key]}`).join(' ')} | ${sample.startedAtIso || 'live'}`;
       commandList.appendChild(item);
     });
     return;
@@ -874,24 +880,11 @@ function renderCommandList() {
     const item = document.createElement('li');
     item.className = `command-item${command.commandId === playback.commandCursor ? ' active' : ''}`;
     item.dataset.commandId = String(command.commandId);
-
-    const line = document.createElement('div');
-    line.className = 'command-line';
-    line.textContent = command.sourceLine ? `Line ${command.sourceLine}` : 'Generated command';
-
-    const text = document.createElement('div');
-    text.className = 'command-text';
-    text.textContent = command.display || command.raw;
-
-    const meta = document.createElement('div');
-    meta.className = 'command-meta';
-    meta.textContent = command.firstSegment === -1
-      ? 'No motion geometry'
-      : `Segments ${command.firstSegment + 1}-${command.lastSegment + 1}`;
-
-    item.appendChild(line);
-    item.appendChild(text);
-    item.appendChild(meta);
+    const sourceLabel = command.sourceLine ? `L${command.sourceLine}` : 'GEN';
+    const segmentLabel = command.firstSegment === -1
+      ? 'non-motion'
+      : `seg ${command.firstSegment + 1}-${command.lastSegment + 1}`;
+    item.textContent = `${String(command.commandId + 1).padStart(4, '0')} | ${sourceLabel} | ${segmentLabel} | ${command.display || command.raw}`;
     item.addEventListener('click', () => setCommandCursor(command.commandId));
     commandList.appendChild(item);
     commandItems[command.commandId] = item;
@@ -1102,6 +1095,7 @@ speedSelect.addEventListener('change', () => {
   playback.speed = Number(speedSelect.value) || 1;
   syncPlaybackUi();
 });
+canvas.addEventListener('wheel', applyWheelZoom, { passive: false });
 queueFromPreviewBtn.addEventListener('click', requestQueueFromPreview);
 
 let _pendingTimelinePayload = null;
