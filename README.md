@@ -194,9 +194,9 @@ It is mainly intended to make GRBL connection problems easier to see, compare, a
 
 ---
 
-## BASIC Scripting
+## GCOM Scripting
 
-The app includes a full line-numbered BASIC interpreter for writing automated GRBL test and motion scripts.
+The app includes a full line-numbered GCOM script interpreter for writing automated GRBL test and motion scripts.
 
 Scripts run in the browser, send serial commands to the GRBL controller, wait for responses, and can loop, branch, do math, and prompt the user for input.
 
@@ -289,11 +289,11 @@ These are substituted before execution. Users can override them:
 
 Special metadata fields: `{title}`, `{author}`, `{version}`, `{description}`
 
-### Importing Plain BASIC Files
+### Importing Plain GCOM Script Files
 
-The BASIC editor can import local plain-text script files.
+The GCOM script editor can import local plain-text script files.
 
-For richer imports, add a short header before the first numbered BASIC line:
+For richer imports, add a short header before the first numbered GCOM script line:
 
 ```text
 REM TITLE: X-Axis Max travel Speed and Acceleration Finder
@@ -351,7 +351,7 @@ Variable overrides are individual extra query parameters:
 https://gcomposer.app/?gcom=abc123&feedrate=2000&passes=5
 ```
 
-Any query key not in the app's reserved list is treated as a variable override. Reserved keys that cannot be used as variable names: `gcom`, `preset`, `cmd`, `cmds`, `name`, `baud`, `dtr`, `observe`, `wait`, `delay`, `banner_timeout`, `banner_wait`, `show_req_resp`, `source`, `scrape`, `post`, `basic_post`.
+Any query key not in the app's reserved list is treated as a variable override. Reserved keys that cannot be used as variable names: `gcom`, `preset`, `cmd`, `cmds`, `name`, `baud`, `dtr`, `observe`, `wait`, `delay`, `banner_timeout`, `banner_wait`, `show_req_resp`, `source`, `scrape`, `post`, `gcom_post`.
 
 ### Validator
 
@@ -364,4 +364,4 @@ Before running or saving, scripts are checked for:
 
 ### Help Page
 
-The app has a built-in BASIC help page accessible from the BASIC panel. It covers all statements and functions with short examples.
+The app has a built-in GCOM help page accessible from the GCOM panel. It covers all statements and functions with short examples.
