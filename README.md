@@ -1,22 +1,23 @@
-# GRBL Diagnostic
+# gcomposer / GRBL serial console
 
-A simple browser-based serial terminal for troubleshooting GRBL CNC connections.
+A browser-based GRBL serial console with a built-in scripting engine. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before connecting to hardware. Runs in Chrome and Edge via Web Serial — no install required.
 
-This tool is meant to help when a GRBL controller will not connect properly, does not answer, stays busy, resets unexpectedly, or behaves differently between programs.
+Live at [gcomposer.app](https://gcomposer.app).
 
 ## What This App Does
 
-This app opens a serial connection to a GRBL controller using the browser's Web Serial feature.
+gcomposer opens a serial connection to a GRBL controller using the browser's Web Serial feature.
 
 It can help you:
 
 - connect to a GRBL device from the browser
 - see exactly what the controller sends back
 - send simple GRBL commands like `?`, `$$`, `$I`, and `$X`
-- test different startup behaviors
-- test different DTR behaviors
+- write automated scripts that send commands, wait for responses, loop, branch, and do math
+- preview motion sequences before connecting to hardware
+- test different startup and DTR behaviors
 - copy a structured diagnostics log for support or forum posts
-- share test setups using links
+- save and share scripts via short links
 
 ## Why This Is Useful
 
@@ -30,7 +31,9 @@ When a CNC program like MillMage has trouble connecting, it is often not clear w
 - firmware startup timing
 - alarm state or controller state
 
-This tool helps separate those problems by showing the raw serial behavior directly.
+The serial console and diagnostics tools help separate those problems by showing the raw serial behavior directly.
+
+The GCOM scripting engine goes further — it lets you write repeatable test routines, tune machine settings, run motion benchmarks, and share those scripts with others via a URL.
 
 ## Basic Use
 
@@ -188,9 +191,9 @@ So this app is best used to diagnose and compare behavior, not to prove with abs
 
 ## Summary
 
-GRBL Diagnostic is a simple browser tool for checking whether a GRBL controller is opening, resetting, sending startup output, answering commands, and responding reliably.
+gcomposer is a browser-based GRBL serial console with a built-in scripting engine. It covers everything from raw serial diagnostics — checking startup banners, DTR behavior, and connection timing — to writing automated motion scripts, tuning machine settings, and sharing repeatable test routines via short links.
 
-It is mainly intended to make GRBL connection problems easier to see, compare, and share.
+No install required. Runs in Chrome and Edge via Web Serial.
 
 ---
 

@@ -697,7 +697,7 @@ REM VAR settle_ms=200
 REM VAR idle_timeout=12000
 REM VAR plateau_ms=60
 
-10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0)
+10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. Do not switch browser tabs during the test &mdash; tab switching throttles the script timer and will cause false high readings. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
 30 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Batch Duration (ms) title=Distance-Scaled Acceleration Plateau"
 50 LET original_accel = SETTING("$120")
