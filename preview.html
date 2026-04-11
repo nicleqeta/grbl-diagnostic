@@ -299,10 +299,10 @@
     <button class="btn" id="step-back-btn" type="button">Step Back</button>
     <select class="select" id="speed-select" aria-label="Playback speed">
       <option value="0.5">0.5x</option>
-      <option value="1" selected>1x</option>
+      <option value="1">1x</option>
       <option value="2">2x</option>
       <option value="4">4x</option>
-      <option value="8">8x</option>
+      <option value="8" selected>8x</option>
     </select>
     <button class="btn" id="play-btn" type="button">Play</button>
     <button class="btn" id="step-forward-btn" type="button">Step Forward</button>
@@ -396,7 +396,7 @@ let staticLayerKey = '';
 let playback = {
   playing: false,
   commandCursor: 0,
-  speed: 1,
+  speed: 8,
   viewMode: 'top',
   baseCommandMs: 260,
   lastFrameAt: 0,
