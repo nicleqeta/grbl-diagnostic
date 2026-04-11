@@ -486,14 +486,14 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
 
     <section class="card">
       <h2>10. Import Header Format</h2>
-      <p>Plain-text BASIC imports can start with a short metadata header before the first numbered BASIC line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable BASIC.</p>
+      <p>Plain-text GCOM script imports can start with a short metadata header before the first numbered GCOM script line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable GCOM script.</p>
       <ul>
         <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
         <li><code>REM DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
         <li>Rendered descriptions support both simple placeholders like <code>{feed}</code> and inline expression placeholders like <code>{{min_batch_count * 2}}</code>.</li>
         <li><code>REM VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
         <li>If no title header exists, import falls back to the filename.</li>
-        <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step BASIC automatically.</li>
+        <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step GCOM automatically.</li>
       </ul>
       <pre><code>REM TITLE: X-Axis Max travel Speed and Acceleration Finder
 REM VERSION: 1
