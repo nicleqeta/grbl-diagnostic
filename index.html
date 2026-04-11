@@ -1474,16 +1474,17 @@ let storedVersion = null;
 
 async function loadAndCheckVersion() {
   try {
-    const response = await fetch('version.json?t=' + Date.now());
+    const response = await fetch('/version?t=' + Date.now());
     if (!response.ok) return;
     const data = await response.json();
-    currentVersion = data.version;
+    const versionToken = [data.version, data.build].filter(Boolean).join('+');
+    currentVersion = versionToken || null;
     storedVersion = localStorage.getItem('app-version');
     
     // Display current version in header
     const badge = document.getElementById('version-badge');
     if (badge) {
-      badge.textContent = currentVersion ? `v${String(currentVersion).trim()}` : '';
+      badge.textContent = data.version ? `v${String(data.version).trim()}` : '';
     }
     
     // Check if new version is available
@@ -1492,7 +1493,7 @@ async function loadAndCheckVersion() {
     }
     
     // Store current version
-    localStorage.setItem('app-version', currentVersion);
+    if (currentVersion) localStorage.setItem('app-version', currentVersion);
   } catch (err) {
     console.error('Failed to check version:', err);
   }

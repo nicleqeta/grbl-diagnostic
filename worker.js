@@ -112,6 +112,18 @@ export default {
       return Response.redirect(new URL('/favicon.svg', request.url), 302);
     }
 
+    if (url.pathname === '/version') {
+      const assetReq = new Request(new URL('/version.json', request.url));
+      const assetRes = await env.ASSETS.fetch(assetReq);
+      let version = null;
+      if (assetRes.ok) {
+        try { ({ version } = await assetRes.json()); } catch { /* ignore */ }
+      }
+      return new Response(JSON.stringify({ version: version ?? null, build: env.BUILD_SHA ?? null }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
+
     if (url.pathname === '/script' || url.pathname.startsWith('/script/')) {
       if (request.method === 'OPTIONS') {
         return new Response(null, { headers: SCRIPT_CORS_HEADERS });
