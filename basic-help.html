@@ -605,7 +605,7 @@ REM VAR settle_ms=250
 870 RESULT "theoretical_midpoint_speed_mm_min", max_mid_speed_mm_min
 880 REPORT
 890 PRINT "Original $120 = " &amp; STR(original_accel) &amp; ", suggested $120 = " &amp; STR(recommended)
-900 LET apply_choice = FORM("Use suggested $120 now? [Apply Suggested] [Keep Original]", 1, 0)
+900 LET apply_choice = FORM("$120 was " &amp; original_accel &amp; ", suggested is " &amp; recommended &amp; ". [Apply Suggested] [Keep Original]", 1, 0)
 905 IF apply_choice &lt;&gt; 1 THEN GOTO 960
 910 SEND "$120=" &amp; STR(recommended) TIMEOUT 2000 REQUIRE_OK
 915 WAIT {settle_ms}
