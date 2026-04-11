@@ -774,23 +774,26 @@
   /* BASIC form-input modal (INPUT(FORM(...))) */
   .basic-form-overlay {
     position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.7);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 480px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    pointer-events: none;
   }
   .basic-form-box {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 24px;
-    max-width: 480px;
-    width: 92%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 14px;
+    pointer-events: auto;
   }
   .basic-form-message {
     font-size: 13px;
