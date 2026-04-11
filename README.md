@@ -340,7 +340,7 @@ During preview:
 Scripts are saved server-side and shared via a short opaque ID:
 
 ```
-https://grbl.camiable.com/?script=abc123
+https://gcomposer.app/?gcom=abc123
 ```
 
 The "Save Script" button saves the script to the server and assigns it an ID. Once saved, "Copy Share Link" copies the URL for that ID.
@@ -348,10 +348,10 @@ The "Save Script" button saves the script to the server and assigns it an ID. On
 Variable overrides are individual extra query parameters:
 
 ```
-https://grbl.camiable.com/?script=abc123&feedrate=2000&passes=5
+https://gcomposer.app/?gcom=abc123&feedrate=2000&passes=5
 ```
 
-Any query key not in the app's reserved list is treated as a variable override. Reserved keys that cannot be used as variable names: `script`, `preset`, `cmd`, `cmds`, `name`, `baud`, `dtr`, `observe`, `wait`, `delay`, `banner_timeout`, `banner_wait`, `show_req_resp`, `source`, `scrape`, `post`, `basic_post`.
+Any query key not in the app's reserved list is treated as a variable override. Reserved keys that cannot be used as variable names: `gcom`, `preset`, `cmd`, `cmds`, `name`, `baud`, `dtr`, `observe`, `wait`, `delay`, `banner_timeout`, `banner_wait`, `show_req_resp`, `source`, `scrape`, `post`, `basic_post`.
 
 ### Validator
 

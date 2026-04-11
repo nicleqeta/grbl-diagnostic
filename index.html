@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="GRBL Serial Diagnostic — browser-based GRBL serial terminal with a built-in line-numbered BASIC scripting engine. Write automated test scripts that send GRBL commands, wait for responses, loop, branch, do math, prompt for user input, and preview motion without a machine. Runs in Chrome/Edge via Web Serial API.">
-<title>GRBL Serial Diagnostic</title>
+<meta name="description" content="gcomposer - a browser-based GRBL console with a built-in scripting engine. Connect from Chrome or Edge via Web Serial — no install. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before touching real hardware.">
+<title>gcomposer</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="shortcut icon" href="/favicon.ico">
 <style>
@@ -1153,14 +1153,14 @@
   SHARE URL SYSTEM
   ----------------
   Scripts are saved server-side (Cloudflare KV) and shared via a short opaque ID:
-    ?script=<id>           ID assigned when the script is saved via "Save Script".
+    ?gcom=<id>             ID assigned when the script is saved via "Save Script".
                            "Copy Share Link" (enabled after saving) copies this URL.
                            The app fetches the full script from /script/{id}.
-  Variable overrides are individual extra query parameters alongside ?script=:
-    ?script=abc123&feedrate=2000&passes=5
+  Variable overrides are individual extra query parameters alongside ?gcom=:
+    ?gcom=abc123&feedrate=2000&passes=5
   Any query key not in the reserved list becomes a variable override.
   Reserved keys (never treated as variable overrides):
-    script, preset, cmd, cmds, name, baud, dtr, observe, wait,
+    gcom, preset, cmd, cmds, name, baud, dtr, observe, wait,
     delay, banner_timeout, banner_wait, show_req_resp, source, scrape,
     post, basic_post
 
@@ -1673,13 +1673,13 @@ function _flushTerminalDivs() {
   while (logLines.length > MAX_LOG_LINES) logLines.shift();
   scrollTerminalToBottom();
 }
-const APP_TITLE = 'GRBL Serial Diagnostic';
+const APP_TITLE = 'gcomposer';
 const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
-const SIDEBAR_WIDTH_KEY = 'grbl-diagnostic-sidebar-width';
+const SIDEBAR_WIDTH_KEY = 'gcomposer-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 680;
 const RESERVED_SCRIPT_QUERY_KEYS = new Set([
-  'script', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
+  'gcom', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
   'delay', 'banner_timeout', 'banner_wait', 'show_req_resp', 'source', 'scrape',
   'post', 'basic_post'
 ]);
@@ -2578,7 +2578,7 @@ function buildBasicShareUrl() {
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
-  url.searchParams.set('script', basicSourceId);
+  url.searchParams.set('gcom', basicSourceId);
   buildBasicOverrideEntries().forEach(([key, value]) => url.searchParams.set(key, value));
   return url.toString();
 }
@@ -3353,7 +3353,7 @@ function applyBasicScriptPackage(script, { sourceId = '', overrides = null, upda
 
 function parseStartupScriptRequest() {
   const params = new URLSearchParams(window.location.search);
-  const scriptId = (params.get('script') || '').trim();
+  const scriptId = (params.get('gcom') || '').trim();
   if (!scriptId) return null;
 
   const overrides = {};
@@ -7183,7 +7183,7 @@ function buildPresetSummary(config) {
 
 function parseDiagnosticsPreset() {
   const params = new URLSearchParams(window.location.search);
-  if (params.has('script')) return null;
+  if (params.has('gcom')) return null;
   const hasPresetParams = ['preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait', 'delay', 'banner_timeout', 'banner_wait', 'show_req_resp'].some(key => params.has(key));
   if (!hasPresetParams) return null;
 
@@ -7342,7 +7342,7 @@ function updateUrlFromAdvancedDiagnostics() {
     const url = new URL(window.location.href);
     url.search = '';
     url.hash = '';
-    url.searchParams.set('script', startupScriptRequest.id);
+    url.searchParams.set('gcom', startupScriptRequest.id);
     Object.entries(startupScriptRequest.overrides || {}).forEach(([key, value]) => url.searchParams.set(key, value));
     try { window.history.replaceState({}, '', url.toString()); } catch { /* suppressed in sandboxed iframe environments */ }
     return;
@@ -7479,7 +7479,7 @@ function buildPresetUrl(config) {
 function buildDiagnosticsLogName() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const label = currentRun.name || 'manual';
-  return `grbl-diagnostic-${label}-${ts}`;
+  return `gcomposer-${label}-${ts}`;
 }
 
 function formatLogTimestamp(date = new Date()) {
@@ -7510,7 +7510,7 @@ function buildDiscoursePayload() {
   return `[details="${DISCOURSE_TITLE}"]\n${escapeDiscourseHtmlChars(lines.join('\n'))}\n\n\`\`\`text\n${escapeDiscourseHtmlChars(logLines.join('\n'))}\n\`\`\`\n[/details]`;
 }
 
-function downloadTextFile(text, filenamePrefix = 'grbl-diagnostic') {
+function downloadTextFile(text, filenamePrefix = 'gcomposer') {
   const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -7637,7 +7637,7 @@ async function copyDiagnosticsLog() {
     return { ok: true, method: 'clipboard' };
   } catch (e) {
     try {
-      downloadTextFile(payload, 'grbl-diagnostic');
+      downloadTextFile(payload, 'gcomposer');
       addLine(`Clipboard copy unavailable (${e.message}); downloaded diagnostics file instead`, 'sys');
       return { ok: true, method: 'download' };
     } catch (downloadError) {
@@ -7915,7 +7915,7 @@ clearBtn.addEventListener('click', () => {
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
 copyLogPlainBtn.addEventListener('click', () => {
   if (!logLines.length) { addLine('No diagnostics log available yet', 'sys'); return; }
-  void copyTextPayload(logLines.join('\n'), 'Diagnostics log copied to clipboard', 'grbl-diagnostic');
+  void copyTextPayload(logLines.join('\n'), 'Diagnostics log copied to clipboard', 'gcomposer');
 });
 copyLinkBtn.addEventListener('click', copyBuilderLink);
 resetAdvancedBtn.addEventListener('click', resetAdvancedDiagnostics);
@@ -8316,7 +8316,7 @@ updateStartupBannerUi();
 syncAutoscrollUi();
 updateBasicValidationUi();
 syncCommandPrompt();
-addLine('GRBL Serial Diagnostic ready', 'sys');
+addLine('gcomposer ready', 'sys');
 addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
 if (diagnosticsPreset) {
   addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');

@@ -3,7 +3,7 @@ const SCRIPT_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
-const APP_TITLE = 'GRBL Serial Diagnostic';
+const APP_TITLE = 'gcomposer';
 
 function generateId(length = 6) {
   const alphabet = 'abcdefghijkmnopqrstuvwxyz23456789';
@@ -117,8 +117,8 @@ export default {
         return new Response(null, { headers: SCRIPT_CORS_HEADERS });
       }
 
-      if (!env.GRBL_SCRIPTS) {
-        return new Response('Missing KV binding: GRBL_SCRIPTS', {
+      if (!env.GCOM_SCRIPTS) {
+        return new Response('Missing KV binding: GCOM_SCRIPTS', {
           status: 500,
           headers: SCRIPT_CORS_HEADERS,
         });
@@ -141,9 +141,9 @@ export default {
           id,
           created: new Date().toISOString(),
         };
-        await env.GRBL_SCRIPTS.put(id, JSON.stringify(record));
+        await env.GCOM_SCRIPTS.put(id, JSON.stringify(record));
 
-        return new Response(JSON.stringify({ id, url: `${url.origin}/?script=${id}` }), {
+        return new Response(JSON.stringify({ id, url: `${url.origin}/?gcom=${id}` }), {
           headers: {
             'Content-Type': 'application/json',
             ...SCRIPT_CORS_HEADERS,
@@ -160,7 +160,7 @@ export default {
           });
         }
 
-        const value = await env.GRBL_SCRIPTS.get(id);
+        const value = await env.GCOM_SCRIPTS.get(id);
         if (!value) {
           return new Response('Not found', {
             status: 404,
@@ -182,10 +182,10 @@ export default {
       });
     }
 
-    if (request.method === 'GET' && url.pathname === '/' && url.searchParams.has('script') && env.GRBL_SCRIPTS) {
-      const scriptId = (url.searchParams.get('script') || '').trim();
+    if (request.method === 'GET' && url.pathname === '/' && url.searchParams.has('gcom') && env.GCOM_SCRIPTS) {
+      const scriptId = (url.searchParams.get('gcom') || '').trim();
       if (scriptId) {
-        const stored = await env.GRBL_SCRIPTS.get(scriptId);
+        const stored = await env.GCOM_SCRIPTS.get(scriptId);
         if (stored) {
           try {
             const script = normalizeScriptPayload(JSON.parse(stored));
