@@ -1151,7 +1151,7 @@
 
   G-CODE CLIPBOARD IMPORT
   -----------------------
-  BASIC clipboard import can auto-detect pasted G-code and offer conversion:
+  GCOM clipboard import can auto-detect pasted G-code and offer conversion:
     - If G-code patterns are detected, the app prompts to convert to BASIC.
     - Converted scripts use numbered BASIC lines and SEND statements.
     - O-word/macro structures are converted to a simplified, stepwise script form.
@@ -3421,7 +3421,7 @@ function collectBasicImportPlaceholders(text = '') {
 
 function parseBasicImportText(text, fileName = '') {
   const normalizedText = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  if (!normalizedText.trim()) throw new Error('Imported BASIC file is empty');
+  if (!normalizedText.trim()) throw new Error('Imported GCOM file is empty');
 
   const lines = normalizedText.split('\n');
   const meta = {
@@ -3451,7 +3451,7 @@ function parseBasicImportText(text, fileName = '') {
     if (varMatch) {
       const varName = String(varMatch[1] || '').trim();
       if (Object.prototype.hasOwnProperty.call(vars, varName)) {
-        throw new Error(`Imported BASIC file defines variable ${varName} more than once`);
+        throw new Error(`Imported GCOM file defines variable ${varName} more than once`);
       }
       vars[varName] = basicParseValue(varMatch[2] || '');
       bodyStart += 1;
@@ -3469,7 +3469,7 @@ function parseBasicImportText(text, fileName = '') {
       continue;
     }
     if (singletonHeaders.has(key)) {
-      throw new Error(`Imported BASIC file defines ${key} more than once`);
+      throw new Error(`Imported GCOM file defines ${key} more than once`);
     }
     singletonHeaders.add(key);
 
@@ -3485,7 +3485,7 @@ function parseBasicImportText(text, fileName = '') {
   meta.title = meta.title || deriveBasicImportTitle(fileName);
 
   if (!meta.programText) {
-    throw new Error('Imported BASIC file is missing runnable program text');
+    throw new Error('Imported GCOM file is missing runnable program text');
   }
 
   const placeholderNames = new Set([
@@ -3513,12 +3513,12 @@ async function importBasicScriptFromFile(file) {
     const payload = parseBasicImportText(text, importFile.name);
     applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
     markBasicScriptStructuralDirty();
-    addLine(`Imported BASIC file: ${payload.title || importFile.name}`, 'sys');
+    addLine(`Imported GCOM file: ${payload.title || importFile.name}`, 'sys');
     return true;
   } catch (error) {
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = `Import failed: ${error.message}`;
-    addLine(`Import BASIC file failed: ${error.message}`, 'err');
+    addLine(`Import GCOM file failed: ${error.message}`, 'err');
     return false;
   }
 }
@@ -3580,7 +3580,7 @@ function importClipboardAsPlainText(text) {
   const payload = parseBasicImportText(text, 'clipboard.bas');
   applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
   markBasicScriptStructuralDirty();
-  addLine(`Imported BASIC from clipboard: ${payload.title || 'Untitled'}`, 'sys');
+  addLine(`Imported GCOM from clipboard: ${payload.title || 'Untitled'}`, 'sys');
   return true;
 }
 
