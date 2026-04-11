@@ -5884,6 +5884,13 @@ function postLatestPreviewTimeline() {
 window.addEventListener('message', event => {
   if (event.origin !== window.location.origin) return;
   if (!event.data || typeof event.data !== 'object') return;
+  if (event.data.type === 'gcom-load-script') {
+    const programText = String(event.data.programText || '').trim();
+    if (!programText) return;
+    applyBasicScriptPackage({ programText }, { updateHistory: false });
+    addLine('GCOM script loaded from help window', 'sys');
+    return;
+  }
   if (event.data.type === 'preview-closed') {
     previewWindowRef = null;
     previewWindowCompact = false;

@@ -155,10 +155,16 @@
   .warn { color: var(--amber); }
   .err { color: var(--red); }
 
-  .copy-example-btn {
+  .example-btn-group {
     position: absolute;
     top: 8px;
     right: 8px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .copy-example-btn,
+  .load-example-btn {
     border: 1px solid var(--border);
     background: var(--surface2);
     color: var(--text);
@@ -169,7 +175,8 @@
     cursor: pointer;
   }
 
-  .copy-example-btn:hover {
+  .copy-example-btn:hover,
+  .load-example-btn:hover {
     border-color: var(--teal);
     color: #d1fae5;
   }
@@ -818,6 +825,9 @@ REM VAR settle_ms=200
           const pre = code.parentElement;
           if (!pre || pre.querySelector('.copy-example-btn')) return;
 
+          const group = document.createElement('div');
+          group.className = 'example-btn-group';
+
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'copy-example-btn';
@@ -835,7 +845,28 @@ REM VAR settle_ms=200
             }
           });
 
-          pre.appendChild(btn);
+          const loadBtn = document.createElement('button');
+          loadBtn.type = 'button';
+          loadBtn.className = 'load-example-btn';
+          loadBtn.textContent = 'Load';
+          loadBtn.setAttribute('aria-label', `Load example script ${index + 1} into editor`);
+          loadBtn.addEventListener('click', () => {
+            const text = code.textContent || '';
+            if (!text.trim()) return;
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({ type: 'gcom-load-script', programText: text }, window.location.origin);
+              window.opener.focus();
+              loadBtn.textContent = 'Loaded';
+              setTimeout(() => { loadBtn.textContent = 'Load'; }, 1200);
+            } else {
+              loadBtn.textContent = 'No window';
+              setTimeout(() => { loadBtn.textContent = 'Load'; }, 2000);
+            }
+          });
+
+          group.appendChild(btn);
+          group.appendChild(loadBtn);
+          pre.appendChild(group);
         });
       }
 
