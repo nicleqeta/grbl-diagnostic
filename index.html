@@ -1164,7 +1164,7 @@
   SHARE URL SYSTEM
   ----------------
   Scripts are saved server-side (Cloudflare KV) and shared via a short opaque ID:
-    ?gcom=<id>             ID assigned when the script is saved via "Save Script".
+    ?gcom=<id>             ID assigned when the script is saved via "Save and get URL".
                            "Copy Share Link" (enabled after saving) copies this URL.
                            The app fetches the full script from /script/{id}.
   Variable overrides are individual extra query parameters alongside ?gcom=:
@@ -1332,11 +1332,12 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <div class="diag-actions" style="margin-bottom:8px;">
           <button class="btn" id="basic-import-btn" type="button">Import File</button>
           <button class="btn" id="basic-clipboard-btn" type="button">Scan Clipboard</button>
-          <button class="btn success" id="basic-save-btn">Save Script</button>
+          <button class="btn" id="basic-save-gcom-btn" type="button">Save GCOM</button>
+          <button class="btn success" id="basic-save-btn">Save and get URL</button>
           <button class="btn" id="basic-copy-share-btn" disabled>Copy Share Link</button>
           <button class="btn" id="basic-copy-forum-btn" disabled>Copy Forum Post</button>
         </div>
-        <input type="file" id="basic-import-file-input" accept=".bas,.basic,.txt,text/plain" style="display:none;">
+        <input type="file" id="basic-import-file-input" accept=".gcom,.bas,.basic,.txt,text/plain" style="display:none;">
         <div class="diag-actions" style="margin-bottom:8px;">
           <button class="btn" id="basic-preview-btn" type="button">Preview</button>
           <button class="btn primary" id="basic-run-btn" disabled>Run Script</button>
@@ -1379,7 +1380,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       <div class="term-header-actions">
         <button class="icon-btn" id="copy-log-plain-btn">Copy Log</button>
         <button class="icon-btn" id="copy-diag-btn">Discourse Copy</button>
-        <button class="icon-btn" id="terminal-mode-btn" title="Toggle terminal render mode">Plain: On</button>
+        <button class="icon-btn" id="terminal-mode-btn" title="Toggle terminal render mode">Plain: Off</button>
         <button class="icon-btn" id="autoscroll-btn" title="Toggle autoscroll">↓ Auto</button>
         <button class="icon-btn" id="clear-btn">Clear</button>
         <button class="icon-btn" id="export-btn">Export</button>
@@ -1593,6 +1594,7 @@ const basicAddVarBtn   = document.getElementById('basic-add-var-btn');
 const basicScriptInput = document.getElementById('basic-script-input');
 const basicImportBtn   = document.getElementById('basic-import-btn');
 const basicClipboardBtn = document.getElementById('basic-clipboard-btn');
+const basicSaveGcomBtn = document.getElementById('basic-save-gcom-btn');
 const basicImportFileInput = document.getElementById('basic-import-file-input');
 const basicSaveBtn     = document.getElementById('basic-save-btn');
 const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
@@ -1804,7 +1806,7 @@ let writer = null;
 let reader = null;
 let readLoopActive = false;
 let autoScroll = true;
-let terminalPerformanceMode = true;
+let terminalPerformanceMode = false;
 let cmdHistory = [];
 let historyIdx = -1;
 let logLines = [];
@@ -7669,6 +7671,83 @@ function downloadTextFile(text, filenamePrefix = 'gcomposer') {
   URL.revokeObjectURL(url);
 }
 
+function sanitizeFileName(value, fallback = 'gcom-script') {
+  const raw = String(value || '').trim();
+  const cleaned = raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+  return cleaned || fallback;
+}
+
+async function saveTextToUserFile(text, suggestedName, mimeType = 'text/plain') {
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{
+        description: 'GCOM script',
+        accept: { [mimeType]: ['.gcom', '.bas', '.txt'] }
+      }]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+    return;
+  }
+
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildGcomExportText() {
+  basicLoadedVars = collectBasicVarsFromEditor();
+  const meta = getBasicScriptMeta();
+  const script = String(basicScriptInput.value || '').replace(/\r\n?/g, '\n').trim();
+
+  if (!script) throw new Error('Script source is required');
+
+  const lines = [];
+  if (meta.title) lines.push(`REM TITLE: ${meta.title}`);
+  if (meta.version) lines.push(`REM VERSION: ${meta.version}`);
+  if (meta.author) lines.push(`REM AUTHOR: ${meta.author}`);
+
+  const description = String(meta.description || '').replace(/\r\n?/g, '\n').trim();
+  if (description) {
+    description.split('\n').forEach(line => {
+      lines.push(`REM DESCRIPTION: ${line}`);
+    });
+  }
+
+  Object.entries(basicLoadedVars).forEach(([name, value]) => {
+    lines.push(`REM VAR ${name}=${String(value)}`);
+  });
+
+  if (lines.length) lines.push('');
+  lines.push(script);
+  return lines.join('\n');
+}
+
+async function saveGcomExport() {
+  const payload = buildGcomExportText();
+  const title = getBasicScriptMeta().title;
+  const fileBase = sanitizeFileName(title, 'gcom-script');
+  const fileName = `${fileBase}.gcom`;
+
+  let copied = false;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API not available in this browser context');
+    await navigator.clipboard.writeText(payload);
+    copied = true;
+  } catch (error) {
+    addLine(`Clipboard copy unavailable (${error.message}); proceeding with file save`, 'sys');
+  }
+
+  await saveTextToUserFile(payload, fileName, 'text/plain');
+  addLine(copied ? `GCOM copied and saved: ${fileName}` : `GCOM saved: ${fileName}`, 'sys');
+}
+
 async function copyTextPayload(text, successMessage, filenamePrefix) {
   try {
     if (!navigator.clipboard?.writeText) throw new Error('Clipboard API not available in this browser context');
@@ -7728,7 +7807,7 @@ function buildBasicForumPost() {
 async function saveBasicScript() {
   const payload = collectBasicScriptPayload();
   basicSaveBtn.disabled = true;
-  basicSaveBtn.textContent = 'Saving...';
+  basicSaveBtn.textContent = 'Saving and getting URL...';
 
   try {
     const response = await fetch('/script', {
@@ -7745,6 +7824,17 @@ async function saveBasicScript() {
     basicBaseVars = { ...payload.vars };
     basicLoadedVars = { ...payload.vars };
     basicSourceId = id;
+    const shareUrl = buildBasicShareUrl();
+    if (shareUrl) {
+      try { window.history.replaceState({}, '', shareUrl); } catch { /* suppressed in sandboxed iframe environments */ }
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API not available in this browser context');
+        await navigator.clipboard.writeText(shareUrl);
+        addLine('Saved script link copied to clipboard', 'sys');
+      } catch (error) {
+        addLine(`Saved script link copy failed: ${error.message}`, 'err');
+      }
+    }
     basicConfigBox.className = 'diag-box';
     basicConfigBox.textContent = buildBasicPreviewText(true);
     updateBasicDocumentTitle();
@@ -7756,12 +7846,17 @@ async function saveBasicScript() {
     addLine(`Save script failed: ${error.message}`, 'err');
     return false;
   } finally {
-    basicSaveBtn.textContent = 'Save Script';
+    basicSaveBtn.textContent = 'Save and get URL';
     updateBasicControlUi();
   }
 }
 
 basicSaveBtn.addEventListener('click', () => { void saveBasicScript(); });
+basicSaveGcomBtn.addEventListener('click', () => {
+  void saveGcomExport().catch(error => {
+    addLine(`Save GCOM failed: ${error.message}`, 'err');
+  });
+});
 basicCopyShareBtn.addEventListener('click', () => {
   const shareUrl = buildBasicShareUrl();
   if (!shareUrl) return;
@@ -8464,9 +8559,9 @@ renderVarEditor(basicLoadedVars);
 basicValidationState = basicValidateDraft();
 try {
   const savedTerminalMode = localStorage.getItem(TERMINAL_RENDER_MODE_KEY);
-  terminalPerformanceMode = savedTerminalMode == null ? true : savedTerminalMode === 'plain';
+  terminalPerformanceMode = savedTerminalMode == null ? false : savedTerminalMode === 'plain';
 } catch {
-  terminalPerformanceMode = true;
+  terminalPerformanceMode = false;
 }
 setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
