@@ -2572,8 +2572,8 @@ function renderBasicDescriptionTemplate(rawText, vars) {
 }
 
 const BASIC_IMPORT_LINE_RE = /^\s*\d+\b/;
-const BASIC_IMPORT_HEADER_RE = /^\s*REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION)\s*:\s*(.*)$/i;
-const BASIC_IMPORT_VAR_RE = /^\s*REM\s+VAR\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/i;
+const BASIC_IMPORT_HEADER_RE = /^\s*(?:REM\s+|;\s*)(TITLE|VERSION|AUTHOR|DESCRIPTION)\s*:\s*(.*)$/i;
+const BASIC_IMPORT_VAR_RE = /^\s*(?:REM\s+VAR\s+|;\s*VAR\s+)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/i;
 const BASIC_IMPORT_PLACEHOLDER_RE = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 // Stored raw program template (before var substitution) so re-apply works
@@ -3650,7 +3650,7 @@ function classifyClipboardProgramText(text) {
   const gcodeParamRe = /^#(?:\d+|<[_a-zA-Z]\w*>)(?:\s*=|\s|$)/;
 
   for (const line of lines) {
-    if (/^REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION|VAR)\b/i.test(line)) basicScore += 4;
+    if (/^REM\s+(TITLE|VERSION|AUTHOR|DESCRIPTION|VAR)\b/i.test(line) || /^;\s*(TITLE|VERSION|AUTHOR|DESCRIPTION|VAR)\b/i.test(line)) basicScore += 4;
 
     const numbered = line.match(/^\d+\s+(.+)$/);
     const body = numbered ? numbered[1].trim() : line;
@@ -3666,7 +3666,7 @@ function classifyClipboardProgramText(text) {
     if (gcodeLineRe.test(body)) gcodeScore += 3;
     if (gcodeMacroRe.test(body)) gcodeScore += 4;
     if (gcodeParamRe.test(body)) gcodeScore += 2;
-    if (/^\([^)]*\)$/.test(body) || /^;/.test(body)) gcodeScore += 1;
+    if (/^\([^)]*\)$/.test(body) || (/^;/.test(body) && !/^;\s*(TITLE|VERSION|AUTHOR|DESCRIPTION|VAR)\b/i.test(body))) gcodeScore += 1;
     if (/^[GMT]\d+.*\b[XYZIJKRFS]-?\d/i.test(body)) gcodeScore += 2;
   }
 
@@ -3831,8 +3831,8 @@ class GcodeToBasicConverter {
     let conditionStack = [];
     
     // Add header comments
-    basicLines.push('REM TITLE: G-code Import');
-    basicLines.push('REM DESCRIPTION: Auto-converted from G-code with o-codes');
+    basicLines.push('; TITLE: G-code Import');
+    basicLines.push('; DESCRIPTION: Auto-converted from G-code with o-codes');
     
     // Scan for variables/parameters in G-code
     this.extractVariables();
@@ -7762,19 +7762,19 @@ function buildGcomExportText() {
   if (!script) throw new Error('Script source is required');
 
   const lines = [];
-  if (meta.title) lines.push(`REM TITLE: ${meta.title}`);
-  if (meta.version) lines.push(`REM VERSION: ${meta.version}`);
-  if (meta.author) lines.push(`REM AUTHOR: ${meta.author}`);
+  if (meta.title) lines.push(`; TITLE: ${meta.title}`);
+  if (meta.version) lines.push(`; VERSION: ${meta.version}`);
+  if (meta.author) lines.push(`; AUTHOR: ${meta.author}`);
 
   const description = String(meta.description || '').replace(/\r\n?/g, '\n').trim();
   if (description) {
     description.split('\n').forEach(line => {
-      lines.push(`REM DESCRIPTION: ${line}`);
+      lines.push(`; DESCRIPTION: ${line}`);
     });
   }
 
   Object.entries(basicLoadedVars).forEach(([name, value]) => {
-    lines.push(`REM VAR ${name}=${String(value)}`);
+    lines.push(`; VAR ${name}=${String(value)}`);
   });
 
   if (lines.length) lines.push('');
