@@ -5887,8 +5887,14 @@ window.addEventListener('message', event => {
   if (event.data.type === 'gcom-load-script') {
     const programText = String(event.data.programText || '').trim();
     if (!programText) return;
-    applyBasicScriptPackage({ programText }, { updateHistory: false });
-    addLine('GCOM script loaded from help window', 'sys');
+    try {
+      const payload = parseBasicImportText(programText, 'help-example.bas');
+      applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
+      markBasicScriptStructuralDirty();
+      addLine(`GCOM script loaded from help: ${payload.title || 'Untitled'}`, 'sys');
+    } catch (error) {
+      addLine(`Failed to load script from help: ${error.message}`, 'err');
+    }
     return;
   }
   if (event.data.type === 'preview-closed') {
