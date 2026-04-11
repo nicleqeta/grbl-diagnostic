@@ -205,27 +205,34 @@
         <li><code>READ("$30") INTO name</code> or <code>LET name = READ("$30")</code>: Read a GRBL setting from <code>$$</code>.</li>
         <li><code>SETTING("$30") INTO name</code> or <code>LET name = SETTING("$30")</code>: Alias for <code>READ</code>.</li>
         <li><code>INPUT name</code>, <code>INPUT name, "Prompt"</code>, <code>name = INPUT("Prompt")</code>, <code>LET name = INPUT("Prompt")</code>: Ask user for input via a text field.</li>
-        <li><code>LET name = FORM("message [Label1] [Label2]", val1, val2)</code>: Show a button-choice dialog. Each <code>[Label]</code> in the message becomes a button; the matching <code>val</code> argument is the numeric value returned when that button is clicked. Use <code>\,</code> to include a literal comma inside the message text. Can also be written as <code>INPUT(FORM(...))</code>.</li>
+        <li><code>LET name = FORM(msgExpr, val1, val2)</code>: Show a button-choice dialog. The message is any expression &mdash; literal string, concatenation, variable references, etc. Each <code>[Label]</code> token in the rendered message becomes a button; the matching <code>val</code> argument is the numeric value returned when clicked. Numbers are implicitly converted to text so <code>STR()</code> is optional. Use <code>\,</code> to include a literal comma. Can also be written as <code>INPUT(FORM(...))</code>.</li>
       </ul>
       <h3>FORM() Button Dialog</h3>
       <p>
-        <code>FORM()</code> shows a modal dialog with clickable buttons derived from <code>[Label]</code> tokens embedded in the message string.
+        <code>FORM()</code> shows a modal dialog with clickable buttons derived from <code>[Label]</code> tokens in the rendered message.
+        The message argument is evaluated as a full expression at runtime, so you can embed variable values using string concatenation (<code>&amp;</code>) or any other supported expression.
+        Numbers are implicitly converted to text &mdash; <code>STR()</code> is optional inside the message.
         The remaining comma-separated arguments are the numeric values each button returns, matched left-to-right with the labels.
         Use <code>\,</code> to embed a literal comma in the message without splitting the argument list.
       </p>
       <p>Two forms are supported:</p>
       <ul>
-        <li><strong><code>LET x = FORM(...)</code></strong> — buttons only, no text field. The user must click a button. Use this for clear-cut choices where only the predefined values make sense.</li>
-        <li><strong><code>LET x = INPUT(FORM(...))</code></strong> — same buttons <em>plus</em> a text field. Buttons act as shortcuts that immediately resolve the dialog; the user can also type a custom value and press Enter. Use this when a free-form value should be possible alongside the presets.</li>
+        <li><strong><code>LET x = FORM(...)</code></strong> &mdash; buttons only, no text field. The user must click a button. Use this for clear-cut choices where only the predefined values make sense.</li>
+        <li><strong><code>LET x = INPUT(FORM(...))</code></strong> &mdash; same buttons <em>plus</em> a text field. Buttons act as shortcuts that immediately resolve the dialog; the user can also type a custom value and press Enter. Use this when a free-form value should be possible alongside the presets.</li>
       </ul>
-      <pre><code>REM FORM() — buttons only (no text field)
+      <pre><code>REM FORM() &mdash; static message, buttons only
 10 LET choice = FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0)
 20 IF choice = 0 THEN GOTO 9000
 30 PRINT "Mode: " &amp; STR(choice)
 
-REM INPUT(FORM()) — text field shown; buttons are shortcuts
+REM FORM() &mdash; dynamic message (STR() optional; numbers auto-convert)
+10 LET accel = SETTING("$120")
+20 LET answer = FORM("Current $120 = " &amp; accel &amp; " mm/s&#xB2;. [Keep] [Double]", accel, accel * 2)
+30 SEND "$120=" &amp; STR(answer) TIMEOUT 2000 REQUIRE_OK
+
+REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
 10 PRINT "Current $120 = " &amp; STR(SETTING("$120"))
-20 LET new_accel = INPUT(FORM("Set $120? [Keep Current] [Double It] — or type a value:", SETTING("$120"), SETTING("$120") * 2))
+20 LET new_accel = INPUT(FORM("Set $120? [Keep Current] [Double It] &mdash; or type a value:", SETTING("$120"), SETTING("$120") * 2))
 30 SEND "$120=" &amp; STR(new_accel) TIMEOUT 2000 REQUIRE_OK</code></pre>
     </section>
 
@@ -625,7 +632,7 @@ REM VAR settle_ms=250
 1050 SEND "G1 X-" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
 1060 WAIT_IDLE {idle_timeout}
 1070 NEXT j
-1080 LET answer = FORM("Tested $120=" &amp; STR(current_accel) &amp; ". [Bad or Skip] [Still Clean]", 1, 0)
+1080 LET answer = FORM("Tested $120=" &amp; current_accel &amp; ". [Bad or Skip] [Still Clean]", 1, 0)
 1090 RETURN
 
 9000 PRINT "Test cancelled."

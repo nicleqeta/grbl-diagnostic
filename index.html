@@ -1051,6 +1051,9 @@
   PRINT expr                  Print a message to the terminal log.
   INPUT var                   Prompt the user for a value, assign to var.
   LET var = INPUT(prompt)     Same as INPUT but inline with a prompt string.
+  LET var = FORM(msgExpr, v1, v2, ...)  Show a button dialog. Message is any expression;
+                              [Label] tokens become buttons returning the paired numeric values.
+                              Numbers in the message auto-convert to text (STR optional).
   READ var                    Read the next incoming serial line into var.
   IF cond THEN GOTO line      Conditional jump to a line number.
   GOTO line                   Unconditional jump to a line number.
@@ -3097,10 +3100,13 @@ function basicValidateScript(source, paramNames = []) {
         errors.push(`Line ${lineNum}: FORM() requires a message and at least one button value`);
         return;
       }
-      const labelMatches = [...formArgs[0].matchAll(/\[([^\]]+)\]/g)];
-      const valueCount = formArgs.length - 1;
-      if (labelMatches.length !== valueCount) {
-        errors.push(`Line ${lineNum}: FORM() has ${labelMatches.length} [label](s) but ${valueCount} value(s) — counts must match`);
+      // Message argument is a full expression (may be literal string or concatenation).
+      // Validate it as an expression; label/value count enforcement is deferred to runtime
+      // because the message text may be dynamic.
+      basicValidateExpressionSyntax(formArgs[0].trim(), lineNum, 'the FORM message expression', definedParams, errors);
+      // Validate each button value expression.
+      for (let vi = 1; vi < formArgs.length; vi++) {
+        basicValidateExpressionSyntax(formArgs[vi].trim(), lineNum, `FORM button ${vi} value`, definedParams, errors);
       }
       return;
     }
@@ -4409,15 +4415,22 @@ function basicFindInputExpressionCall(exprText) {
 }
 
 // Resolve a FORM(...) inner content and show the button dialog.
+// The message argument is evaluated as a full expression; the result is coerced to a string
+// so numeric values and concatenation like "v=" & speed appear correctly without STR().
 // allowTextInput: passed through to basicShowForm to show/hide the text field.
 // Returns the string value chosen (button or typed text).
 async function basicResolveFormCall(formInner, vars, allowTextInput = false) {
   const formArgs = basicSplitFormArgs(formInner);
   if (formArgs.length < 2) throw new Error('FORM() requires a message and at least one button value');
-  // Strip surrounding quotes from the message string literal
-  let displayMessage = formArgs[0].trim();
-  if (displayMessage.startsWith('"') && displayMessage.endsWith('"')) {
-    displayMessage = displayMessage.slice(1, -1);
+  // Evaluate message as a runtime expression and coerce result to string.
+  // This supports plain string literals ("text"), concatenation ("x=" & val), and
+  // variable references. STR() is optional — numeric results are implicitly converted.
+  let displayMessage;
+  try {
+    const msgResult = await basicEvalExprRuntime(formArgs[0].trim(), vars);
+    displayMessage = String(msgResult);
+  } catch (e) {
+    throw new Error(`FORM() message expression error: ${e.message}`);
   }
   displayMessage = displayMessage.replace(/\\,/g, ',');
   const labelMatches = [...displayMessage.matchAll(/\[([^\]]+)\]/g)];
