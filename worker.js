@@ -116,10 +116,23 @@ export default {
       const assetReq = new Request(new URL('/version.json', request.url));
       const assetRes = await env.ASSETS.fetch(assetReq);
       let version = null;
+      let versionSource = 'missing';
       if (assetRes.ok) {
-        try { ({ version } = await assetRes.json()); } catch { /* ignore */ }
+        try {
+          ({ version } = await assetRes.json());
+          if (version) versionSource = 'assets.version.json';
+        } catch {
+          versionSource = 'assets.version.json (parse_error)';
+        }
       }
-      return new Response(JSON.stringify({ version: version ?? null, build: env.BUILD_SHA ?? null }), {
+      const build = typeof env.BUILD_SHA === 'string' ? env.BUILD_SHA.trim() : '';
+      const buildSource = build ? 'env.BUILD_SHA' : 'missing';
+      return new Response(JSON.stringify({
+        version: version ?? null,
+        build: build || null,
+        version_source: versionSource,
+        build_source: buildSource,
+      }), {
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       });
     }

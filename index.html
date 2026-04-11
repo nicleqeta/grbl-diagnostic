@@ -1192,7 +1192,7 @@
   <div class="logo">
     <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="4"/><line x1="8" y1="12" x2="8" y2="15"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="12" y1="8" x2="15" y2="8"/></svg>
   </div>
-  <h1>GRBL Diagnostic <span>/ serial terminal</span></h1>
+  <h1>gcomposer <span>/ GRBL serial console</span></h1>
   <div class="version-badge" id="version-badge"></div>
   <div class="status-group">
     <div class="status-pill disconnected" id="transport-pill">Disconnected</div>
@@ -1480,14 +1480,26 @@ async function loadAndCheckVersion() {
     const response = await fetch('/version?t=' + Date.now());
     if (!response.ok) return;
     const data = await response.json();
-    const versionToken = [data.version, data.build].filter(Boolean).join('+');
+    let resolvedVersion = data.version;
+    if (!resolvedVersion) {
+      try {
+        const fallbackResponse = await fetch('version.json?t=' + Date.now());
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          resolvedVersion = fallbackData.version;
+        }
+      } catch {
+        // Keep unresolved version if local fallback fetch fails.
+      }
+    }
+    const versionToken = [resolvedVersion, data.build].filter(Boolean).join('+');
     currentVersion = versionToken || null;
     storedVersion = localStorage.getItem('app-version');
     
     // Display current version in header
     const badge = document.getElementById('version-badge');
     if (badge) {
-      badge.textContent = data.version ? `v${String(data.version).trim()}` : '';
+      badge.textContent = resolvedVersion ? `v${String(resolvedVersion).trim()}` : '';
     }
     
     // Check if new version is available
