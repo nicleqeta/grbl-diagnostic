@@ -7978,16 +7978,18 @@ function addLine(text, type = 'rx') {
 
   if (type === 'rx') {
     recordReadySignal(text);
+    // Always sync-update main-thread machineState before releasing any WAIT_FOR_LINE
+    // interceptor, so STATE() reads the correct value when the script resumes.
+    updateStatus(text);
     // Route to incoming line interceptor if active (for BASIC READ)
     if (incomingLineInterceptor) { incomingLineInterceptor(text); }
   }
 
   // During benchmark runs, suppress ? status poll tx and the resulting <State|...> rx
-  // lines to reduce DOM churn. Machine state is updated by the worker when active,
-  // or by updateStatus below when falling back to the main thread.
+  // lines to reduce DOM churn. Machine state is kept current by updateStatus above.
   if (basicBenchmarkCapture) {
-    if (type === 'tx' && trimmedText === '?') { if (!benchmarkRuntimeWorkerReady) updateStatus(text); return; }
-    if (type === 'rx' && /^<[A-Za-z]+[:|]/.test(text)) { if (!benchmarkRuntimeWorkerReady) updateStatus(text); return; }
+    if (type === 'tx' && trimmedText === '?') return;
+    if (type === 'rx' && /^<[A-Za-z]+[:|]/.test(text)) return;
   }
 
   if (basicBenchmarkUiQuiet) {
@@ -8022,7 +8024,6 @@ function addLine(text, type = 'rx') {
   if (!_terminalFlushId) _terminalFlushId = requestAnimationFrame(_flushTerminalDivs);
 
   if (logLines.length === 1) updateCopyLogState();
-  if (!benchmarkRuntimeWorkerReady) updateStatus(text);
 }
 
 function colorizeResponse(text) {
