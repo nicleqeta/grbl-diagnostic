@@ -453,6 +453,11 @@
   .line-sys .line-text { color: var(--amber); font-style: italic; }
   .line-err .line-text { color: var(--red); }
   .line-basic .line-text { color: var(--blue); font-style: italic; }
+  .line-minimal {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
 
   .line-text .tok-idle   { color: var(--green); font-weight: 600; }
   .line-text .tok-alarm  { color: var(--red); font-weight: 600; }
@@ -1374,6 +1379,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       <div class="term-header-actions">
         <button class="icon-btn" id="copy-log-plain-btn">Copy Log</button>
         <button class="icon-btn" id="copy-diag-btn">Discourse Copy</button>
+        <button class="icon-btn" id="terminal-mode-btn" title="Toggle terminal render mode">Plain: On</button>
         <button class="icon-btn" id="autoscroll-btn" title="Toggle autoscroll">↓ Auto</button>
         <button class="icon-btn" id="clear-btn">Clear</button>
         <button class="icon-btn" id="export-btn">Export</button>
@@ -1539,6 +1545,7 @@ const clearBtn     = document.getElementById('clear-btn');
 const exportBtn    = document.getElementById('export-btn');
 const copyDiagBtn  = document.getElementById('copy-diag-btn');
 const copyLogPlainBtn = document.getElementById('copy-log-plain-btn');
+const terminalModeBtn = document.getElementById('terminal-mode-btn');
 const autoscrollBtn= document.getElementById('autoscroll-btn');
 const holdBtn      = document.getElementById('hold-btn');
 const resumeBtn    = document.getElementById('resume-btn');
@@ -1694,6 +1701,7 @@ function _flushTerminalDivs() {
 }
 const APP_TITLE = 'gcomposer';
 const DISCOURSE_TITLE = 'gcomposer / GRBL serial console Log';
+const TERMINAL_RENDER_MODE_KEY = 'gcomposer-terminal-render-mode';
 const SIDEBAR_WIDTH_KEY = 'gcomposer-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 680;
@@ -1723,6 +1731,7 @@ let writer = null;
 let reader = null;
 let readLoopActive = false;
 let autoScroll = true;
+let terminalPerformanceMode = true;
 let cmdHistory = [];
 let historyIdx = -1;
 let logLines = [];
@@ -2409,6 +2418,24 @@ function syncAutoscrollUi() {
   autoscrollBtn.style.borderColor = autoScroll ? 'var(--teal)' : '';
   autoscrollBtn.textContent = autoScroll ? '↓ Auto' : '↓ Hold';
   autoscrollBtn.title = autoScroll ? 'Disable terminal auto-follow' : 'Enable terminal auto-follow';
+}
+
+function syncTerminalModeUi() {
+  if (!terminalModeBtn) return;
+  terminalModeBtn.style.color = terminalPerformanceMode ? 'var(--teal)' : '';
+  terminalModeBtn.style.borderColor = terminalPerformanceMode ? 'var(--teal)' : '';
+  terminalModeBtn.textContent = terminalPerformanceMode ? 'Plain: On' : 'Plain: Off';
+  terminalModeBtn.title = terminalPerformanceMode
+    ? 'Disable plain terminal rendering'
+    : 'Enable plain terminal rendering for high-throughput runs';
+}
+
+function setTerminalRenderMode(enabled) {
+  terminalPerformanceMode = Boolean(enabled);
+  try {
+    localStorage.setItem(TERMINAL_RENDER_MODE_KEY, terminalPerformanceMode ? 'plain' : 'rich');
+  } catch {}
+  syncTerminalModeUi();
 }
 
 function enableAutoscrollFollow() {
@@ -7948,7 +7975,20 @@ autoscrollBtn.addEventListener('click', () => {
   if (autoScroll) scrollTerminalToBottom(true);
 });
 
+terminalModeBtn.addEventListener('click', () => {
+  setTerminalRenderMode(!terminalPerformanceMode);
+});
+
 clearBtn.addEventListener('click', () => {
+  if (terminalFollowFrame) {
+    cancelAnimationFrame(terminalFollowFrame);
+    terminalFollowFrame = 0;
+  }
+  if (_terminalFlushId) {
+    cancelAnimationFrame(_terminalFlushId);
+    _terminalFlushId = 0;
+  }
+  _terminalDivQueue = [];
   terminal.innerHTML = '';
   logLines = [];
   updateCopyLogState();
@@ -8025,6 +8065,16 @@ function addLine(text, type = 'rx') {
   }
 
   logLines.push(`[${time}] ${arrow} ${text}`);
+
+  if (terminalPerformanceMode) {
+    const div = document.createElement('div');
+    div.className = `line line-minimal line-${type}`;
+    div.textContent = `${time} ${arrow} ${text}`;
+    _terminalDivQueue.push(div);
+    if (!_terminalFlushId) _terminalFlushId = requestAnimationFrame(_flushTerminalDivs);
+    if (logLines.length === 1) updateCopyLogState();
+    return;
+  }
 
   const div = document.createElement('div');
   div.className = `line line-${type}`;
@@ -8351,12 +8401,19 @@ applyPresetToUi();
 loadSidebarWidth();
 renderVarEditor(basicLoadedVars);
 basicValidationState = basicValidateDraft();
+try {
+  const savedTerminalMode = localStorage.getItem(TERMINAL_RENDER_MODE_KEY);
+  terminalPerformanceMode = savedTerminalMode == null ? true : savedTerminalMode === 'plain';
+} catch {
+  terminalPerformanceMode = true;
+}
 setConnectionUi('disconnected');
 updateAdvancedDiagnosticsDirtyState();
 setTransportState('disconnected');
 setMachineState('unknown');
 updateStartupBannerUi();
 syncAutoscrollUi();
+syncTerminalModeUi();
 updateBasicValidationUi();
 syncCommandPrompt();
 addLine('gcomposer ready', 'sys');
