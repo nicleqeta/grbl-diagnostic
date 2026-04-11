@@ -113,18 +113,32 @@ export default {
     }
 
     if (url.pathname === '/version') {
-      const assetReq = new Request(new URL('/version.json', request.url));
-      const assetRes = await env.ASSETS.fetch(assetReq);
       let version = null;
       let versionSource = 'missing';
-      if (assetRes.ok) {
-        try {
-          ({ version } = await assetRes.json());
-          if (version) versionSource = 'assets.version.json';
-        } catch {
-          versionSource = 'assets.version.json (parse_error)';
+      let versionError = null;
+
+      try {
+        const versionUrl = new URL('/version.json', request.url);
+        // Prefer the assets binding when available, with a fetch() fallback.
+        const assetRes = env.ASSETS && typeof env.ASSETS.fetch === 'function'
+          ? await env.ASSETS.fetch(new Request(versionUrl))
+          : await fetch(versionUrl.toString());
+
+        if (assetRes.ok) {
+          try {
+            ({ version } = await assetRes.json());
+            if (version) versionSource = 'assets.version.json';
+          } catch {
+            versionSource = 'assets.version.json (parse_error)';
+          }
+        } else {
+          versionSource = `assets.version.json (status_${assetRes.status})`;
         }
+      } catch (error) {
+        versionSource = 'error';
+        versionError = String(error?.message || error);
       }
+
       const build = typeof env.BUILD_SHA === 'string' ? env.BUILD_SHA.trim() : '';
       const buildSource = build ? 'env.BUILD_SHA' : 'missing';
       return new Response(JSON.stringify({
@@ -132,6 +146,7 @@ export default {
         build: build || null,
         version_source: versionSource,
         build_source: buildSource,
+        version_error: versionError,
       }), {
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       });
