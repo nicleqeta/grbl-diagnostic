@@ -486,22 +486,22 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
 
     <section class="card">
       <h2>10. Import Header Format</h2>
-      <p>Plain-text GCOM script imports can start with a short metadata header before the first numbered GCOM script line. The importer reads only top-of-file <code>REM</code> header lines, then treats the rest as runnable GCOM script.</p>
+      <p>Plain-text GCOM script imports can start with a short metadata header before the first numbered GCOM script line. Header lines use a <code>;</code> prefix — the <code>Save GCOM</code> button generates this format automatically. The importer also accepts the legacy <code>REM</code> prefix for backward compatibility.</p>
       <ul>
-        <li><code>REM TITLE: ...</code>, <code>REM VERSION: ...</code>, and <code>REM AUTHOR: ...</code> set the matching app fields.</li>
-        <li><code>REM DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
+        <li><code>; TITLE: ...</code>, <code>; VERSION: ...</code>, and <code>; AUTHOR: ...</code> set the matching app fields.</li>
+        <li><code>; DESCRIPTION: ...</code> can appear more than once. Repeated lines are joined into a multiline description in the app.</li>
         <li>Rendered descriptions support both simple placeholders like <code>{feed}</code> and inline expression placeholders like <code>{{min_batch_count * 2}}</code>.</li>
-        <li><code>REM VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
+        <li><code>; VAR name=value</code> seeds a variable default. Placeholder names from the script or description are also added if they are missing.</li>
         <li>If no title header exists, import falls back to the filename.</li>
         <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step GCOM automatically.</li>
       </ul>
-      <pre><code>REM TITLE: X-Axis Max travel Speed and Acceleration Finder
-REM VERSION: 1
-REM AUTHOR: GitHub Copilot
-    REM DESCRIPTION: Raises X acceleration while sweeping fast X travel moves to find the highest reliable travel speed.
-    REM DESCRIPTION: Suggests a conservative fallback near the edge and reports estimated midpoint travel speed.
-REM VAR start_accel=200
-REM VAR coarse_step=50
+      <pre><code>; TITLE: X-Axis Max travel Speed and Acceleration Finder
+; VERSION: 1
+; AUTHOR: GitHub Copilot
+; DESCRIPTION: Raises X acceleration while sweeping fast X travel moves to find the highest reliable travel speed.
+; DESCRIPTION: Suggests a conservative fallback near the edge and reports estimated midpoint travel speed.
+; VAR start_accel=200
+; VAR coarse_step=50
 10 PRINT "X-axis acceleration test"
 20 PRINT "Start at " &amp; STR({start_accel})</code></pre>
     </section>
@@ -522,20 +522,20 @@ REM VAR coarse_step=50
       <p>This example ramps <code>$120</code> upward while repeatedly running fast back-and-forth X travel moves, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
       <p>After reporting results, the script compares the original and suggested <code>$120</code> values and asks whether to apply the suggested value now or keep the original setting.</p>
       <p><span class="warn">Note:</span> this script uses button-based <code>FORM()</code> prompts so operator decisions are explicit during the test flow.</p>
-      <pre><code>REM TITLE: X-Axis Max travel Speed and Acceleration Finder
-REM AUTHOR: GitHub Copilot
-  REM VERSION: 4
-  REM DESCRIPTION: Raises X acceleration by {coarse_step} starting at {start_accel} while running fast X travel moves until motion sounds bad or skips, then refines by {fine_step}.
-  REM DESCRIPTION: Estimates peak midpoint travel speed and asks whether to apply the suggested $120 setting or keep the original.
-  REM VAR start_accel=800
-  REM VAR coarse_step=200
-  REM VAR fine_step=20
-  REM VAR max_accel=4000
-  REM VAR x_travel=400
-  REM VAR x_feed=70000
-  REM VAR repeats=1
-REM VAR idle_timeout=20000
-REM VAR settle_ms=250
+      <pre><code>; TITLE: X-Axis Max travel Speed and Acceleration Finder
+; AUTHOR: GitHub Copilot
+; VERSION: 4
+; DESCRIPTION: Raises X acceleration by {coarse_step} starting at {start_accel} while running fast X travel moves until motion sounds bad or skips, then refines by {fine_step}.
+; DESCRIPTION: Estimates peak midpoint travel speed and asks whether to apply the suggested $120 setting or keep the original.
+; VAR start_accel=800
+; VAR coarse_step=200
+; VAR fine_step=20
+; VAR max_accel=4000
+; VAR x_travel=400
+; VAR x_feed=70000
+; VAR repeats=1
+; VAR idle_timeout=20000
+; VAR settle_ms=250
 
 10 PRINT "X-axis max travel speed and acceleration test"
 20 PRINT "Clear the machine so X can move back and forth safely."
