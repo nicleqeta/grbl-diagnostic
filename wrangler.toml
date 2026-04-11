@@ -9,3 +9,6 @@ id = "1f7fdea060504215b6af409a1052788a"
 [assets]
 directory = "."
 not_found_handling = "single-page-application"
+
+[vars]
+BUILD_SHA = "dev"
