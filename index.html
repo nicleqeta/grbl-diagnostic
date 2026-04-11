@@ -1666,8 +1666,12 @@ const DEFAULT_STATUS_DELAY_MS = 600;
 const DEFAULT_BANNER_TIMEOUT_MS = 3000;
 const DEFAULT_READY_SETTLE_MS = 150;
 const MAX_LOG_LINES = 5000;
+const MAX_RENDERED_LOG_LINES = 300;
+const TERMINAL_AUTOSCROLL_THROTTLE_MS = 80;
 let _terminalDivQueue = [];
+let _terminalTextQueue = [];
 let _terminalFlushId = 0;
+let _renderedPlainLines = [];
 let _lastPreviewPost = 0;
 let _previewPostPending = false;
 let _copyLogHasContent = false;
@@ -1687,21 +1691,90 @@ const DEFAULT_BENCHMARK_META = {
   description: ''
 };
 
+function buildTerminalLineDiv(time, arrow, text, type) {
+  const div = document.createElement('div');
+  div.className = `line line-${type}`;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'line-time';
+  timeSpan.textContent = time;
+
+  const arrowSpan = document.createElement('span');
+  arrowSpan.className = 'line-arrow';
+  arrowSpan.textContent = arrow;
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'line-text';
+  textSpan.innerHTML = colorizeResponse(text);
+
+  div.appendChild(timeSpan);
+  div.appendChild(arrowSpan);
+  div.appendChild(textSpan);
+  return div;
+}
+
+function rebuildTerminalViewport() {
+  if (_terminalFlushId) {
+    cancelAnimationFrame(_terminalFlushId);
+    _terminalFlushId = 0;
+  }
+  _terminalDivQueue = [];
+  _terminalTextQueue = [];
+  terminal.innerHTML = '';
+
+  const recentEntries = logLines.slice(-MAX_RENDERED_LOG_LINES);
+  if (terminalPerformanceMode) {
+    _renderedPlainLines = recentEntries.slice();
+    terminal.textContent = _renderedPlainLines.join('\n');
+    return;
+  }
+
+  _renderedPlainLines = [];
+  const frag = document.createDocumentFragment();
+  for (const entry of recentEntries) {
+    const match = String(entry).match(/^\[(.*?)\]\s(\S)\s([\s\S]*)$/);
+    if (!match) continue;
+    const [, time, arrow, text] = match;
+    frag.appendChild(buildTerminalLineDiv(time, arrow, text, TERMINAL_ARROW_TO_TYPE.get(arrow) || 'rx'));
+  }
+  terminal.appendChild(frag);
+}
+
 function _flushTerminalDivs() {
   _terminalFlushId = 0;
+  if (terminalPerformanceMode) {
+    if (!_terminalTextQueue.length) return;
+    const queuedLines = _terminalTextQueue;
+    _terminalTextQueue = [];
+    _renderedPlainLines.push(...queuedLines);
+    if (_renderedPlainLines.length > MAX_RENDERED_LOG_LINES) {
+      _renderedPlainLines.splice(0, _renderedPlainLines.length - MAX_RENDERED_LOG_LINES);
+    }
+    terminal.textContent = _renderedPlainLines.join('\n');
+    while (logLines.length > MAX_LOG_LINES) logLines.shift();
+    scrollTerminalToBottom();
+    return;
+  }
   if (!_terminalDivQueue.length) return;
   const frag = document.createDocumentFragment();
   const queuedDivs = _terminalDivQueue;
   _terminalDivQueue = [];
   for (const div of queuedDivs) frag.appendChild(div);
   terminal.appendChild(frag);
-  while (terminal.children.length > MAX_LOG_LINES) terminal.removeChild(terminal.firstChild);
+  while (terminal.children.length > MAX_RENDERED_LOG_LINES) terminal.removeChild(terminal.firstChild);
   while (logLines.length > MAX_LOG_LINES) logLines.shift();
   scrollTerminalToBottom();
 }
 const APP_TITLE = 'gcomposer';
 const DISCOURSE_TITLE = 'gcomposer / GRBL serial console Log';
 const TERMINAL_RENDER_MODE_KEY = 'gcomposer-terminal-render-mode';
+const TERMINAL_ARROW_TO_TYPE = new Map([
+  ['\u2192', 'tx'],
+  ['\u2190', 'rx'],
+  ['\u25CF', 'sys'],
+  ['\u2715', 'err'],
+  ['\u2B21', 'basic']
+]);
 const SIDEBAR_WIDTH_KEY = 'gcomposer-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 680;
@@ -2394,6 +2467,7 @@ function startSidebarResize(event) {
 
 let terminalFollowFrame = 0;
 let suppressTerminalScrollToggle = false;
+let lastTerminalFollowAt = 0;
 
 function isTerminalNearBottom(threshold = 20) {
   const effectiveThreshold = Math.max(threshold, Math.round(terminal.clientHeight * 0.12));
@@ -2402,11 +2476,15 @@ function isTerminalNearBottom(threshold = 20) {
 
 function scrollTerminalToBottom(force = false) {
   if (!force && !autoScroll) return;
-  if (terminalFollowFrame) cancelAnimationFrame(terminalFollowFrame);
+  const now = performance.now();
+  if (!force && terminalFollowFrame) return;
+  if (!force && (now - lastTerminalFollowAt) < TERMINAL_AUTOSCROLL_THROTTLE_MS) return;
+  if (force && terminalFollowFrame) cancelAnimationFrame(terminalFollowFrame);
   suppressTerminalScrollToggle = true;
   terminalFollowFrame = requestAnimationFrame(() => {
     terminal.scrollTop = terminal.scrollHeight;
     terminalFollowFrame = 0;
+    lastTerminalFollowAt = performance.now();
     requestAnimationFrame(() => {
       suppressTerminalScrollToggle = false;
     });
@@ -2436,6 +2514,7 @@ function setTerminalRenderMode(enabled) {
     localStorage.setItem(TERMINAL_RENDER_MODE_KEY, terminalPerformanceMode ? 'plain' : 'rich');
   } catch {}
   syncTerminalModeUi();
+  rebuildTerminalViewport();
 }
 
 function enableAutoscrollFollow() {
@@ -7989,6 +8068,8 @@ clearBtn.addEventListener('click', () => {
     _terminalFlushId = 0;
   }
   _terminalDivQueue = [];
+  _terminalTextQueue = [];
+  _renderedPlainLines = [];
   terminal.innerHTML = '';
   logLines = [];
   updateCopyLogState();
@@ -8067,33 +8148,13 @@ function addLine(text, type = 'rx') {
   logLines.push(`[${time}] ${arrow} ${text}`);
 
   if (terminalPerformanceMode) {
-    const div = document.createElement('div');
-    div.className = `line line-minimal line-${type}`;
-    div.textContent = `${time} ${arrow} ${text}`;
-    _terminalDivQueue.push(div);
+    _terminalTextQueue.push(`${time} ${arrow} ${text}`);
     if (!_terminalFlushId) _terminalFlushId = requestAnimationFrame(_flushTerminalDivs);
     if (logLines.length === 1) updateCopyLogState();
     return;
   }
 
-  const div = document.createElement('div');
-  div.className = `line line-${type}`;
-
-  const timeSpan = document.createElement('span');
-  timeSpan.className = 'line-time';
-  timeSpan.textContent = time;
-
-  const arrowSpan = document.createElement('span');
-  arrowSpan.className = 'line-arrow';
-  arrowSpan.textContent = arrow;
-
-  const textSpan = document.createElement('span');
-  textSpan.className = 'line-text';
-  textSpan.innerHTML = colorizeResponse(text);
-
-  div.appendChild(timeSpan);
-  div.appendChild(arrowSpan);
-  div.appendChild(textSpan);
+  const div = buildTerminalLineDiv(time, arrow, text, type);
 
   // Batch DOM insertion via RAF + DocumentFragment to avoid per-line reflow
   _terminalDivQueue.push(div);
