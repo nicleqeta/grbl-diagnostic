@@ -268,6 +268,9 @@
   body.benchmark-mode #step-forward-btn,
   body.benchmark-mode #fit-btn,
   body.benchmark-mode .queue-panel { display: none; }
+
+  body.benchmark-mode .toolbar { display: none; }
+  body.benchmark-mode .shell { grid-template-columns: minmax(0, 1fr) 320px; }
 </style>
 </head>
 <body>
@@ -414,6 +417,10 @@ function stepCommands(delta) {
 function fitPreview() {
   playback.zoom = 1;
   render();
+}
+
+function applyViewModeUi() {
+  document.body.classList.toggle('benchmark-mode', playback.viewMode === 'benchmark');
 }
 
 function getBenchmarkSummary() {
@@ -713,11 +720,12 @@ function render() {
   const height = canvas.clientHeight || canvas.height;
   ctx.clearRect(0, 0, width, height);
 
+  applyViewModeUi();
+
   if (!timeline) return;
 
   emptyState.style.display = 'none';
   const isBenchmark = playback.viewMode === 'benchmark';
-  document.body.classList.toggle('benchmark-mode', isBenchmark);
   if (isBenchmark) {
     renderBenchmarkChart(width, height);
     renderBenchmarkDataTape();
@@ -884,16 +892,16 @@ function loadTimeline(nextTimeline) {
 
   const nextIsBenchmarkOnly = isBenchmarkOnlyTimeline(timeline);
   const prevIsBenchmarkOnly = isBenchmarkOnlyTimeline(previousTimeline);
+  const nextHasBenchmark = Boolean(timeline?.benchmark);
+  const prevHasBenchmark = Boolean(previousTimeline?.benchmark);
 
   if (nextIsBenchmarkOnly && (benchmarkSampleCount > 0 || benchmarkActiveCount > 0 || previousViewMode === 'benchmark')) {
     playback.viewMode = 'benchmark';
-  } else if (!timeline?.benchmark && playback.viewMode === 'benchmark') {
-    playback.viewMode = 'perspective';
   }
 
   // Avoid visual flicker during live benchmark updates by not rewinding playback
-  // when we are receiving successive benchmark-only payloads.
-  if (!(prevIsBenchmarkOnly && nextIsBenchmarkOnly)) {
+  // when we are receiving successive benchmark payloads.
+  if (!((prevIsBenchmarkOnly && nextIsBenchmarkOnly) || (previousViewMode === 'benchmark' && prevHasBenchmark && nextHasBenchmark))) {
     resetPlayback();
   } else {
     syncPlaybackUi();
@@ -925,6 +933,7 @@ function loadWaitingState(payload = null) {
   _lastTapeSampleCount = -1;
   _lastCommandListSampleCount = -1;
 
+  applyViewModeUi();
   syncPlaybackUi();
   syncQueuePanelUi();
   render();
@@ -1042,6 +1051,7 @@ fitBtn.addEventListener('click', fitPreview);
 tapeCopyBtn.addEventListener('click', copyBenchmarkDataToClipboard);
 viewSelect.addEventListener('change', () => {
   playback.viewMode = viewSelect.value;
+  applyViewModeUi();
   render();
 });
 speedSelect.addEventListener('change', () => {
