@@ -1029,7 +1029,7 @@
 </head>
 <body>
 <!--
-  AI-CONTEXT: GRBL Diagnostic — GCOM Scripting Engine Reference
+  AI-CONTEXT: gcomposer / GRBL serial console — GCOM Scripting Engine Reference
   ================================================================
   This application includes a full line-numbered BASIC interpreter for writing
   automated GRBL test and motion scripts. The BASIC engine is the primary
@@ -1168,7 +1168,7 @@
   Reserved keys (never treated as variable overrides):
     gcom, preset, cmd, cmds, name, baud, dtr, observe, wait,
     delay, banner_timeout, banner_wait, show_req_resp, source, scrape,
-    post, basic_post
+    post, gcom_post
 
   VALIDATOR
   ---------
@@ -1693,14 +1693,14 @@ function _flushTerminalDivs() {
   scrollTerminalToBottom();
 }
 const APP_TITLE = 'gcomposer';
-const DISCOURSE_TITLE = 'GRBL Diagnostic Log';
+const DISCOURSE_TITLE = 'gcomposer / GRBL serial console Log';
 const SIDEBAR_WIDTH_KEY = 'gcomposer-sidebar-width';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 680;
 const RESERVED_SCRIPT_QUERY_KEYS = new Set([
   'gcom', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
   'delay', 'banner_timeout', 'banner_wait', 'show_req_resp', 'source', 'scrape',
-  'post', 'basic_post'
+  'post', 'gcom_post', 'basic_post'
 ]);
 
 const TRANSPORT_STATE_META = {

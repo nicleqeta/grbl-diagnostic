@@ -21,19 +21,13 @@ It can help you:
 
 ## Why This Is Useful
 
-When a CNC program like MillMage has trouble connecting, it is often not clear whether the problem is:
+When a GRBL program has trouble connecting to a machine, it is often not clear exactly what the problem is, especially if you have already tried multiple connection options.
 
-- the app
-- the USB serial connection
-- the GRBL board
-- reset timing on connect
-- DTR behavior
-- firmware startup timing
-- alarm state or controller state
+A support person can send a web link to this program with a routine preloaded that attempts to connect while gathering detailed debug logs. That output can be pasted directly into a Discourse support forum.
 
-The serial console and diagnostics tools help separate those problems by showing the raw serial behavior directly.
+The GCOM scripting engine was added later and goes much further. It is inspired by the BASIC (Beginner's All-purpose Symbolic Instruction Code) language I learned in the late 1980s, and it fits this kind of application well. It allows you to write interactive test routines, tune machine settings, run motion benchmarks, save and share scripts with others via an immutable URL, which works great in forum posts.
 
-The GCOM scripting engine goes further — it lets you write repeatable test routines, tune machine settings, run motion benchmarks, and share those scripts with others via a URL.
+This tool can also support creative machining workflows that use AI prompts, since it acts as a bridge between software and machine motion.
 
 ## Basic Use
 
