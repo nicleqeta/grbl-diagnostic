@@ -383,6 +383,13 @@ let commandItems = [];
 let lastActiveCommandId = -1;
 const PREVIEW_MIN_ZOOM = 0.2;
 const PREVIEW_MAX_ZOOM = 6;
+let canvasCssWidth = 1;
+let canvasCssHeight = 1;
+let lastStatusText = '';
+let lastBenchmarkInfoText = '';
+const staticLayerCanvas = document.createElement('canvas');
+const staticLayerCtx = staticLayerCanvas.getContext('2d');
+let staticLayerKey = '';
 let playback = {
   playing: false,
   commandCursor: 0,
@@ -396,11 +403,30 @@ let playback = {
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
+  canvasCssWidth = Math.max(1, Math.round(rect.width));
+  canvasCssHeight = Math.max(1, Math.round(rect.height));
   const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.round(rect.width * ratio));
-  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  canvas.width = Math.max(1, Math.round(canvasCssWidth * ratio));
+  canvas.height = Math.max(1, Math.round(canvasCssHeight * ratio));
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  staticLayerCanvas.width = canvasCssWidth;
+  staticLayerCanvas.height = canvasCssHeight;
+  staticLayerKey = '';
   render();
+}
+
+function setStatusText(nextText) {
+  const text = String(nextText || '');
+  if (text === lastStatusText) return;
+  statusBox.textContent = text;
+  lastStatusText = text;
+}
+
+function setBenchmarkInfoText(nextText) {
+  const text = String(nextText || '');
+  if (text === lastBenchmarkInfoText) return;
+  benchmarkInfoPanel.textContent = text;
+  lastBenchmarkInfoText = text;
 }
 
 function resetPlayback() {
@@ -580,8 +606,8 @@ function renderBenchmarkChart(width, height) {
       `Samples: ${samples.length}`,
       activeText ? `Active: ${activeText}` : 'Awaiting first completed BENCH marker pair'
     ].join('\n');
-    statusBox.textContent = benchmarkInfoText;
-    benchmarkInfoPanel.textContent = benchmarkInfoText;
+    setStatusText(benchmarkInfoText);
+    setBenchmarkInfoText(benchmarkInfoText);
     return;
   }
 
@@ -657,8 +683,8 @@ function renderBenchmarkChart(width, height) {
       : 'Latest: none',
     activeText ? `Active: ${activeText}` : 'Active: (idle)'
   ].join('\n');
-  statusBox.textContent = benchmarkInfoText;
-  benchmarkInfoPanel.textContent = benchmarkInfoText;
+  setStatusText(benchmarkInfoText);
+  setBenchmarkInfoText(benchmarkInfoText);
 }
 
 function getVisibleSegmentEnd() {
@@ -670,14 +696,13 @@ function getVisibleSegmentEnd() {
   return -1;
 }
 
-function projectTop(point, bounds, scale, offsetX, offsetY) {
-  return {
-    x: offsetX + ((point.x - bounds.min.x) * scale),
-    y: offsetY - ((point.y - bounds.min.y) * scale)
-  };
+function projectTopInto(point, bounds, scale, offsetX, offsetY, out) {
+  out.x = offsetX + ((point.x - bounds.min.x) * scale);
+  out.y = offsetY - ((point.y - bounds.min.y) * scale);
+  return out;
 }
 
-function projectPerspective(point, center, scale, offsetX, offsetY) {
+function projectPerspectiveInto(point, center, scale, offsetX, offsetY, out) {
   const dx = point.x - center.x;
   const dy = point.y - center.y;
   const dz = point.z - center.z;
@@ -691,10 +716,9 @@ function projectPerspective(point, center, scale, offsetX, offsetY) {
   const z2 = (Math.sin(pitch) * y1) + (Math.cos(pitch) * z1);
   const depth = 650 + z2;
   const perspectiveScale = (650 / Math.max(120, depth)) * scale;
-  return {
-    x: offsetX + (x1 * perspectiveScale),
-    y: offsetY - (y2 * perspectiveScale)
-  };
+  out.x = offsetX + (x1 * perspectiveScale);
+  out.y = offsetY - (y2 * perspectiveScale);
+  return out;
 }
 
 function computeSceneScale(bounds, width, height) {
@@ -705,60 +729,86 @@ function computeSceneScale(bounds, width, height) {
   return ((Math.min(width, height) * 0.72) / size) * playback.zoom;
 }
 
-function renderGrid(bounds, width, height, offsetX, offsetY, scale) {
+function renderGrid(drawCtx, bounds, width, height, offsetX, offsetY, scale) {
   const stepBase = Math.max(bounds.span.x, bounds.span.y, 50);
   const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(stepBase)) - 1));
-  ctx.save();
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
-  ctx.lineWidth = 1;
+  const from = { x: 0, y: 0 };
+  const to = { x: 0, y: 0 };
+  drawCtx.save();
+  drawCtx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
+  drawCtx.lineWidth = 1;
   for (let x = Math.floor(bounds.min.x / step) * step; x <= bounds.max.x + step; x += step) {
-    const from = projectTop({ x, y: bounds.min.y, z: 0 }, bounds, scale, offsetX, offsetY);
-    const to = projectTop({ x, y: bounds.max.y, z: 0 }, bounds, scale, offsetX, offsetY);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
+    projectTopInto({ x, y: bounds.min.y, z: 0 }, bounds, scale, offsetX, offsetY, from);
+    projectTopInto({ x, y: bounds.max.y, z: 0 }, bounds, scale, offsetX, offsetY, to);
+    drawCtx.beginPath();
+    drawCtx.moveTo(from.x, from.y);
+    drawCtx.lineTo(to.x, to.y);
+    drawCtx.stroke();
   }
   for (let y = Math.floor(bounds.min.y / step) * step; y <= bounds.max.y + step; y += step) {
-    const from = projectTop({ x: bounds.min.x, y, z: 0 }, bounds, scale, offsetX, offsetY);
-    const to = projectTop({ x: bounds.max.x, y, z: 0 }, bounds, scale, offsetX, offsetY);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
+    projectTopInto({ x: bounds.min.x, y, z: 0 }, bounds, scale, offsetX, offsetY, from);
+    projectTopInto({ x: bounds.max.x, y, z: 0 }, bounds, scale, offsetX, offsetY, to);
+    drawCtx.beginPath();
+    drawCtx.moveTo(from.x, from.y);
+    drawCtx.lineTo(to.x, to.y);
+    drawCtx.stroke();
   }
-  ctx.restore();
+  drawCtx.restore();
 }
 
-function renderAxes(bounds, width, height, offsetX, offsetY, scale, center) {
+function renderAxes(drawCtx, bounds, width, height, offsetX, offsetY, scale, center) {
+  const p0 = { x: 0, y: 0 };
+  const p1 = { x: 0, y: 0 };
+  const p2 = { x: 0, y: 0 };
+  const p3 = { x: 0, y: 0 };
   const origin = playback.viewMode === 'top'
-    ? projectTop({ x: 0, y: 0, z: 0 }, bounds, scale, offsetX, offsetY)
-    : projectPerspective({ x: 0, y: 0, z: 0 }, center, scale, offsetX, offsetY);
+    ? projectTopInto({ x: 0, y: 0, z: 0 }, bounds, scale, offsetX, offsetY, p0)
+    : projectPerspectiveInto({ x: 0, y: 0, z: 0 }, center, scale, offsetX, offsetY, p0);
   const xAxis = playback.viewMode === 'top'
-    ? projectTop({ x: 25, y: 0, z: 0 }, bounds, scale, offsetX, offsetY)
-    : projectPerspective({ x: 25, y: 0, z: 0 }, center, scale, offsetX, offsetY);
+    ? projectTopInto({ x: 25, y: 0, z: 0 }, bounds, scale, offsetX, offsetY, p1)
+    : projectPerspectiveInto({ x: 25, y: 0, z: 0 }, center, scale, offsetX, offsetY, p1);
   const yAxis = playback.viewMode === 'top'
-    ? projectTop({ x: 0, y: 25, z: 0 }, bounds, scale, offsetX, offsetY)
-    : projectPerspective({ x: 0, y: 25, z: 0 }, center, scale, offsetX, offsetY);
+    ? projectTopInto({ x: 0, y: 25, z: 0 }, bounds, scale, offsetX, offsetY, p2)
+    : projectPerspectiveInto({ x: 0, y: 25, z: 0 }, center, scale, offsetX, offsetY, p2);
   const zAxis = playback.viewMode === 'top'
-    ? projectTop({ x: 0, y: 0, z: 25 }, bounds, scale, offsetX, offsetY)
-    : projectPerspective({ x: 0, y: 0, z: 25 }, center, scale, offsetX, offsetY);
+    ? projectTopInto({ x: 0, y: 0, z: 25 }, bounds, scale, offsetX, offsetY, p3)
+    : projectPerspectiveInto({ x: 0, y: 0, z: 25 }, center, scale, offsetX, offsetY, p3);
 
-  ctx.save();
-  ctx.lineWidth = 2;
+  drawCtx.save();
+  drawCtx.lineWidth = 2;
   [[xAxis, '#ef4444'], [yAxis, '#22c55e'], [zAxis, '#60a5fa']].forEach(([endpoint, color]) => {
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(endpoint.x, endpoint.y);
-    ctx.stroke();
+    drawCtx.strokeStyle = color;
+    drawCtx.beginPath();
+    drawCtx.moveTo(origin.x, origin.y);
+    drawCtx.lineTo(endpoint.x, endpoint.y);
+    drawCtx.stroke();
   });
-  ctx.restore();
+  drawCtx.restore();
+}
+
+function renderStaticLayer(bounds, width, height, offsetX, offsetY, scale, center) {
+  const key = [
+    playback.viewMode,
+    width,
+    height,
+    playback.zoom.toFixed(3),
+    bounds.min.x.toFixed(3), bounds.min.y.toFixed(3), bounds.min.z.toFixed(3),
+    bounds.max.x.toFixed(3), bounds.max.y.toFixed(3), bounds.max.z.toFixed(3)
+  ].join('|');
+  if (key !== staticLayerKey) {
+    staticLayerCtx.clearRect(0, 0, width, height);
+    if (playback.viewMode === 'top') {
+      renderGrid(staticLayerCtx, bounds, width, height, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2), scale);
+    }
+    renderAxes(staticLayerCtx, bounds, width, height, offsetX, offsetY, scale, center);
+    staticLayerKey = key;
+  }
+  ctx.drawImage(staticLayerCanvas, 0, 0, width, height);
 }
 
 function render() {
-  const width = canvas.clientWidth || canvas.width;
-  const height = canvas.clientHeight || canvas.height;
+  const width = canvasCssWidth;
+  const height = canvasCssHeight;
   ctx.clearRect(0, 0, width, height);
 
   applyViewModeUi();
@@ -772,7 +822,7 @@ function render() {
     renderBenchmarkDataTape();
     return;
   }
-  benchmarkInfoPanel.textContent = '';
+  setBenchmarkInfoText('');
   benchmarkTapePanel.classList.remove('active');
   const bounds = timeline.bounds;
   const center = {
@@ -788,38 +838,65 @@ function render() {
     ? point => projectTop(point, bounds, scale, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2))
     : point => projectPerspective(point, center, scale, offsetX, offsetY);
 
-  if (playback.viewMode === 'top') {
-    renderGrid(bounds, width, height, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2), scale);
-  }
-  renderAxes(bounds, width, height, offsetX, offsetY, scale, center);
+  renderStaticLayer(bounds, width, height, offsetX, offsetY, scale, center);
 
   const visibleEnd = Math.min(visibleSegmentEnd, timeline.segments.length - 1);
+  const from = { x: 0, y: 0 };
+  const to = { x: 0, y: 0 };
+  const rapidPath = new Path2D();
+  const feedPath = new Path2D();
+  const activePath = new Path2D();
+  let hasRapid = false;
+  let hasFeed = false;
+  let hasActive = false;
+  const projectInto = playback.viewMode === 'top'
+    ? (point, out) => projectTopInto(point, bounds, scale, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2), out)
+    : (point, out) => projectPerspectiveInto(point, center, scale, offsetX, offsetY, out);
+
   for (let index = 0; index <= visibleEnd; index += 1) {
     const segment = timeline.segments[index];
-    const from = project(segment.from);
-    const to = project(segment.to);
+    projectInto(segment.from, from);
+    projectInto(segment.to, to);
     const isActive = segment.commandId === playback.commandCursor;
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
     if (isActive) {
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 3;
+      activePath.moveTo(from.x, from.y);
+      activePath.lineTo(to.x, to.y);
+      hasActive = true;
+    } else if (segment.motionType === 'rapid') {
+      rapidPath.moveTo(from.x, from.y);
+      rapidPath.lineTo(to.x, to.y);
+      hasRapid = true;
     } else {
-      ctx.strokeStyle = segment.motionType === 'rapid' ? 'rgba(96, 165, 250, 0.82)' : 'rgba(20, 184, 166, 0.88)';
-      ctx.lineWidth = segment.motionType === 'rapid' ? 1.5 : 2.2;
+      feedPath.moveTo(from.x, from.y);
+      feedPath.lineTo(to.x, to.y);
+      hasFeed = true;
     }
-    ctx.stroke();
+  }
+
+  if (hasRapid) {
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.82)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke(rapidPath);
+  }
+  if (hasFeed) {
+    ctx.strokeStyle = 'rgba(20, 184, 166, 0.88)';
+    ctx.lineWidth = 2.2;
+    ctx.stroke(feedPath);
+  }
+  if (hasActive) {
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 3;
+    ctx.stroke(activePath);
   }
 
   const activeCommand = timeline.commands[clampCommandCursor(playback.commandCursor)] || null;
-  statusBox.textContent = [
+  setStatusText([
     `${timeline.title}`,
     `View: ${playback.viewMode === 'top' ? 'Top' : 'Perspective'}`,
     `Commands: ${timeline.commandCount}`,
     `Segments: ${timeline.segments.length}`,
     activeCommand ? `Active: ${activeCommand.display}` : 'Active: none'
-  ].join('\n');
+  ].join('\n'));
 }
 
 let _lastCommandListSampleCount = -1;
@@ -953,8 +1030,8 @@ function loadWaitingState(payload = null) {
 
   titleEl.textContent = waitingTitle;
   statsEl.textContent = 'Waiting for benchmark data';
-  statusBox.textContent = `${waitingTitle}\n${waitingMessage}`;
-  benchmarkInfoPanel.textContent = `${waitingTitle}\nView: Benchmark\n${waitingMessage}`;
+  setStatusText(`${waitingTitle}\n${waitingMessage}`);
+  setBenchmarkInfoText(`${waitingTitle}\nView: Benchmark\n${waitingMessage}`);
   emptyState.style.display = 'block';
   emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a GCOM script with BENCH START / BENCH END markers.';
   commandList.innerHTML = '';
