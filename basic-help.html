@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GRBL BASIC Command Help</title>
+<title>GCOM Command Summary</title>
 <style>
   :root {
     --bg: #0f1117;
@@ -55,6 +55,31 @@
     font-size: 14px;
   }
 
+  .toolbar {
+    margin-top: 12px;
+  }
+
+  .search-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 14px;
+    padding: 9px 10px;
+  }
+
+  .search-input::placeholder {
+    color: var(--muted);
+  }
+
+  .search-note {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -99,6 +124,7 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow-x: auto;
+    position: relative;
   }
 
   pre code {
@@ -128,13 +154,40 @@
   .ok { color: var(--green); }
   .warn { color: var(--amber); }
   .err { color: var(--red); }
+
+  .copy-example-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1;
+    padding: 6px 8px;
+    cursor: pointer;
+  }
+
+  .copy-example-btn:hover {
+    border-color: var(--teal);
+    color: #d1fae5;
+  }
+
+  .hidden-by-search {
+    display: none;
+  }
 </style>
 </head>
 <body>
   <main class="page">
     <section class="hero">
-      <h1>GRBL BASIC Command Summary</h1>
-      <p class="subtitle">One-page reference for the BASIC runner in this app, grouped by job type.</p>
+      <h1>GCOM Command Summary</h1>
+      <p class="subtitle">One-page reference for the GCOM runner in this app, grouped by job type.</p>
+      <div class="toolbar">
+        <input id="help-search" class="search-input" type="search" placeholder="Search commands, sections, or examples..." aria-label="Search help content">
+        <p class="search-note" id="search-note">Showing all sections</p>
+      </div>
       <div class="chip-row">
         <span class="chip">Line-numbered scripts</span>
         <span class="chip">Case-insensitive commands</span>
@@ -746,5 +799,63 @@ REM VAR settle_ms=200
 9030 END</code></pre>
     </section>
   </main>
+  <script>
+    (function () {
+      const cards = Array.from(document.querySelectorAll('.card'));
+      const searchInput = document.getElementById('help-search');
+      const searchNote = document.getElementById('search-note');
+
+      function addCopyButtons() {
+        const codeBlocks = document.querySelectorAll('pre > code');
+        codeBlocks.forEach((code, index) => {
+          const pre = code.parentElement;
+          if (!pre || pre.querySelector('.copy-example-btn')) return;
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'copy-example-btn';
+          btn.textContent = 'Copy';
+          btn.setAttribute('aria-label', `Copy example script ${index + 1}`);
+          btn.addEventListener('click', async () => {
+            const text = code.textContent || '';
+            try {
+              await navigator.clipboard.writeText(text);
+              btn.textContent = 'Copied';
+              setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+            } catch {
+              btn.textContent = 'Failed';
+              setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+            }
+          });
+
+          pre.appendChild(btn);
+        });
+      }
+
+      function updateSearch() {
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        let visible = 0;
+
+        cards.forEach((card) => {
+          const haystack = card.textContent.toLowerCase();
+          const match = !query || haystack.includes(query);
+          card.classList.toggle('hidden-by-search', !match);
+          if (match) visible += 1;
+        });
+
+        if (!searchNote) return;
+        if (!query) {
+          searchNote.textContent = 'Showing all sections';
+          return;
+        }
+        searchNote.textContent = `Showing ${visible} matching section${visible === 1 ? '' : 's'}`;
+      }
+
+      addCopyButtons();
+      if (searchInput) {
+        searchInput.addEventListener('input', updateSearch);
+      }
+    })();
+  </script>
 </body>
 </html>
