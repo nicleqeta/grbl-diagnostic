@@ -374,6 +374,8 @@ const queueFromPreviewBtn = document.getElementById('queue-from-preview-btn');
 const queueStatus = document.getElementById('queue-status');
 
 let timeline = null;
+let commandItems = [];
+let lastActiveCommandId = -1;
 let playback = {
   playing: false,
   commandCursor: 0,
@@ -418,9 +420,10 @@ function clampCommandCursor(value) {
 }
 
 function setCommandCursor(nextCommandId) {
+  const previousCursor = playback.commandCursor;
   playback.commandCursor = clampCommandCursor(nextCommandId);
   syncPlaybackUi();
-  renderCommandList();
+  updateCommandListActive(previousCursor, playback.commandCursor, true);
   render();
 }
 
@@ -771,18 +774,16 @@ function render() {
   }
   renderAxes(bounds, width, height, offsetX, offsetY, scale, center);
 
-  timeline.segments.forEach((segment, index) => {
+  const visibleEnd = Math.min(visibleSegmentEnd, timeline.segments.length - 1);
+  for (let index = 0; index <= visibleEnd; index += 1) {
+    const segment = timeline.segments[index];
     const from = project(segment.from);
     const to = project(segment.to);
-    const isVisible = index <= visibleSegmentEnd;
     const isActive = segment.commandId === playback.commandCursor;
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
-    if (!isVisible) {
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.18)';
-      ctx.lineWidth = 1;
-    } else if (isActive) {
+    if (isActive) {
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 3;
     } else {
@@ -790,7 +791,7 @@ function render() {
       ctx.lineWidth = segment.motionType === 'rapid' ? 1.5 : 2.2;
     }
     ctx.stroke();
-  });
+  }
 
   const activeCommand = timeline.commands[clampCommandCursor(playback.commandCursor)] || null;
   statusBox.textContent = [
@@ -804,8 +805,21 @@ function render() {
 
 let _lastCommandListSampleCount = -1;
 
+function updateCommandListActive(previousCommandId, nextCommandId, shouldScroll = false) {
+  if (!commandItems.length) return;
+  if (previousCommandId === nextCommandId) return;
+  const prevItem = commandItems[previousCommandId];
+  if (prevItem) prevItem.classList.remove('active');
+  const nextItem = commandItems[nextCommandId];
+  if (nextItem) {
+    nextItem.classList.add('active');
+    if (shouldScroll) requestAnimationFrame(() => nextItem.scrollIntoView({ block: 'nearest' }));
+  }
+  lastActiveCommandId = nextCommandId;
+}
+
 function renderCommandList() {
-  if (!timeline) { commandList.innerHTML = ''; _lastCommandListSampleCount = -1; return; }
+  if (!timeline) { commandList.innerHTML = ''; commandItems = []; lastActiveCommandId = -1; _lastCommandListSampleCount = -1; return; }
 
   const benchSamples = getBenchmarkSamples();
   if ((!timeline.commands || !timeline.commands.length) && benchSamples.length) {
@@ -813,6 +827,8 @@ function renderCommandList() {
     if (benchSamples.length === _lastCommandListSampleCount) return;
     _lastCommandListSampleCount = benchSamples.length;
     commandList.innerHTML = '';
+    commandItems = [];
+    lastActiveCommandId = -1;
     benchSamples.slice().reverse().forEach(sample => {
       const item = document.createElement('li');
       item.className = 'command-item';
@@ -850,6 +866,8 @@ function renderCommandList() {
 
   _lastCommandListSampleCount = -1;
   commandList.innerHTML = '';
+  commandItems = [];
+  lastActiveCommandId = -1;
   if (!timeline.commands.length) return;
 
   timeline.commands.forEach(command => {
@@ -876,11 +894,9 @@ function renderCommandList() {
     item.appendChild(meta);
     item.addEventListener('click', () => setCommandCursor(command.commandId));
     commandList.appendChild(item);
-
-    if (command.commandId === playback.commandCursor) {
-      requestAnimationFrame(() => item.scrollIntoView({ block: 'nearest' }));
-    }
+    commandItems[command.commandId] = item;
   });
+  updateCommandListActive(-1, playback.commandCursor, true);
 }
 
 function isBenchmarkOnlyTimeline(candidate) {
@@ -949,6 +965,8 @@ function loadWaitingState(payload = null) {
   emptyState.style.display = 'block';
   emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a GCOM script with BENCH START / BENCH END markers.';
   commandList.innerHTML = '';
+  commandItems = [];
+  lastActiveCommandId = -1;
   commandProgress.textContent = '0 / 0';
   benchmarkTapePanel.classList.remove('active');
   _lastTapeSampleCount = -1;
@@ -1034,6 +1052,8 @@ function tick(timestamp) {
     playback.accumulatorMs += (timestamp - playback.lastFrameAt);
     playback.lastFrameAt = timestamp;
     const nextStepMs = playback.baseCommandMs / Math.max(0.25, playback.speed);
+    let advanced = false;
+    const previousCursor = playback.commandCursor;
     while (playback.accumulatorMs >= nextStepMs) {
       playback.accumulatorMs -= nextStepMs;
       if (playback.commandCursor >= timeline.commandCount - 1) {
@@ -1042,9 +1062,12 @@ function tick(timestamp) {
         break;
       }
       playback.commandCursor += 1;
-      renderCommandList();
-      render();
+      advanced = true;
+    }
+    if (advanced) {
       syncPlaybackUi();
+      updateCommandListActive(previousCursor, playback.commandCursor, true);
+      render();
     }
   } else {
     playback.lastFrameAt = timestamp;

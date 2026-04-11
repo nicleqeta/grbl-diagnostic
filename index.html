@@ -5583,6 +5583,9 @@ function previewCompileGcodeCommand(timeline, motionState, commandEntry) {
 
 function previewEvalExpr(expr, vars, timeline, sourceLine, stmt) {
   let rewritten = String(expr || '');
+  if (!/\bINPUT\s*\(/i.test(rewritten)) {
+    return basicEvalExpr(rewritten, vars);
+  }
   let inputCount = 0;
 
   while (true) {
