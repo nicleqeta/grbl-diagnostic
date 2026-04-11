@@ -686,16 +686,16 @@ REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing accele
 REM DESCRIPTION: Each timed batch streams batch_count * 2 movement commands, with a guaranteed minimum of {{min_batch_count * 2}} moves per acceleration test.
 REM DESCRIPTION: Uses BENCH markers so the app can time each batch and chart batch duration vs acceleration per distance in the Preview window.
 REM VAR start_accel=400
-REM VAR accel_step=100
+REM VAR accel_step=200
 REM VAR max_accel=4000
-REM VAR min_distance=1
-REM VAR max_distance=400
-REM VAR x_feed=30000
-REM VAR target_total_travel=80
-REM VAR min_batch_count=4
+REM VAR min_distance=0.5
+REM VAR max_distance=32
+REM VAR x_feed=10000
+REM VAR target_total_travel=64
+REM VAR min_batch_count=1
 REM VAR settle_ms=200
 REM VAR idle_timeout=12000
-REM VAR plateau_ms=20
+REM VAR plateau_ms=60
 
 10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
@@ -753,18 +753,34 @@ REM VAR plateau_ms=20
 1080 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
 1090 RETURN
 
-8000 PRINT "Test complete. Best $120 at longest distance: " &amp; STR(final_best_accel) &amp; " (original: " &amp; STR(original_accel) &amp; ")"
-8010 LET apply_accel = INPUT(FORM("Apply $120 setting? [Apply Best] [Keep Original] — or type a custom value:", final_best_accel, original_accel))
-8020 SEND "$120=" &amp; STR(apply_accel) TIMEOUT 2000 REQUIRE_OK
-8030 WAIT {settle_ms}
-8040 PRINT "Set $120 = " &amp; STR(apply_accel)
-8060 RESULT "applied_x_accel", apply_accel
-8070 RESULT "original_x_accel", original_accel
-8080 RESULT "last_distance_mm", current_distance / 2
-8090 RESULT "last_best_accel", final_best_accel
-8100 RESULT "last_best_batch_ms", ROUND(final_best_ms, 3)
-8110 REPORT
-8120 END
+8000 LET last_distance = current_distance / 2
+8010 LET accel_delta = final_best_accel - original_accel
+8020 LET accel_pct = 0
+8030 IF original_accel = 0 THEN GOTO 8050
+8040 LET accel_pct = ROUND((accel_delta / original_accel) * 100, 1)
+8050 PRINT "Summary: longest distance=" &amp; STR(last_distance) &amp; " mm. Best observed $120=" &amp; STR(final_best_accel) &amp; " with batch_ms=" &amp; STR(ROUND(final_best_ms, 3))
+8060 PRINT "Previous $120=" &amp; STR(original_accel) &amp; " delta=" &amp; STR(accel_delta) &amp; " (" &amp; STR(accel_pct) &amp; "%)"
+8070 IF accel_delta &gt; 0 THEN GOTO 8100
+8080 IF accel_delta &lt; 0 THEN GOTO 8130
+8090 GOTO 8160
+8100 LET rationale = "Suggested is higher because it produced the shortest longest-stroke batch. This can improve throughput if motion and finish stay stable."
+8110 GOTO 8170
+8130 LET rationale = "Suggested is lower because higher acceleration stopped improving longest-stroke batch time. This can improve consistency and reduce stress."
+8140 GOTO 8170
+8160 LET rationale = "Suggested matches previous because no meaningful longest-stroke timing gain was found by changing acceleration."
+8170 LET apply_accel = INPUT(FORM("Apply $120 update? Previous=" &amp; original_accel &amp; " Suggested=" &amp; final_best_accel &amp; " Delta=" &amp; accel_delta &amp; " (" &amp; accel_pct &amp; "%). Longest stroke=" &amp; last_distance &amp; " mm. Best batch=" &amp; ROUND(final_best_ms, 3) &amp; " ms. " &amp; rationale &amp; " [Apply Suggested] [Keep Previous]", final_best_accel, original_accel))
+8180 SEND "$120=" &amp; STR(apply_accel) TIMEOUT 2000 REQUIRE_OK
+8190 WAIT {settle_ms}
+8200 PRINT "Set $120 = " &amp; STR(apply_accel)
+8210 RESULT "applied_x_accel", apply_accel
+8220 RESULT "original_x_accel", original_accel
+8230 RESULT "last_distance_mm", last_distance
+8240 RESULT "last_best_accel", final_best_accel
+8250 RESULT "last_best_batch_ms", ROUND(final_best_ms, 3)
+8260 RESULT "accel_delta", accel_delta
+8270 RESULT "accel_delta_pct", accel_pct
+8280 REPORT
+8290 END
 
 9000 PRINT "Test cancelled."
 9010 END</code></pre>
