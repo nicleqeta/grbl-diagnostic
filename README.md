@@ -296,11 +296,11 @@ The BASIC editor can import local plain-text script files.
 For richer imports, add a short header before the first numbered BASIC line:
 
 ```text
-REM TITLE: X Axis Acceleration Finder
+REM TITLE: X-Axis Max travel Speed and Acceleration Finder
 REM VERSION: 1
 REM AUTHOR: GitHub Copilot
-REM DESCRIPTION: Raises X acceleration until the motor sounds bad.
-REM DESCRIPTION: Suggests a safer fallback value near the edge.
+REM DESCRIPTION: Raises X acceleration while sweeping fast X travel moves to find the highest reliable travel speed.
+REM DESCRIPTION: Suggests a conservative fallback near the edge and reports estimated midpoint travel speed.
 REM VAR start_accel=200
 REM VAR coarse_step=50
 10 PRINT "X-axis acceleration test"

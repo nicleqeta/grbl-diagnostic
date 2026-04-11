@@ -481,11 +481,11 @@ REM INPUT(FORM()) — text field shown; buttons are shortcuts
         <li>If no title header exists, import falls back to the filename.</li>
         <li>Clipboard paste detects G-code patterns and can convert macros/subroutines into step-by-step BASIC automatically.</li>
       </ul>
-      <pre><code>REM TITLE: X Axis Acceleration Finder
+      <pre><code>REM TITLE: X-Axis Max travel Speed and Acceleration Finder
 REM VERSION: 1
 REM AUTHOR: GitHub Copilot
-REM DESCRIPTION: Raises X acceleration until the motor sounds bad.
-REM DESCRIPTION: Suggests a safer fallback value near the edge.
+    REM DESCRIPTION: Raises X acceleration while sweeping fast X travel moves to find the highest reliable travel speed.
+    REM DESCRIPTION: Suggests a conservative fallback near the edge and reports estimated midpoint travel speed.
 REM VAR start_accel=200
 REM VAR coarse_step=50
 10 PRINT "X-axis acceleration test"
@@ -504,15 +504,15 @@ REM VAR coarse_step=50
     </section>
 
     <section class="card">
-      <h2>12. Example: X-Axis Acceleration Finder</h2>
-      <p>This example ramps <code>$120</code> upward, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
+      <h2>12. Example: X-Axis Max travel Speed and Acceleration Finder</h2>
+      <p>This example ramps <code>$120</code> upward while repeatedly running fast back-and-forth X travel moves, asks the operator after each pass whether the axis sounded bad or skipped, retests the edge with a finer step, and reports a conservative recommendation. <code>$110</code> (max X feed rate) is temporarily raised so the test feedrate is not clamped during the run, then restored at the end.</p>
       <p>After reporting results, the script compares the original and suggested <code>$120</code> values and asks whether to apply the suggested value now or keep the original setting.</p>
-      <p><span class="warn">Note:</span> the current BASIC runner supports typed <code>INPUT</code> prompts, not single-key capture, so this script asks for <code>1</code> when the test sounds bad and <code>0</code> when it still sounds clean.</p>
-      <pre><code>REM TITLE: X Axis Acceleration Finder
+      <p><span class="warn">Note:</span> this script uses button-based <code>FORM()</code> prompts so operator decisions are explicit during the test flow.</p>
+      <pre><code>REM TITLE: X-Axis Max travel Speed and Acceleration Finder
 REM AUTHOR: GitHub Copilot
-  REM VERSION: 3
-  REM DESCRIPTION: Raises X acceleration by {coarse_step} starting at {start_accel} until the motor sounds bad or skips, then refines by {fine_step} near the edge.
-  REM DESCRIPTION: Compares original $120 to the found value and asks whether to apply the suggested setting or keep the original.
+  REM VERSION: 4
+  REM DESCRIPTION: Raises X acceleration by {coarse_step} starting at {start_accel} while running fast X travel moves until motion sounds bad or skips, then refines by {fine_step}.
+  REM DESCRIPTION: Estimates peak midpoint travel speed and asks whether to apply the suggested $120 setting or keep the original.
   REM VAR start_accel=800
   REM VAR coarse_step=200
   REM VAR fine_step=20
@@ -523,10 +523,10 @@ REM AUTHOR: GitHub Copilot
 REM VAR idle_timeout=20000
 REM VAR settle_ms=250
 
-10 PRINT "X-axis acceleration test"
+10 PRINT "X-axis max travel speed and acceleration test"
 20 PRINT "Clear the machine so X can move back and forth safely."
 30 PRINT "This script will temporarily change $120 during the test."
-40 LET proceed = INPUT("Type 1 to begin, or 0 to cancel")
+40 LET proceed = FORM("X-axis travel test ready. [Begin Test] [Cancel]", 1, 0)
 50 IF proceed &lt;&gt; 1 THEN GOTO 9000
 60 LET original_accel = SETTING("$120")
 70 LET original_feed = SETTING("$110")
@@ -598,7 +598,7 @@ REM VAR settle_ms=250
 870 RESULT "theoretical_midpoint_speed_mm_min", max_mid_speed_mm_min
 880 REPORT
 890 PRINT "Original $120 = " &amp; STR(original_accel) &amp; ", suggested $120 = " &amp; STR(recommended)
-900 INPUT apply_choice, "Use suggested $120 now? Enter 1 for yes, 0 for no"
+900 LET apply_choice = FORM("Use suggested $120 now? [Apply Suggested] [Keep Original]", 1, 0)
 905 IF apply_choice &lt;&gt; 1 THEN GOTO 960
 910 SEND "$120=" &amp; STR(recommended) TIMEOUT 2000 REQUIRE_OK
 915 WAIT {settle_ms}
@@ -625,7 +625,7 @@ REM VAR settle_ms=250
 1050 SEND "G1 X-" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
 1060 WAIT_IDLE {idle_timeout}
 1070 NEXT j
-1080 INPUT answer, "Tested $120=" &amp; STR(current_accel) &amp; ". Enter 1 if bad, else 0"
+1080 LET answer = FORM("Tested $120=" &amp; STR(current_accel) &amp; ". [Bad or Skip] [Still Clean]", 1, 0)
 1090 RETURN
 
 9000 PRINT "Test cancelled."
