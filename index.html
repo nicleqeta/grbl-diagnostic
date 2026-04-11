@@ -5692,6 +5692,32 @@ function buildBasicPreviewTimeline(source) {
       continue;
     }
 
+    if (/^SENDBUFF\s+/i.test(stmt)) {
+      const expr = stmt.replace(/^SENDBUFF\s+/i, '').trim();
+      const commandText = String(previewEvalExpr(expr, previewVars, timeline, lineNum, stmt)).trim();
+      const parts = commandText.split(/\r?\n/).map(part => part.trim()).filter(Boolean);
+      parts.forEach(part => {
+        const commandEntry = previewRegisterCommand(timeline, {
+          sourceLine: lineNum,
+          raw: part,
+          display: `${part} [buffered]`,
+          status: 'sent'
+        });
+        previewCompileGcodeCommand(timeline, motionState, commandEntry);
+      });
+      pc += 1;
+      continue;
+    }
+
+    if (/^SET\s+\w+\b/i.test(stmt)) {
+      previewPushEvent(timeline, 'note', {
+        sourceLine: lineNum,
+        message: `Preview skipped runtime setting statement: ${stmt}`
+      });
+      pc += 1;
+      continue;
+    }
+
     if (/^WAIT\s+/i.test(stmt)) {
       previewPushEvent(timeline, 'note', {
         sourceLine: lineNum,
