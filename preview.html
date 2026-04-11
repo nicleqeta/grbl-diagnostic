@@ -284,6 +284,7 @@
   body.benchmark-mode #speed-select,
   body.benchmark-mode #play-btn,
   body.benchmark-mode #step-forward-btn,
+  body.benchmark-mode #end-btn,
   body.benchmark-mode #fit-btn,
   body.benchmark-mode .queue-panel { display: none; }
 
@@ -305,6 +306,7 @@
     </select>
     <button class="btn" id="play-btn" type="button">Play</button>
     <button class="btn" id="step-forward-btn" type="button">Step Forward</button>
+    <button class="btn" id="end-btn" type="button">End</button>
     <button class="btn" id="fit-btn" type="button">Fit</button>
     <select class="select" id="view-select" aria-label="Preview mode">
       <option value="perspective">Perspective</option>
@@ -370,6 +372,7 @@ const rewindBtn = document.getElementById('rewind-btn');
 const playBtn = document.getElementById('play-btn');
 const stepBackBtn = document.getElementById('step-back-btn');
 const stepForwardBtn = document.getElementById('step-forward-btn');
+const endBtn = document.getElementById('end-btn');
 const fitBtn = document.getElementById('fit-btn');
 const viewSelect = document.getElementById('view-select');
 const speedSelect = document.getElementById('speed-select');
@@ -394,7 +397,7 @@ let playback = {
   playing: false,
   commandCursor: 0,
   speed: 1,
-  viewMode: 'perspective',
+  viewMode: 'top',
   baseCommandMs: 260,
   lastFrameAt: 0,
   accumulatorMs: 0,
@@ -429,13 +432,23 @@ function setBenchmarkInfoText(nextText) {
   lastBenchmarkInfoText = text;
 }
 
-function resetPlayback() {
+function resetPlayback({ atEnd = true } = {}) {
   playback.playing = false;
-  playback.commandCursor = timeline && timeline.commandCount ? 0 : 0;
+  if (timeline && timeline.commandCount) {
+    playback.commandCursor = atEnd ? timeline.commandCount - 1 : 0;
+  } else {
+    playback.commandCursor = 0;
+  }
   playback.accumulatorMs = 0;
   playback.lastFrameAt = 0;
   playback.zoom = 1;
   syncPlaybackUi();
+}
+
+function jumpToEnd() {
+  if (!timeline || !timeline.commandCount) return;
+  playback.playing = false;
+  setCommandCursor(timeline.commandCount - 1);
 }
 
 function syncPlaybackUi() {
@@ -1146,6 +1159,10 @@ function tick(timestamp) {
 }
 
 playBtn.addEventListener('click', () => {
+  if (!timeline || !timeline.commandCount) return;
+  if (!playback.playing && playback.commandCursor >= timeline.commandCount - 1) {
+    setCommandCursor(0);
+  }
   playback.playing = !playback.playing;
   syncPlaybackUi();
 });
@@ -1161,6 +1178,7 @@ stepForwardBtn.addEventListener('click', () => {
   playback.playing = false;
   stepCommands(1);
 });
+endBtn.addEventListener('click', jumpToEnd);
 fitBtn.addEventListener('click', fitPreview);
 tapeCopyBtn.addEventListener('click', copyBenchmarkDataToClipboard);
 viewSelect.addEventListener('change', () => {
