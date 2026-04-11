@@ -298,7 +298,7 @@
       <div class="canvas-wrap">
         <canvas id="preview-canvas"></canvas>
         <div class="status-box" id="status-box">Waiting for preview data from the main window.</div>
-        <div class="empty" id="empty-state"><strong>No preview loaded.</strong><br>Return to the main app and click Preview on a BASIC script.</div>
+        <div class="empty" id="empty-state"><strong>No preview loaded.</strong><br>Return to the main app and click Preview on a GCOM script.</div>
       </div>
       <div class="benchmark-tape-panel" id="benchmark-tape-panel">
         <div class="tape-header">
@@ -918,7 +918,7 @@ function loadWaitingState(payload = null) {
   statsEl.textContent = 'Waiting for benchmark data';
   statusBox.textContent = `${waitingTitle}\n${waitingMessage}`;
   emptyState.style.display = 'block';
-  emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a BASIC script with BENCH START / BENCH END markers.';
+  emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a GCOM script with BENCH START / BENCH END markers.';
   commandList.innerHTML = '';
   commandProgress.textContent = '0 / 0';
   benchmarkTapePanel.classList.remove('active');

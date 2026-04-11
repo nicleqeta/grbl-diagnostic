@@ -626,7 +626,7 @@
     line-height: 1.5;
   }
 
-  /* BASIC script input modal in terminal window */
+  /* GCOM script input modal in terminal window */
   .basic-input-bar {
     position: absolute;
     inset: 0;
@@ -1026,7 +1026,7 @@
 </head>
 <body>
 <!--
-  AI-CONTEXT: GRBL Diagnostic — BASIC Scripting Engine Reference
+  AI-CONTEXT: GRBL Diagnostic — GCOM Scripting Engine Reference
   ================================================================
   This application includes a full line-numbered BASIC interpreter for writing
   automated GRBL test and motion scripts. The BASIC engine is the primary
@@ -1277,10 +1277,10 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
 
-    <!-- BASIC Script section -->
+    <!-- GCOM Script section -->
     <details class="section section-collapsible" id="basic-section">
       <summary class="section-toggle">
-        <span class="section-label">BASIC Script</span>
+        <span class="section-label">GCOM Script</span>
         <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
@@ -3569,7 +3569,7 @@ function convertClipboardGcodeToBasic(text) {
   const payload = parseBasicImportText(result.basic, 'gcode-import.bas');
   applyBasicScriptPackage(payload, { sourceId: '', updateHistory: false });
   markBasicScriptStructuralDirty();
-  addLine('Converted G-code to BASIC script', 'sys');
+  addLine('Converted G-code to GCOM script', 'sys');
   return true;
 }
 
@@ -3588,7 +3588,7 @@ async function importBasicScriptFromClipboard() {
 
     if (detection.mode === 'basic') {
       basicConfigBox.className = 'diag-box success';
-      basicConfigBox.textContent = 'Detected BASIC script. Importing as plain text...';
+      basicConfigBox.textContent = 'Detected GCOM script. Importing as plain text...';
       return importClipboardAsPlainText(text);
     }
 
@@ -3667,7 +3667,7 @@ async function loadBasicScriptFromId(id, overrides = {}) {
 
 // ─── G-code to BASIC Converter ──────────────────────────────────────────────
 // Converts G-code with o-codes (subroutines, loops, conditionals) into
-// structured BASIC scripts with parameters and loops that can be executed step-by-step.
+// structured GCOM scripts with parameters and loops that can be executed step-by-step.
 
 class GcodeToBasicConverter {
   constructor(gcodeSource) {
@@ -5886,7 +5886,7 @@ window.addEventListener('message', event => {
 function openBasicPreview() {
   const src = basicScriptInput.value.trim();
   if (!src) {
-    addLine('No script to preview - enter a BASIC script first', 'err');
+    addLine('No script to preview - enter a GCOM script first', 'err');
     return;
   }
   basicValidationState = basicValidateDraft();
@@ -5894,7 +5894,7 @@ function openBasicPreview() {
   updateBasicControlUi();
   if (basicValidationState.errors.length) {
     if (basicSection) basicSection.open = true;
-    addLine('Cannot preview BASIC script until syntax errors are fixed', 'err');
+    addLine('Cannot preview GCOM script until syntax errors are fixed', 'err');
     return;
   }
 
@@ -5909,7 +5909,7 @@ function openBasicPreview() {
 
 async function runBasicScript(source) {
   if (basicRunning) return;
-  if (gcodeRunning) { addLine('Cannot run BASIC script while G-code queue is running', 'err'); return; }
+  if (gcodeRunning) { addLine('Cannot run GCOM script while G-code queue is running', 'err'); return; }
   const scriptSource = substituteVars(source, basicLoadedVars);
   const configText = buildBasicPreviewText(false);
   const configVars = basicLoadedVars || {};
@@ -5927,7 +5927,7 @@ async function runBasicScript(source) {
   }
 
   // Show confirm dialog
-  const confirmed = await basicShowConfirm(configText || 'Run the loaded BASIC script on your connected machine?', configVars);
+  const confirmed = await basicShowConfirm(configText || 'Run the loaded GCOM script on your connected machine?', configVars);
   if (!confirmed) {
     addLine('Script run cancelled', 'sys');
     return;
@@ -5952,7 +5952,7 @@ async function runBasicScript(source) {
   refreshBasicBenchmarkPreview(true);
   updateBasicControlUi();
   renderGcodeQueue();
-  addLine('--- BASIC script started ---', 'basic');
+  addLine('--- GCOM script started ---', 'basic');
 
   const { sequence, lineStartIndex } = basicParseLines(scriptSource);
   let pc = 0; // index into flattened statement sequence
@@ -6304,7 +6304,7 @@ async function runBasicScript(source) {
       if (/^SOFT_RESET$/i.test(stmt)) {
         addLine('SOFT_RESET', 'basic');
         await basicSendRealtimeCommand('^X', '^X');
-        requestBasicStop('Soft reset sent; aborting BASIC script...', '--- Script aborted by soft reset ---');
+        requestBasicStop('Soft reset sent; aborting GCOM script...', '--- Script aborted by soft reset ---');
         stopScript();
         break;
       }
@@ -6910,13 +6910,13 @@ async function runGcodeQueue() {
 
 basicRunBtn.addEventListener('click', () => {
   const src = basicScriptInput.value.trim();
-  if (!src) { addLine('No script to run - enter a BASIC script first', 'err'); return; }
+  if (!src) { addLine('No script to run - enter a GCOM script first', 'err'); return; }
   basicValidationState = basicValidateDraft();
   updateBasicValidationUi();
   updateBasicControlUi();
   if (basicValidationState.errors.length) {
     if (basicSection) basicSection.open = true;
-    addLine('Cannot run BASIC script until syntax errors are fixed', 'err');
+    addLine('Cannot run GCOM script until syntax errors are fixed', 'err');
     return;
   }
   runBasicScript(src);
@@ -7721,7 +7721,7 @@ async function executeSequenceCommand(rawCommand, options = {}) {
   if (basicRunning && command.send === '!') setBasicPaused(true);
   if (basicRunning && command.send === '~') setBasicPaused(false);
   if (basicRunning && command.send === '\x18') {
-    requestBasicStop('Soft reset sent; aborting BASIC script...', '--- Script aborted by soft reset ---');
+    requestBasicStop('Soft reset sent; aborting GCOM script...', '--- Script aborted by soft reset ---');
   }
   const timeoutMs = options.timeoutMs == null ? 3500 : Math.max(1, Math.round(Number(options.timeoutMs) || 0));
   const shouldWaitForAck = Boolean(options.requireAck) || options.timeoutMs != null || command.waitForAck;
@@ -8130,7 +8130,7 @@ async function startReadLoop() {
   }
 }
 
-// Open a serial port from within a BASIC script. Called by the CONNECT statement.
+// Open a serial port from within a GCOM script. Called by the CONNECT statement.
 // Returns true on success, false if the user cancelled or an error occurred.
 async function basicDoConnect({ baud = 115200, dtr = 'default', waitMs = 0, observe = false } = {}) {
   if (port) { addLine('CONNECT: already connected; use DISCONNECT first', 'err'); return false; }
