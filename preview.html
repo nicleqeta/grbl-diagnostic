@@ -769,6 +769,35 @@ function renderGrid(drawCtx, bounds, width, height, offsetX, offsetY, scale) {
   drawCtx.restore();
 }
 
+function renderPerspectiveGrid(drawCtx, bounds, center, width, height, offsetX, offsetY, scale) {
+  const stepBase = Math.max(bounds.span.x, bounds.span.y, 50);
+  const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(stepBase)) - 1));
+  const from = { x: 0, y: 0 };
+  const to = { x: 0, y: 0 };
+  drawCtx.save();
+  drawCtx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
+  drawCtx.lineWidth = 1;
+
+  for (let x = Math.floor(bounds.min.x / step) * step; x <= bounds.max.x + step; x += step) {
+    projectPerspectiveInto({ x, y: bounds.min.y, z: 0 }, center, scale, offsetX, offsetY, from);
+    projectPerspectiveInto({ x, y: bounds.max.y, z: 0 }, center, scale, offsetX, offsetY, to);
+    drawCtx.beginPath();
+    drawCtx.moveTo(from.x, from.y);
+    drawCtx.lineTo(to.x, to.y);
+    drawCtx.stroke();
+  }
+  for (let y = Math.floor(bounds.min.y / step) * step; y <= bounds.max.y + step; y += step) {
+    projectPerspectiveInto({ x: bounds.min.x, y, z: 0 }, center, scale, offsetX, offsetY, from);
+    projectPerspectiveInto({ x: bounds.max.x, y, z: 0 }, center, scale, offsetX, offsetY, to);
+    drawCtx.beginPath();
+    drawCtx.moveTo(from.x, from.y);
+    drawCtx.lineTo(to.x, to.y);
+    drawCtx.stroke();
+  }
+
+  drawCtx.restore();
+}
+
 function renderAxes(drawCtx, bounds, width, height, offsetX, offsetY, scale, center) {
   const p0 = { x: 0, y: 0 };
   const p1 = { x: 0, y: 0 };
@@ -812,6 +841,8 @@ function renderStaticLayer(bounds, width, height, offsetX, offsetY, scale, cente
     staticLayerCtx.clearRect(0, 0, width, height);
     if (playback.viewMode === 'top') {
       renderGrid(staticLayerCtx, bounds, width, height, offsetX - ((bounds.span.x * scale) / 2), offsetY + ((bounds.span.y * scale) / 2), scale);
+    } else {
+      renderPerspectiveGrid(staticLayerCtx, bounds, center, width, height, offsetX, offsetY, scale);
     }
     renderAxes(staticLayerCtx, bounds, width, height, offsetX, offsetY, scale, center);
     staticLayerKey = key;
