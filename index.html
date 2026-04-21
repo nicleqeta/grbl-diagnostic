@@ -918,6 +918,11 @@
   .gcode-mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .gcode-mode-row label { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
   .gcode-mode-row select { flex: 1; margin-bottom: 0; }
+  #gcode-input.drag-over {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.18);
+    background: #1b2e33;
+  }
   /* GCode Queue panel in terminal column */
   .gcode-queue-panel {
     flex-shrink: 0;
@@ -6957,6 +6962,25 @@ function openGcodeInputPreview() {
   postLatestPreviewTimeline();
 }
 
+async function loadDroppedGcodeFile(file) {
+  if (!file) return;
+  const allowedExtensions = ['.gc', '.g', '.gcode', '.txt', '.nc', '.ngc'];
+  const loweredName = String(file.name || '').toLowerCase();
+  const isAllowed = allowedExtensions.some(function(ext) { return loweredName.endsWith(ext); });
+  if (!isAllowed) {
+    addLine('Unsupported file type for GCode drop. Allowed: ' + allowedExtensions.join(', '), 'err');
+    return;
+  }
+  try {
+    const text = await file.text();
+    gcodeInputEl.value = text;
+    renderGcodeQueue();
+    addLine('Loaded GCode file: ' + file.name, 'sys');
+  } catch(e) {
+    addLine('Could not read dropped file: ' + (e && e.message ? e.message : String(e)), 'err');
+  }
+}
+
 function handleGcodeQueueAction(e) {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
@@ -7140,6 +7164,31 @@ basicRunBtn.addEventListener('click', () => {
 basicPreviewBtn.addEventListener('click', openBasicPreview);
 
 gcodeInputEl.addEventListener('input', renderGcodeQueue);
+gcodeInputEl.addEventListener('dragenter', function(event) {
+  if (event.dataTransfer && event.dataTransfer.types && Array.from(event.dataTransfer.types).includes('Files')) {
+    event.preventDefault();
+    gcodeInputEl.classList.add('drag-over');
+  }
+});
+gcodeInputEl.addEventListener('dragover', function(event) {
+  if (event.dataTransfer && event.dataTransfer.types && Array.from(event.dataTransfer.types).includes('Files')) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    gcodeInputEl.classList.add('drag-over');
+  }
+});
+gcodeInputEl.addEventListener('dragleave', function(event) {
+  if (event.target === gcodeInputEl) gcodeInputEl.classList.remove('drag-over');
+});
+gcodeInputEl.addEventListener('drop', function(event) {
+  event.preventDefault();
+  gcodeInputEl.classList.remove('drag-over');
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length
+    ? event.dataTransfer.files[0]
+    : null;
+  if (!file) return;
+  void loadDroppedGcodeFile(file);
+});
 gcodeClearBtn.addEventListener('click', function() {
   gcodeInputEl.value = '';
   renderGcodeQueue();
