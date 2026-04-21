@@ -733,23 +733,23 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
         The default <code>{plateau_ms}</code> is deliberately conservative because host-side timing noise, USB latency, and controller-status polling can move a short batch by several milliseconds.
         If you are testing very short strokes, increase <code>{target_total_travel}</code> and/or <code>{plateau_ms}</code> so the stop condition reacts to a real trend rather than one noisy batch.
       </p>
-      <pre><code>REM TITLE: Distance-Scaled Acceleration Plateau Map
-REM AUTHOR: GitHub Copilot
-REM VERSION: 3
-REM DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths from {min_distance} mm up to {max_distance} mm.
-REM DESCRIPTION: Each timed batch streams batch_count * 2 movement commands, with a guaranteed minimum of {{min_batch_count * 2}} moves per acceleration test.
-REM DESCRIPTION: Uses BENCH markers so the app can time each batch and chart batch duration vs acceleration per distance in the Preview window.
-REM VAR start_accel=400
-REM VAR accel_step=200
-REM VAR max_accel=4000
-REM VAR min_distance=1
-REM VAR max_distance=32
-REM VAR x_feed=10000
-REM VAR target_total_travel=64
-REM VAR min_batch_count=1
-REM VAR settle_ms=200
-REM VAR idle_timeout=12000
-REM VAR plateau_ms=60
+      <pre><code>; TITLE: Distance-Scaled Acceleration Plateau Map
+; AUTHOR: GitHub Copilot
+; VERSION: 3
+; DESCRIPTION: Measures repeated X back-and-forth batches at increasing acceleration and doubling stroke lengths from {min_distance} mm up to {max_distance} mm.
+; DESCRIPTION: Each timed batch streams batch_count * 2 movement commands, with a guaranteed minimum of {{min_batch_count * 2}} moves per acceleration test.
+; DESCRIPTION: Uses BENCH markers so the app can time each batch and chart batch duration vs acceleration per distance in the Preview window.
+; VAR start_accel=400
+; VAR accel_step=200
+; VAR max_accel=4000
+; VAR min_distance=1
+; VAR max_distance=32
+; VAR x_feed=10000
+; VAR target_total_travel=64
+; VAR min_batch_count=1
+; VAR settle_ms=200
+; VAR idle_timeout=12000
+; VAR plateau_ms=60
 
 10 LET proceed = FORM("Distance-Scaled Acceleration Plateau Map\, clear the machine so X can move freely around the current point. Do not switch browser tabs during the test &mdash; tab switching throttles the script timer and will cause false high readings. [Begin Test] [Cancel]", 1, 0)
 20 IF proceed &lt;&gt; 1 THEN GOTO 9000
@@ -843,16 +843,16 @@ REM VAR plateau_ms=60
       <h2>14. Example: FluidNC Startup Flowchart</h2>
       <p>This script implements the <a href="https://wiki.fluidnc.com/en/support/gcode_senders" target="_blank" rel="noopener">FluidNC sender startup flowchart</a>: open the port, send a status poll to wake the controller, wait for a banner (<code>Grbl&nbsp;&hellip;</code> or <code>FluidNC&nbsp;&hellip;</code>) or a live-state response (<code>&lt;Idle|&hellip;&gt;</code>), then read <code>$30</code> to confirm two-way comms. A graceful <code>DISCONNECT</code> handles the no-response case.</p>
       <p><code>SET SEND_DELAY 0</code> removes the default 100&nbsp;ms inter-command pause. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout, making the explicit delay redundant.</p>
-      <pre><code>REM TITLE: FluidNC Startup Flowchart
-REM AUTHOR: GitHub Copilot
-REM VERSION: 1
-REM DESCRIPTION: Opens a serial port and runs the recommended FluidNC/GRBL sender startup
-REM DESCRIPTION: sequence from wiki.fluidnc.com/en/support/gcode_senders.
-REM DESCRIPTION: Polls with ? after connecting, waits up to {banner_timeout} ms for a banner
-REM DESCRIPTION: or state response, then reads $30 to confirm two-way comms.
-REM VAR baud=115200
-REM VAR banner_timeout=3000
-REM VAR settle_ms=200
+      <pre><code>; TITLE: FluidNC Startup Flowchart
+; AUTHOR: GitHub Copilot
+; VERSION: 1
+; DESCRIPTION: Opens a serial port and runs the recommended FluidNC/GRBL sender startup
+; DESCRIPTION: sequence from wiki.fluidnc.com/en/support/gcode_senders.
+; DESCRIPTION: Polls with ? after connecting, waits up to {banner_timeout} ms for a banner
+; DESCRIPTION: or state response, then reads $30 to confirm two-way comms.
+; VAR baud=115200
+; VAR banner_timeout=3000
+; VAR settle_ms=200
 
 10 REM Disable the default 100 ms inter-SEND pause; WAIT_FOR_LINE manages pacing
 20 SET SEND_DELAY 0
