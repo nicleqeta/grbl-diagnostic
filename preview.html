@@ -1022,6 +1022,44 @@ function isBenchmarkOnlyTimeline(candidate) {
   );
 }
 
+function createWaitingBenchmarkTimeline(title, previousTimeline = null) {
+  const previousBenchmark = previousTimeline?.benchmark || null;
+  return {
+    title,
+    commands: [],
+    commandCount: 0,
+    segments: [],
+    stats: {
+      motionCommandCount: 0,
+      errorCount: 0
+    },
+    bounds: {
+      min: { x: 0, y: 0, z: 0 },
+      max: { x: 0, y: 0, z: 0 },
+      span: { x: 0, y: 0, z: 0 }
+    },
+    commandToLastSegment: [],
+    benchmark: previousBenchmark || {
+      title,
+      sampleCount: 0,
+      summary: [],
+      series: [],
+      samples: [],
+      records: [],
+      activeMarkers: [],
+      meta: {
+        title,
+        xField: 'sampleIndex',
+        yField: 'elapsedMs',
+        seriesField: '',
+        xLabel: 'Sample',
+        yLabel: 'Elapsed (ms)',
+        description: 'Waiting for live BENCH samples'
+      }
+    }
+  };
+}
+
 function loadTimeline(nextTimeline) {
   const previousTimeline = timeline;
   const previousViewMode = playback.viewMode;
@@ -1064,8 +1102,9 @@ function loadTimeline(nextTimeline) {
 function loadWaitingState(payload = null) {
   const waitingTitle = String(payload?.title || 'GRBL Preview').trim() || 'GRBL Preview';
   const waitingMessage = String(payload?.message || 'Waiting for benchmarking data...').trim() || 'Waiting for benchmarking data...';
+  const previousTimeline = timeline;
 
-  timeline = null;
+  timeline = createWaitingBenchmarkTimeline(waitingTitle, previousTimeline);
   playback.playing = false;
   playback.commandCursor = 0;
   playback.accumulatorMs = 0;
@@ -1076,7 +1115,7 @@ function loadWaitingState(payload = null) {
   statsEl.textContent = 'Waiting for benchmark data';
   setStatusText(`${waitingTitle}\n${waitingMessage}`);
   setBenchmarkInfoText(`${waitingTitle}\nView: Benchmark\n${waitingMessage}`);
-  emptyState.style.display = 'block';
+  emptyState.style.display = 'none';
   emptyState.innerHTML = '<strong>Waiting for benchmark data.</strong><br>Run a GCOM script with BENCH START / BENCH END markers.';
   commandList.innerHTML = '';
   commandItems = [];
