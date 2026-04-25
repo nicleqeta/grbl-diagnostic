@@ -7320,7 +7320,7 @@ let incomingLineInterceptor = null;
 // EXISTING SERIAL / DIAGNOSTIC CODE
 
 function looksLikeGrblBanner(line) {
-  return /^grbl\b/i.test(String(line || '').trim());
+  return /^(?:grblhal\b|grbl\b)/i.test(String(line || '').trim());
 }
 
 function looksLikeReadyLine(line) {

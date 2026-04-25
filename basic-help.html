@@ -353,7 +353,7 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <pre><code>10 SET SEND_DELAY 0
 20 CONNECT BAUD 115200
 30 STATUS
-40 LET reply = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", 3000)
+    40 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
 50 IF reply = "" THEN GOTO 9000
 60 PRINT "Connected: " &amp; reply
 70 END
@@ -372,7 +372,7 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <pre><code>10 SET SEND_DELAY 0
 20 CONNECT WS "192.168.1.100"
 REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
-30 LET reply = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", 5000)
+    30 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
 40 IF reply = "" THEN GOTO 9000
 50 PRINT "Connected: " &amp; reply
 60 SEND "$I"
@@ -916,8 +916,8 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 50 REM ? is a realtime status poll &mdash; safe on any firmware state, provokes a response
 60 STATUS
 
-70 REM Wait for a startup banner (Grbl / FluidNC) or a live-state report (&lt;Idle|...&gt;)
-80 LET first_line = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", {banner_timeout})
+70 REM Wait for a startup banner (GrblHAL / Grbl / FluidNC) or a live-state report (&lt;Idle|...&gt;)
+80 LET first_line = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", {banner_timeout})
 90 IF first_line = "" THEN GOTO 9000
 
 100 PRINT "Controller responded: " &amp; first_line
