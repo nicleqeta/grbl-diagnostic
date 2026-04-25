@@ -9539,6 +9539,19 @@ function aiSetOpen(open) {
   if (aiSidebarEl) aiSidebarEl.classList.toggle('open', open);
   if (aiSidebarResizerEl) aiSidebarResizerEl.classList.toggle('visible', open);
   if (aiSidebarToggleBtn) aiSidebarToggleBtn.classList.toggle('ready', open);
+  if (aiSidebarEl) {
+    if (!open) {
+      // Clear drag-resize inline dimensions so the collapsed state can return to width: 0.
+      aiSidebarEl.style.width = '';
+      aiSidebarEl.style.minWidth = '';
+      aiSidebarEl.style.flexBasis = '';
+    } else if (!aiSidebarEl.style.width && !aiSidebarEl.style.flexBasis) {
+      // Ensure a deterministic open width when no custom size has been applied.
+      aiSidebarEl.style.width = '340px';
+      aiSidebarEl.style.minWidth = '300px';
+      aiSidebarEl.style.flexBasis = '340px';
+    }
+  }
   if (open) setTimeout(() => aiPromptInputEl && aiPromptInputEl.focus(), 220);
 }
 
