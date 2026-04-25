@@ -622,6 +622,32 @@
   .send-btn:hover { border-color: var(--teal); color: var(--teal); }
   .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+  .transport-toggle {
+    display: flex;
+    gap: 0;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .transport-toggle-btn {
+    flex: 1;
+    padding: 7px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background 0.15s, color 0.15s;
+  }
+  .transport-toggle-btn:first-child { border-right: 1px solid var(--border); }
+  .transport-toggle-btn.active { background: var(--teal); color: #fff; font-weight: 600; }
+  .transport-toggle-btn:hover:not(.active) { background: #2a2f45; color: var(--text); }
+  #ws-url-row { display: none; margin-bottom: 8px; }
+  #ws-url-row input { margin-bottom: 0; }
+
   .no-serial-warning {
     margin: 12px 16px;
     padding: 10px 12px;
@@ -1246,6 +1272,14 @@
 
     <div class="section">
       <div class="section-label">Connection</div>
+      <div class="transport-toggle">
+        <button class="transport-toggle-btn active" id="transport-serial-btn" type="button">USB / Serial</button>
+        <button class="transport-toggle-btn" id="transport-ws-btn" type="button">WebSocket</button>
+      </div>
+      <div id="ws-url-row">
+        <input type="text" id="ws-url-input" placeholder="ws://192.168.1.1:80" title="FluidNC WebSocket address. Default port is 80 (v4.0+) or 81 (earlier).">
+      </div>
+      <div id="serial-controls">
       <select id="baud-select">
         <option value="115200" selected>115200 baud (GRBL default)</option>
         <option value="9600">9600 baud</option>
@@ -1302,6 +1336,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
           <div class="help-text">These commands run one at a time in order, and stop if the active command returns <code>error:</code> or <code>ALARM:</code>. Use <code>hex:18</code> for a raw byte like <code>0x18</code>. Reserved builder actions: <code>|clip</code> copies the current diagnostics log to the system clipboard.</div>
         </div>
       </details>
+      </div><!-- end serial-controls -->
       <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
@@ -1825,7 +1860,8 @@ const MACHINE_STATE_META = {
 let port = null;
 let writer = null;
 let reader = null;
-let readLoopActive = false;
+let wsSocket = null;
+let wsTransportMode = false;
 let autoScroll = true;
 let terminalPerformanceMode = false;
 let cmdHistory = [];
@@ -4759,9 +4795,14 @@ async function basicReadGrbl(settingStr, modeLabel = 'READ') {
       }
     };
 
-    // Write $$ directly to the serial port, bypassing the sequence handler
+    // Write $$ directly, bypassing the sequence handler
     // so there's no conflict over who consumes the ok response
-    if (writer) {
+    if (wsSocket && wsSocket.readyState === WebSocket.OPEN) {
+      try { wsSocket.send('$$\n'); addLine('$$', 'tx'); } catch {
+        incomingLineInterceptor = null;
+        if (!done) { done = true; resolve(0); }
+      }
+    } else if (writer) {
       const encoded = new TextEncoder().encode('$$\n');
       writer.write(encoded).catch(() => {
         incomingLineInterceptor = null;
@@ -5042,8 +5083,8 @@ function requestBasicStop(statusLine = 'Stop requested...', stopMessage = '--- S
 
 async function basicEmergencyStopFromUi() {
   requestBasicStop('Stop requested. Sending soft reset (^X)...', '--- Script stopped by user ---');
-  if (!port || !writer) {
-    addLine('Soft reset skipped: no active serial connection', 'sys');
+  if (!isTransportConnected()) {
+    addLine('Soft reset skipped: no active connection', 'sys');
     return;
   }
   const sent = await basicSendRealtimeCommand('^X', '^X (Soft Reset)');
@@ -7079,7 +7120,7 @@ async function gcodeRunJobFast(job) {
 
 async function runSingleGcodeJob(job) {
   if (gcodeRunning || basicRunning) { addLine('GCode queue: already running, cannot start job', 'err'); return; }
-  if (!port || !writer) { addLine('GCode queue: not connected', 'err'); return; }
+  if (!isTransportConnected()) { addLine('GCode queue: not connected', 'err'); return; }
   gcodeRunning     = true;
   gcodeActiveJobId = job.id;
   lockSerialForQueue(true);
@@ -7108,7 +7149,7 @@ async function runSingleGcodeJob(job) {
 
 async function runGcodeQueue() {
   if (gcodeRunning || basicRunning) { addLine('GCode queue: already running', 'err'); return; }
-  if (!port || !writer) { addLine('GCode queue: not connected', 'err'); return; }
+  if (!isTransportConnected()) { addLine('GCode queue: not connected', 'err'); return; }
   const pendingJobs = gcodeQueue.filter(function(j) { return j.status === 'pending'; });
   if (!pendingJobs.length) { addLine('GCode queue: no pending jobs (remove old jobs or add new ones)', 'sys'); return; }
   gcodeRunning = true;
@@ -8240,7 +8281,9 @@ async function disconnectPort(reason = 'Disconnected') {
   setStartupBanner(null);
   const localPort = port, localReader = reader, localWriter = writer;
   port = null; reader = null; writer = null;
+  const localWs = wsSocket; wsSocket = null;
   try {
+    if (localWs) { localWs.onopen = localWs.onmessage = localWs.onerror = localWs.onclose = null; localWs.close(); }
     if (localReader) await localReader.cancel().catch(() => {});
     if (readLoopPromise) { await readLoopPromise.catch(() => {}); readLoopPromise = null; }
     if (localWriter) localWriter.releaseLock();
@@ -8419,6 +8462,7 @@ function resetAfterFailedOpen(reason) {
   readLoopActive = false; resetBasicBufferedStream(); resetReadySignalState();
   currentRun.startupResolved = 'not-run'; currentRun.startupReadyLine = null;
   port = null; reader = null; writer = null; readLoopPromise = null; dtrSupported = false;
+  if (wsSocket) { const s = wsSocket; wsSocket = null; s.onopen = s.onmessage = s.onerror = s.onclose = null; s.close(); }
   settlePendingSequenceResponse({ status: 'cancelled', line: reason });
   syncRuntimeWorkerConnectionState('disconnected', 'unknown');
   setConnectionUi('disconnected'); setTransportState('disconnected'); setMachineState('unknown');
@@ -8437,7 +8481,7 @@ function isPortBusyOpenError(error, stage) {
 }
 
 async function sendCommand(raw, displayOverride = null) {
-  if (!writer) return false;
+  if (!writer && !(wsSocket && wsSocket.readyState === WebSocket.OPEN)) return false;
   let encoded, display;
 
   if (raw instanceof Uint8Array) {
@@ -8451,7 +8495,11 @@ async function sendCommand(raw, displayOverride = null) {
   }
 
   try {
-    await writer.write(encoded);
+    if (wsSocket && wsSocket.readyState === WebSocket.OPEN) {
+      wsSocket.send(encoded instanceof Uint8Array ? new TextDecoder().decode(encoded) : encoded);
+    } else {
+      await writer.write(encoded);
+    }
     if (display.trim()) addLine(display, 'tx');
     return true;
   } catch(e) {
@@ -8562,7 +8610,90 @@ async function basicDoConnect({ baud = 115200, dtr = 'default', waitMs = 0, obse
   }
 }
 
+// ── Transport helpers ────────────────────────────────────────────────────────
+
+function isTransportConnected() {
+  return !!writer || (!!wsSocket && wsSocket.readyState === WebSocket.OPEN);
+}
+
+async function connectViaWebSocket() {
+  const wsUrlInput = document.getElementById('ws-url-input');
+  const url = (wsUrlInput && wsUrlInput.value.trim()) || 'ws://192.168.1.1:80';
+  resetReadySignalState();
+  setConnectionUi('connecting');
+  setTransportState('connecting');
+  setMachineState('unknown');
+  syncRuntimeWorkerConnectionState('connecting', 'unknown');
+  setStartupBanner(null);
+  grblObservedRxBufBytes = 0;
+  const token = ++activeSequenceToken;
+  wsSocket = new WebSocket(url);
+  wsSocket.binaryType = 'arraybuffer';
+  wsSocket.onopen = () => {
+    if (activeSequenceToken !== token) { wsSocket.close(); return; }
+    currentRun = {
+      name: 'websocket', description: `WebSocket: ${url}`, source: 'websocket',
+      baud: 0, dtrMode: 'n/a', observeOnly: false,
+      showRequestResponseCorrelation: false,
+      waitMs: 0, bannerTimeoutMs: DEFAULT_BANNER_TIMEOUT_MS,
+      sequenceDelayMs: DEFAULT_SEQUENCE_DELAY_MS, commands: [],
+      invalidCommands: [], portInfo: null,
+      presetSummary: `WebSocket ${url}`,
+      startupResolved: 'pending', startupReadyLine: null, startupBannerLine: null
+    };
+    setConnectionUi('connected');
+    setTransportState('connected');
+    setMachineState('unknown');
+    syncRuntimeWorkerConnectionState('connected', 'unknown');
+    addLine(`WebSocket connected: ${url}`, 'sys');
+    void runStartupSequence(currentRun, token);
+  };
+  wsSocket.onmessage = (event) => {
+    const text = typeof event.data === 'string'
+      ? event.data
+      : new TextDecoder().decode(event.data);
+    for (const raw of text.split('\n')) {
+      const trimmed = raw.replace(/\r/g, '').trim();
+      if (!trimmed) continue;
+      addLine(trimmed, 'rx');
+      handleSequenceResponseLine(trimmed);
+      handleBasicBufferedResponseLine(trimmed);
+    }
+  };
+  wsSocket.onerror = () => {
+    addLine(`WebSocket error connecting to ${url}`, 'err');
+    markConnectionFault('WebSocket error');
+  };
+  wsSocket.onclose = (ev) => {
+    if (!wsSocket) return; // already cleaned up by disconnectPort
+    addLine(`WebSocket closed (code ${ev.code})`, 'sys');
+    markConnectionFault('WebSocket closed');
+  };
+}
+
+// ── Transport mode toggle ────────────────────────────────────────────────────
+
+(function initTransportToggle() {
+  const serialBtn = document.getElementById('transport-serial-btn');
+  const wsBtn = document.getElementById('transport-ws-btn');
+  const wsUrlRow = document.getElementById('ws-url-row');
+  const serialControls = document.getElementById('serial-controls');
+  if (!serialBtn || !wsBtn) return;
+
+  function applyMode(isWs) {
+    wsTransportMode = isWs;
+    serialBtn.classList.toggle('active', !isWs);
+    wsBtn.classList.toggle('active', isWs);
+    wsUrlRow.style.display = isWs ? '' : 'none';
+    serialControls.style.display = isWs ? 'none' : '';
+  }
+
+  serialBtn.addEventListener('click', () => applyMode(false));
+  wsBtn.addEventListener('click', () => applyMode(true));
+})();
+
 connectBtn.addEventListener('click', async () => {
+  if (wsTransportMode) { await connectViaWebSocket(); return; }
   const token = ++activeSequenceToken;
   let stage = 'request-port';
   try {
