@@ -343,6 +343,8 @@ export default {
         });
       }
 
+      const mode = String(body.mode || 'chat').toLowerCase();
+
       const GCOM_SYSTEM = `You are a GCOM AI Agent embedded in gcomposer, a browser-based GRBL CNC controller.
 Your primary role: write, explain, and refine GCOM scripts.
 
@@ -393,6 +395,23 @@ Safety rules:
 - Never recommend axis movement without REQUIRE_OK or confirmation logic.
 - Always handle possible ALARM states in scripts that move axes.
 - Keep explanations concise; lead with the script.`;
+
+    const REPAIR_SYSTEM = `
+REPAIR MODE IS ACTIVE.
+You are repairing a blocked script insertion. You must:
+1) Reflect briefly with exactly these headings:
+  - What failed
+  - What I changed
+  - Why this should pass now
+2) Then output one corrected script in a \`\`\`gcom fenced block.
+3) The corrected script MUST be a valid package with required headers:
+  ; TITLE:
+  ; DESCRIPTION:
+  ; VAR name=value (for every placeholder used)
+4) Use only supported GCOM syntax. Never use WHILE/WEND or // comments.
+5) Emit actions comment:
+  <!-- ACTIONS: {"insertScript":true,"showPreview":true} -->
+`;
 
       let contextAddendum = '';
       const ctx = (body.gcomContext && typeof body.gcomContext === 'object') ? body.gcomContext : null;
@@ -477,17 +496,68 @@ Safety rules:
         contextAddendum += composerParts.join('\n');
       }
 
+      const blockReason = (body.blockReason && typeof body.blockReason === 'object') ? body.blockReason : null;
+      if (blockReason) {
+        const blockParts = [];
+        blockParts.push(`\n\n=== INSERT BLOCK REASON ===`);
+        blockParts.push(`ruleId: ${String(blockReason.ruleId || 'unknown')}`);
+        const details = Array.isArray(blockReason.details) ? blockReason.details.slice(0, 25) : [];
+        if (details.length) {
+          blockParts.push('details:');
+          for (const d of details) blockParts.push(`- ${String(d)}`);
+        }
+        if (body.signature) blockParts.push(`failureSignature: ${String(body.signature)}`);
+        if (body.failedScript) {
+          const failedLines = String(body.failedScript).split('\n').slice(0, 180);
+          blockParts.push('blockedScript:');
+          blockParts.push('```gcom');
+          blockParts.push(failedLines.join('\n'));
+          blockParts.push('```');
+        }
+        blockParts.push(`=== END INSERT BLOCK REASON ===`);
+        contextAddendum += blockParts.join('\n');
+      }
+
+      const sessionLearning = (body.sessionLearning && typeof body.sessionLearning === 'object') ? body.sessionLearning : null;
+      if (sessionLearning) {
+        const learnParts = [];
+        learnParts.push(`\n\n=== SESSION LEARNING ===`);
+        const topFailures = Array.isArray(sessionLearning.topFailures) ? sessionLearning.topFailures.slice(0, 8) : [];
+        if (topFailures.length) {
+          learnParts.push('topRepeatedFailures:');
+          for (const f of topFailures) {
+            learnParts.push(`- ${String(f.signature || 'unknown')} (count=${Number(f.count || 0)})`);
+          }
+        }
+        const latestSuccess = sessionLearning.latestSuccess;
+        if (latestSuccess && typeof latestSuccess === 'object') {
+          learnParts.push('latestSuccessfulRepairSignature: ' + String(latestSuccess.signature || 'unknown'));
+        }
+        const approvedRules = Array.isArray(sessionLearning.approvedBrainRules) ? sessionLearning.approvedBrainRules.slice(-20) : [];
+        if (approvedRules.length) {
+          learnParts.push('approvedBrainRules:');
+          for (const r of approvedRules) {
+            if (r && typeof r === 'object') {
+              const patch = String(r.instructionPatch || '').slice(0, 300);
+              learnParts.push(`- ${String(r.signature || r.id || 'rule')}: ${patch}`);
+            }
+          }
+        }
+        learnParts.push(`=== END SESSION LEARNING ===`);
+        contextAddendum += learnParts.join('\n');
+      }
+
       try {
         const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
           messages: [
-            { role: 'system', content: GCOM_SYSTEM + contextAddendum },
+            { role: 'system', content: GCOM_SYSTEM + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum },
             ...messages,
           ],
           max_tokens: 1200,
           temperature: 0.4,
         });
         const reply = String(aiResponse.response || '');
-        return new Response(JSON.stringify({ reply }), {
+        return new Response(JSON.stringify({ reply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
           headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
         });
       } catch (e) {
