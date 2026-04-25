@@ -5071,12 +5071,13 @@ function updateBasicControlUi() {
   const hasTitle = Boolean(basicTitleInput.value.trim());
   const hasSyntaxErrors = basicValidationState.errors.length > 0;
   const scriptAllowsSelfConnect = /^\s*\d+\s+CONNECT\b/im.test(basicScriptInput.value);
+  const transportConnected = isTransportConnected();
   basicSaveBtn.disabled = !hasTitle || !hasScript || basicRunning || hasSyntaxErrors;
   basicSaveBtn.title = hasSyntaxErrors ? 'Fix BASIC syntax errors before saving' : '';
   basicCopyShareBtn.disabled = !basicSourceId;
   basicCopyForumBtn.disabled = !basicSourceId;
   basicPreviewBtn.disabled = !hasScript || basicRunning || hasSyntaxErrors;
-  basicRunBtn.disabled = (!port && !scriptAllowsSelfConnect) || !hasScript || basicRunning || gcodeRunning || hasSyntaxErrors;
+  basicRunBtn.disabled = (!transportConnected && !scriptAllowsSelfConnect) || !hasScript || basicRunning || gcodeRunning || hasSyntaxErrors;
   basicStopBtn.disabled = !basicRunning;
 }
 
@@ -6211,8 +6212,8 @@ async function runBasicScript(source) {
     return;
   }
 
-  if (!port && !/^\s*\d+\s+CONNECT\b/im.test(scriptSource)) {
-    addLine('No serial connection. Connect to your machine first, or add a CONNECT statement to your script.', 'err');
+  if (!isTransportConnected() && !/^\s*\d+\s+CONNECT\b/im.test(scriptSource)) {
+    addLine('No active connection. Connect to your machine first, or add a CONNECT statement to your script.', 'err');
     return;
   }
 
