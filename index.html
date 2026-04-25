@@ -9324,16 +9324,113 @@ function aiHandleAction(action, msgEl) {
     const pre = msgEl.querySelector('.ai-code-block[data-type="gcom"]') || msgEl.querySelector('.ai-code-block');
     if (!pre) { aiRenderMsg('assistant', 'No script block found to insert.', null); return; }
     const script = pre.textContent.trim();
-    if (basicScriptInput) {
-      basicScriptInput.value = script;
-      if (typeof markBasicScriptStructuralDirty === 'function') markBasicScriptStructuralDirty();
-      if (typeof basicValidateDraft === 'function') {
-        basicValidationState = basicValidateDraft();
-        if (typeof updateBasicValidationUi === 'function') updateBasicValidationUi();
-      }
-      if (basicSection) basicSection.open = true;
+    if (!script) { aiRenderMsg('assistant', 'Script block is empty.', null); return; }
+
+    // Normalize common LLM mistakes before parse/validation.
+    const normalized = script
+      .replace(/\r\n?/g, '\n')
+      // Convert JS-style inline comments to REM comments to satisfy GCOM parser.
+      .replace(/^(\s*\d+\s+[^\n]*?)\s+\/\/\s*(.*)$/gm, '$1 : REM $2');
+
+    // Block known unsupported flow-control that frequently appears in generated code.
+    const unsupported = [];
+    normalized.split('\n').forEach((line, idx) => {
+      const lineNum = idx + 1;
+      if (/^\s*\d+\s+WHILE\b/i.test(line)) unsupported.push(`Source line ${lineNum}: WHILE is not supported in GCOM BASIC. Use FOR/NEXT or IF...THEN GOTO.`);
+      if (/^\s*\d+\s+WEND\b/i.test(line)) unsupported.push(`Source line ${lineNum}: WEND is not supported in GCOM BASIC.`);
+    });
+    if (unsupported.length) {
+      aiRenderMsg('assistant', 'Insert blocked. The generated script uses unsupported statements:<br>' + unsupported.slice(0, 6).map(s => '- ' + s.replace(/</g, '&lt;')).join('<br>') + (unsupported.length > 6 ? '<br>- ...' : '') + '<br><br>Ask me to convert it to valid GCOM BASIC (FOR/NEXT + IF/GOTO only).', null);
+      return;
     }
-    aiRenderMsg('assistant', 'Script loaded into the GCOM Composer. Review it, then click <strong>Run Script</strong> when ready.', null);
+
+    // Require importable GCOM package headers so metadata/vars are populated on insert.
+    const hasTitleHeader = /^\s*(?:REM\s+|;\s*)TITLE\s*:/im.test(normalized);
+    const hasDescriptionHeader = /^\s*(?:REM\s+|;\s*)DESCRIPTION\s*:/im.test(normalized);
+    const hasAnyVarHeader = /^\s*(?:REM\s+VAR\s+|;\s*VAR\s+)[A-Za-z_][A-Za-z0-9_]*\s*=.*/im.test(normalized);
+    if (!hasTitleHeader || !hasDescriptionHeader || !hasAnyVarHeader) {
+      const missing = [];
+      if (!hasTitleHeader) missing.push('` ; TITLE: ...`');
+      if (!hasDescriptionHeader) missing.push('` ; DESCRIPTION: ...`');
+      if (!hasAnyVarHeader) missing.push('at least one ` ; VAR name=value`');
+      aiRenderMsg(
+        'assistant',
+        'Insert blocked. AI scripts must include metadata headers so Composer fields can be populated automatically.<br><br>Missing: ' +
+        missing.join(', ').replace(/</g, '&lt;') +
+        '<br><br>Use this format:<br><pre class="ai-code-block" data-type="gcom">; TITLE: Example\n; VERSION: 1.0\n; AUTHOR: You\n; DESCRIPTION: What the script does\n; VAR feed_rate=800\n10 LET feed_rate = {feed_rate}\n20 END</pre>',
+        null
+      );
+      return;
+    }
+
+    let candidatePackage = null;
+    try {
+      if (typeof parseBasicImportText === 'function') {
+        candidatePackage = parseBasicImportText(normalized, 'ai-generated.gcom');
+      }
+    } catch (e) {
+      aiRenderMsg('assistant', 'Insert blocked. Header parsing failed: ' + String((e && e.message) || e).replace(/</g, '&lt;'), null);
+      return;
+    }
+    if (!candidatePackage) {
+      aiRenderMsg('assistant', 'Insert blocked. Could not parse AI output as a valid GCOM package.', null);
+      return;
+    }
+
+    // Enforce explicit VAR declarations for every placeholder referenced by description or program.
+    const referenced = new Set([
+      ...collectBasicImportPlaceholders(candidatePackage.description || ''),
+      ...collectBasicImportPlaceholders(candidatePackage.programText || '')
+    ]);
+    const definedVarNames = new Set(Object.keys(candidatePackage.vars || {}));
+    const missingVarDefs = [...referenced].filter(name => !definedVarNames.has(name));
+    if (missingVarDefs.length) {
+      aiRenderMsg(
+        'assistant',
+        'Insert blocked. Declare all placeholders with `; VAR name=value` headers. Missing: ' +
+        missingVarDefs.join(', ').replace(/</g, '&lt;'),
+        null
+      );
+      return;
+    }
+
+    // Validate program text before replacing editor content.
+    let validationErrors = [];
+    if (typeof basicValidateScript === 'function') {
+      const varNames = Object.keys(candidatePackage.vars || {});
+      const validation = basicValidateScript(candidatePackage.programText || '', varNames);
+      validationErrors = validation && Array.isArray(validation.errors) ? validation.errors : [];
+    }
+
+    if (validationErrors.length) {
+      aiRenderMsg(
+        'assistant',
+        'Insert blocked due to syntax errors:<br>' +
+        validationErrors.slice(0, 8).map(e => '- ' + String(e).replace(/</g, '&lt;')).join('<br>') +
+        (validationErrors.length > 8 ? '<br>- ...' : '') +
+        '<br><br>Ask me to regenerate a valid script using only supported statements.',
+        null
+      );
+      return;
+    }
+
+    if (typeof applyBasicScriptPackage === 'function') {
+      applyBasicScriptPackage(candidatePackage, { sourceId: '', updateHistory: false });
+    } else if (basicScriptInput) {
+      basicScriptInput.value = candidatePackage.programText || '';
+    }
+
+    if (typeof markBasicScriptStructuralDirty === 'function') markBasicScriptStructuralDirty();
+    if (typeof basicValidateDraft === 'function') {
+      basicValidationState = basicValidateDraft();
+      if (typeof updateBasicValidationUi === 'function') updateBasicValidationUi();
+    }
+    if (basicSection) basicSection.open = true;
+
+    const m = getBasicScriptMeta();
+    const varCount = Object.keys(basicLoadedVars || {}).length;
+    const label = (m.title || '').trim() ? `Title: <strong>${String(m.title).replace(/</g,'&lt;')}</strong>. ` : '';
+    aiRenderMsg('assistant', label + `Script loaded into the GCOM Composer with metadata and ${varCount} variable default(s). Review it, then click <strong>Preview</strong> or <strong>Run Script</strong>.`, null);
   } else if (action === 'preview') {
     if (typeof openBasicPreview === 'function') {
       openBasicPreview();
@@ -9351,17 +9448,17 @@ async function aiSend(userText) {
   aiRenderMsg('user', userText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), null);
   aiChatHistory.push({ role: 'user', content: userText });
   aiShowThinking(true);
-  const gcomContext = aiSelectionContext ? {
-    selectedCommands: aiSelectionContext.commands || [],
-    selectedSegments: aiSelectionContext.segments || [],
-    sourceLines: aiSelectionContext.sourceLines || [],
-    geometricContext: aiSelectionContext.geometric || {}
-  } : null;
+  const gcomContext = aiSelectionContext ? { ...aiSelectionContext } : null;
+  const composerContext = {
+    meta: getBasicScriptMeta(),
+    vars: normalizeBasicVars(basicLoadedVars || {}),
+    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000)
+  };
   try {
     const res = await fetch('/api/ai/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: aiChatHistory, gcomContext })
+      body: JSON.stringify({ messages: aiChatHistory, gcomContext, composerContext })
     });
     aiShowThinking(false);
     if (!res.ok) {
@@ -9372,14 +9469,16 @@ async function aiSend(userText) {
       const data = await res.json();
       const reply = String(data.reply || '');
       aiChatHistory.push({ role: 'assistant', content: reply });
-      const cleanReply = reply.replace(/<!--\s*ACTIONS:[^>]*-->/g, '').trim();
-      const hasScript = /```gcom/i.test(reply);
+      const actionsCommentRe = new RegExp('<!--\\s*ACTIONS:[^>]*-->', 'g');
+      const cleanReply = reply.replace(actionsCommentRe, '').trim();
+      const hasScript = reply.toLowerCase().includes('```gcom');
       let parsedActions = null;
-      const actionMatch = reply.match(/<!--\s*ACTIONS:\s*(\{[^}]*\})\s*-->/);
+      const actionPayloadRe = new RegExp('<!--\\s*ACTIONS:\\s*(\\{[^}]*\\})\\s*-->');
+      const actionMatch = reply.match(actionPayloadRe);
       if (actionMatch) { try { parsedActions = JSON.parse(actionMatch[1]); } catch {} }
       const actions = (hasScript || parsedActions) ? {
-        insertScript: hasScript || !!parsedActions?.insertScript,
-        showPreview: !!parsedActions?.showPreview
+        insertScript: hasScript || !!(parsedActions && parsedActions.insertScript),
+        showPreview: !!(parsedActions && parsedActions.showPreview)
       } : null;
       const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions);
       if (msgEl) {
@@ -9409,8 +9508,8 @@ function aiSetContext(payload) {
   const cmds = (aiSelectionContext.commands || []).length;
   const segs = (aiSelectionContext.segments || []).length;
   const geo  = aiSelectionContext.geometric || {};
-  const dist = typeof geo.totalDistance === 'number' ? geo.totalDistance.toFixed(1) + 'mm' : null;
-  const minL = geo.minLine, maxL = geo.maxLine;
+  const dist = typeof geo.totalDistanceMm === 'number' ? geo.totalDistanceMm.toFixed(1) + 'mm' : null;
+  const minL = geo.minSourceLine, maxL = geo.maxSourceLine;
   let chips = '<span class="ai-context-chip">' + cmds + ' cmd' + (cmds !== 1 ? 's' : '') + '</span>';
   if (segs) chips += '<span class="ai-context-chip">' + segs + ' seg' + (segs !== 1 ? 's' : '') + '</span>';
   if (minL) chips += '<span class="ai-context-chip">L' + minL + (maxL && maxL !== minL ? '&ndash;' + maxL : '') + '</span>';

@@ -365,6 +365,24 @@ String: STR(expr) & (concat)
 State: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(key[,fallback])
 Template variables use {name=default} syntax substituted before execution.
 
+CRITICAL SYNTAX RULES (must follow):
+- Do NOT use // comments anywhere.
+- Use REM comments inside numbered program lines, or metadata headers prefixed with ';'.
+- Do NOT use WHILE/WEND (unsupported).
+- Looping must use FOR/NEXT or IF ... THEN GOTO.
+- Emit only supported statements listed above.
+
+SCRIPT PACKAGE FORMAT (required when generating a full script):
+; TITLE: <title>
+; VERSION: <version>
+; AUTHOR: <author>
+; DESCRIPTION: <plain english summary>
+; VAR name=value
+<numbered GCOM program lines>
+
+Always include TITLE and DESCRIPTION headers, plus VAR headers for any placeholders used in description or program text.
+Preserve and reuse existing variable names and metadata provided in context when possible.
+
 When outputting a GCOM script always wrap it in a fenced block tagged \`\`\`gcom ... \`\`\`.
 After your reply emit an actions comment when applicable:
 <!-- ACTIONS: {"insertScript":true,"showPreview":true} -->
@@ -426,6 +444,37 @@ Safety rules:
           parts.push(`=== END CONTEXT ===`);
           contextAddendum = parts.join('\n');
         }
+      }
+
+      const composerCtx = (body.composerContext && typeof body.composerContext === 'object') ? body.composerContext : null;
+      if (composerCtx) {
+        const composerParts = [];
+        const meta = (composerCtx.meta && typeof composerCtx.meta === 'object') ? composerCtx.meta : {};
+        const vars = (composerCtx.vars && typeof composerCtx.vars === 'object') ? composerCtx.vars : {};
+        const varEntries = Object.entries(vars).slice(0, 80);
+
+        composerParts.push(`\n\n=== CURRENT COMPOSER CONTEXT ===`);
+        if (meta.title || meta.version || meta.author || meta.description) {
+          composerParts.push(`Current metadata:`);
+          if (meta.title) composerParts.push(`- title: ${meta.title}`);
+          if (meta.version) composerParts.push(`- version: ${meta.version}`);
+          if (meta.author) composerParts.push(`- author: ${meta.author}`);
+          if (meta.description) composerParts.push(`- description: ${meta.description}`);
+        }
+        if (varEntries.length) {
+          composerParts.push(`Current variable defaults:`);
+          for (const [k, v] of varEntries) composerParts.push(`- ${k}=${v}`);
+        }
+        if (composerCtx.scriptSource && String(composerCtx.scriptSource).trim()) {
+          const lines = String(composerCtx.scriptSource).split('\n').slice(0, 120);
+          composerParts.push(`Current script source (first ${lines.length} line(s)):`);
+          composerParts.push('```gcom');
+          composerParts.push(lines.join('\n'));
+          composerParts.push('```');
+        }
+        composerParts.push(`=== END COMPOSER CONTEXT ===`);
+
+        contextAddendum += composerParts.join('\n');
       }
 
       try {
