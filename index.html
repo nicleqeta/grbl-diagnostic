@@ -647,6 +647,17 @@
   .transport-toggle-btn:hover:not(.active) { background: #2a2f45; color: var(--text); }
   #ws-url-row { display: none; margin-bottom: 8px; }
   #ws-url-row input { margin-bottom: 0; }
+  .ws-addr-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ws-addr-sep {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
 
   .no-serial-warning {
     margin: 12px 16px;
@@ -1276,9 +1287,6 @@
         <button class="transport-toggle-btn active" id="transport-serial-btn" type="button">USB / Serial</button>
         <button class="transport-toggle-btn" id="transport-ws-btn" type="button">WebSocket</button>
       </div>
-      <div id="ws-url-row">
-        <input type="text" id="ws-url-input" placeholder="ws://192.168.1.1:80" title="FluidNC WebSocket address. Default port is 80 (v4.0+) or 81 (earlier).">
-      </div>
       <div id="serial-controls">
       <select id="baud-select">
         <option value="115200" selected>115200 baud (GRBL default)</option>
@@ -1337,6 +1345,15 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         </div>
       </details>
       </div><!-- end serial-controls -->
+      <div id="ws-url-row">
+        <div class="section-label" style="margin-bottom:6px;">WebSocket address</div>
+        <div class="ws-addr-row">
+          <input type="text" id="ws-host-input" placeholder="192.168.1.1" title="IP address or hostname of the FluidNC / GRBL WiFi controller." style="flex:1;">
+          <span class="ws-addr-sep">:</span>
+          <input type="number" id="ws-port-input" placeholder="80" min="1" max="65535" value="80" title="WebSocket port. FluidNC default is 80 (v4.0+) or 81 (earlier versions)." style="width:72px;">
+        </div>
+        <div class="help-text" style="margin-top:4px;">FluidNC default port is 80. Earlier versions use port 81.</div>
+      </div>
       <button class="btn primary" id="connect-btn">Connect</button>
       <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
     </div>
@@ -8617,8 +8634,11 @@ function isTransportConnected() {
 }
 
 async function connectViaWebSocket() {
-  const wsUrlInput = document.getElementById('ws-url-input');
-  const url = (wsUrlInput && wsUrlInput.value.trim()) || 'ws://192.168.1.1:80';
+  const hostInput = document.getElementById('ws-host-input');
+  const portInput = document.getElementById('ws-port-input');
+  const host = (hostInput && hostInput.value.trim()) || '192.168.1.1';
+  const port = (portInput && portInput.value.trim()) || '80';
+  const url = `ws://${host}:${port}`;
   resetReadySignalState();
   setConnectionUi('connecting');
   setTransportState('connecting');
