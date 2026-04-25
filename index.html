@@ -5981,12 +5981,25 @@ function previewCompileGcodeCommand(timeline, motionState, commandEntry) {
   if (motionMode !== 'G2' && motionMode !== 'G3') return;
   const clockwise = motionMode === 'G2';
 
-  if (motionState.plane !== 'G17') {
+  // G2/G3 arcs require at least one axis target (X or Y)
+  if (!('X' in axisWords) && !('Y' in axisWords)) {
+    previewPushEvent(timeline, 'note', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      raw: commandEntry.raw,
+      message: 'G2/G3 arc without target coordinates (X or Y). Preview requires explicit target.'
+    });
+    return;
+  }
+
+  // Arcs require G17 (XY plane). Default to G17 if not explicitly set.
+  const arcPlane = motionState.plane || 'G17';
+  if (arcPlane !== 'G17') {
     previewPushEvent(timeline, 'error', {
       commandId: commandEntry.commandId,
       sourceLine: commandEntry.sourceLine,
       raw: commandEntry.raw,
-      message: `Unsupported arc plane ${motionState.plane} in preview`
+      message: `Unsupported arc plane ${arcPlane} in preview. Preview only supports G17 (XY-plane arcs).`
     });
     timeline.stats.unsupportedCount += 1;
     motionState.position = targetPoint;
@@ -6002,6 +6015,16 @@ function previewCompileGcodeCommand(timeline, motionState, commandEntry) {
       y: motionState.position.y + previewConvertValue(arcWords.J || 0, motionState.units),
       z: motionState.position.z
     });
+  } else {
+    // G2/G3 requires either R (radius) or I/J (center offset) to calculate arc
+    previewPushEvent(timeline, 'note', {
+      commandId: commandEntry.commandId,
+      sourceLine: commandEntry.sourceLine,
+      raw: commandEntry.raw,
+      message: 'G2/G3 arc missing center specification (R, I, or J). Preview requires explicit arc center.'
+    });
+    motionState.position = targetPoint;
+    return;
   }
 
   if (!centerPoint) {
