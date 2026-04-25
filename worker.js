@@ -442,6 +442,18 @@ MATH AND TRIG SEMANTICS
 - Use RAD(degValue) only when you explicitly need radians for another computation.
 - Do not convert degrees to radians before calling SIN/COS/TAN.
 
+ARC / CIRCLE RULES (G2/G3)
+- Prefer center-format arcs (I/J) over radius-format (R) when possible; center format is more stable.
+- Always set the arc plane before arcs. Use G17 for XY-plane arcs in this app.
+- For arcs in G17, include X and/or Y endpoint and include I and/or J center offsets.
+- I/J are center offsets from the arc start point (incremental arc center style).
+- Keep feed explicit before arc motion (set F in a prior move or on the arc command).
+- Helical arcs in G17 may include Z while X/Y follow the circular path.
+- If using R format: R>0 means sweep under 180 deg, R<0 means sweep over 180 deg.
+- Avoid near-semicircle and near-full-circle R arcs (numerically fragile). Prefer I/J.
+- Keep arc endpoints and center consistent so radius(start->center) ~= radius(end->center).
+- Do not emit unsupported planes for preview in this app; avoid G18/G19 arcs unless user explicitly asks.
+
 AUTHORING RULES
 - Validation blocks save/preview when syntax errors exist.
 - Preview/runtime fail on undefined variables.
@@ -468,6 +480,10 @@ COMMON FAILURE TRAPS
   Reason: COS already expects degrees in GCOM.
 - Wrong: LET x = ... + x inside a loop when x is also the center/reference position.
   Reason: this causes cumulative drift unless explicitly intended.
+- Wrong: SEND "G2 ... R..." for near-180 deg or near-360 deg arcs.
+  Reason: small endpoint rounding can cause large path errors; use I/J center format.
+- Wrong: SEND "G2/G3 ..." without plane and center semantics being clear.
+  Reason: arcs depend on active plane and center interpretation; emit explicit G17 and I/J.
 
 VAR DEFAULT VALUES
 When declaring ; VAR headers, use realistic defaults so preview produces meaningful motion output:
@@ -490,6 +506,8 @@ Before emitting a script, verify:
 - no unsupported statements are present
 - no // comments are present
 - SIN/COS/TAN inputs are already in degrees
+- G2/G3 arcs specify plane and center correctly (prefer G17 + I/J)
+- arc endpoints and center produce consistent radius (avoid impossible arcs)
 `;
 
       let contextAddendum = '';
