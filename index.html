@@ -9311,7 +9311,8 @@ syncTerminalModeUi();
 updateBasicValidationUi();
 syncCommandPrompt();
 addLine('gcomposer ready', 'sys');
-addLine('Open Chrome or Edge, connect your device via USB, then click Connect', 'sys');
+addLine('Open Chrome or Edge (incognito window is best), then click Connect.', 'sys');
+addLine('Or use the AI Agent to help create your own gcom program.', 'sys');
 if (diagnosticsPreset) {
   addLine(`Loaded diagnostic preset: ${diagnosticsPreset.name}`, 'sys');
 }
@@ -9342,8 +9343,9 @@ const aiContextClearBtnEl = document.getElementById('ai-context-clear-btn');
 const aiProposalsPanelEl = document.getElementById('ai-proposals-panel');
 const aiProposalsCountEl = document.getElementById('ai-proposals-count');
 const aiProposalsListEl  = document.getElementById('ai-proposals-list');
+const AI_TERMINAL_CONTEXT_LINE_LIMIT = 80;
 
-let aiSidebarOpen = false;
+let aiSidebarOpen = true;
 let aiChatHistory = [];
 let aiSelectionContext = null;
 let aiThinking = false;
@@ -9660,6 +9662,23 @@ function aiHandleInsertBlock(blockReason, failedScript, messageHtml) {
   aiAutoRepairFromBlock(blockReason, failedScript, signature, { manual: false });
 }
 
+function aiPromptRequestsTerminalContext(userText) {
+  const text = String(userText || '').toLowerCase();
+  if (!text) return false;
+  return /(terminal|console|log output|terminal output|terminal log|serial log|websocket log|error log|from the log)/.test(text);
+}
+
+function aiGetTerminalContext(userText) {
+  if (!aiPromptRequestsTerminalContext(userText) || !Array.isArray(logLines) || !logLines.length) return null;
+  const recentLines = logLines.slice(-AI_TERMINAL_CONTEXT_LINE_LIMIT);
+  return {
+    source: 'terminal-output',
+    requestedByUser: true,
+    lineCount: recentLines.length,
+    lines: recentLines
+  };
+}
+
 function aiSetOpen(open) {
   aiSidebarOpen = open;
   if (aiSidebarEl) aiSidebarEl.classList.toggle('open', open);
@@ -9915,11 +9934,13 @@ async function aiSend(userText) {
   aiChatHistory.push({ role: 'user', content: userText });
   aiShowThinking(true);
   const gcomContext = aiSelectionContext ? { ...aiSelectionContext } : null;
+  const terminalContext = aiGetTerminalContext(userText);
   const composerContext = {
     meta: getBasicScriptMeta(),
     vars: normalizeBasicVars(basicLoadedVars || {}),
     scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000),
-    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20)
+    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20),
+    terminalContext
   };
   try {
     const res = await fetch('/api/ai/agent', {
@@ -10021,6 +10042,7 @@ if (aiSidebarToggleBtn) aiSidebarToggleBtn.addEventListener('click', () => aiSet
 if (aiSidebarCloseBtn)  aiSidebarCloseBtn.addEventListener('click',  () => aiSetOpen(false));
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
+aiSetOpen(true);
 if (aiProposalsListEl) {
   aiProposalsListEl.addEventListener('click', e => {
     const target = e.target;

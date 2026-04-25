@@ -1,6 +1,6 @@
-# gcomposer / GRBL serial console
+# gcomposer / GRBL console
 
-A browser-based GRBL serial console with a built-in scripting engine. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before connecting to hardware. Runs in Chrome and Edge via Web Serial — no install required.
+A browser-based GRBL console with a built-in scripting engine. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before connecting to hardware. Open it in Chrome or Edge, click Connect, and use USB / Serial or WebSocket with no install required.
 
 Live at https://gcomposer.app
 
@@ -29,11 +29,11 @@ This enables more portable, explainable, and verifiable CNC workflows while pres
 
 ## What This App Does
 
-gcomposer opens a serial connection to a GRBL controller using the browser's Web Serial feature.
+gcomposer connects to a GRBL controller from the browser over USB / Serial or WebSocket.
 
 It can help you:
 
-* connect to a GRBL device from the browser
+* connect to a GRBL device from the browser over USB / Serial or WebSocket
 * see exactly what the controller sends back
 * send simple GRBL commands like `?`, `$$`, `$I`, and `$X`
 * write automated scripts that send commands, wait for responses, loop, branch, and do math
@@ -72,12 +72,12 @@ Because scripts are shareable via URL, they work well in documentation, forums, 
 ## Basic Use
 
 1. Open the page in Chrome or Edge
-2. Plug in the GRBL controller over USB
-3. Choose the correct baud rate
-4. Click Connect
-5. Select the serial port
+2. An incognito or InPrivate window is recommended for the cleanest run
+3. Click Connect
+4. For USB / Serial, plug in the GRBL controller, choose the baud rate, and select the serial port
+5. For WebSocket, enter the controller address and port
 6. Watch the terminal output
-7. Use quick commands or run scripts
+7. Use quick commands, run scripts, or ask the AI Agent to help create a GCOM program
 
 Common quick commands:
 
