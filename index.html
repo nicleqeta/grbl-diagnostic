@@ -8704,12 +8704,13 @@ async function connectViaWebSocket() {
     wsTransportMode = isWs;
     serialBtn.classList.toggle('active', !isWs);
     wsBtn.classList.toggle('active', isWs);
-    wsUrlRow.style.display = isWs ? '' : 'none';
-    serialControls.style.display = isWs ? 'none' : '';
+    wsUrlRow.style.display = isWs ? 'block' : 'none';
+    serialControls.style.display = isWs ? 'none' : 'block';
   }
 
   serialBtn.addEventListener('click', () => applyMode(false));
   wsBtn.addEventListener('click', () => applyMode(true));
+  applyMode(false); // apply initial state on load
 })();
 
 connectBtn.addEventListener('click', async () => {
