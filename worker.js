@@ -297,6 +297,158 @@ export default {
       }
     }
 
+    // ── AI agent endpoint ──────────────────────────────────────────────────
+    if (url.pathname === '/api/ai/agent') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: SCRIPT_CORS_HEADERS });
+      }
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+      if (!env.AI) {
+        return new Response(JSON.stringify({ error: 'AI service not configured on this deployment.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      const MAX_MESSAGES = 20;
+      const MAX_MSG_LEN  = 2000;
+      const rawMessages  = Array.isArray(body.messages) ? body.messages : [];
+      const messages = rawMessages
+        .slice(-MAX_MESSAGES)
+        .map(m => ({
+          role:    String(m.role) === 'user' ? 'user' : 'assistant',
+          content: String(m.content || '').slice(0, MAX_MSG_LEN),
+        }))
+        .filter(m => m.content.length > 0);
+
+      if (messages.length === 0) {
+        return new Response(JSON.stringify({ error: 'No messages provided' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      const GCOM_SYSTEM = `You are a GCOM AI Agent embedded in gcomposer, a browser-based GRBL CNC controller.
+Your primary role: write, explain, and refine GCOM scripts.
+
+GCOM is a line-numbered BASIC dialect. Line numbers must be positive integers (10, 20, 30...).
+Core statements:
+  LET var = expr
+  SEND "gcode" [TIMEOUT ms] [REQUIRE_OK]
+  WAIT ms | WAIT_IDLE [ms] | WAIT_STATE target [TIMEOUT ms]
+  PRINT expr | INPUT var [, "Prompt"]
+  IF condition THEN GOTO line
+  FOR var = start TO end [STEP n] ... NEXT [var]
+  GOSUB line ... RETURN
+  LET var = SETTING("$N") | RESULT key, expr | END
+  HOLD | RESUME | STATUS | SOFT_RESET
+  BENCH START | BENCH END
+
+Math: ABS INT ROUND(v,d) SQRT SIN COS TAN ASIN ACOS ATAN ATAN2(y,x) RAD DEG RND(max)
+      PI MOD(a,b) MIN(a,b) MAX(a,b) CLAMP(v,lo,hi) HYPOT(a,b) LN LOG LOG10 TRUNC SIGN
+String: STR(expr) & (concat)
+State: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(key[,fallback])
+Template variables use {name=default} syntax substituted before execution.
+
+When outputting a GCOM script always wrap it in a fenced block tagged \`\`\`gcom ... \`\`\`.
+After your reply emit an actions comment when applicable:
+<!-- ACTIONS: {"insertScript":true,"showPreview":true} -->
+Emit insertScript:true when you produce a new or modified script.
+Emit showPreview:true when offering to open a motion preview.
+
+Safety rules:
+- Never recommend axis movement without REQUIRE_OK or confirmation logic.
+- Always handle possible ALARM states in scripts that move axes.
+- Keep explanations concise; lead with the script.`;
+
+      let contextAddendum = '';
+      const ctx = (body.gcomContext && typeof body.gcomContext === 'object') ? body.gcomContext : null;
+      if (ctx) {
+        const cmds = Array.isArray(ctx.commands) ? ctx.commands : [];
+        const segs = Array.isArray(ctx.segments) ? ctx.segments : [];
+        const srcCtx = Array.isArray(ctx.sourceContext) ? ctx.sourceContext : [];
+        const geo = (ctx.geometric && typeof ctx.geometric === 'object') ? ctx.geometric : {};
+        if (cmds.length > 0) {
+          const parts = [];
+          parts.push(`\n\n=== COMMAND TAPE SELECTION CONTEXT ===`);
+          parts.push(`The user selected ${cmds.length} command(s) and ${segs.length} motion segment(s) from the preview of script: "${ctx.scriptTitle || 'Untitled'}".`);
+          parts.push(`Script totals: ${ctx.totalCommandsInScript || '?'} commands, ${ctx.totalSegmentsInScript || '?'} segments.`);
+
+          // Geometric summary
+          if (geo.totalDistanceMm != null) parts.push(`Selected toolpath: ${geo.totalDistanceMm}mm total travel.`);
+          if (geo.avgFeedRate) parts.push(`Average feed rate: ${geo.avgFeedRate}mm/min.`);
+          if (Array.isArray(geo.motionTypes) && geo.motionTypes.length) parts.push(`Motion types: ${geo.motionTypes.join(', ')}.`);
+          if (geo.bounds) {
+            const b = geo.bounds;
+            parts.push(`Bounding box of selection: X[${b.min.x} to ${b.max.x}] Y[${b.min.y} to ${b.max.y}] Z[${b.min.z} to ${b.max.z}] mm.`);
+          }
+          if (geo.minSourceLine != null) parts.push(`Source line range of selection: L${geo.minSourceLine}–L${geo.maxSourceLine}.`);
+
+          // Selected G-code commands (raw, with source line)
+          parts.push(`\nSelected G-code commands (commandId | sourceL | raw):`);
+          for (const c of cmds.slice(0, 40)) {
+            parts.push(`  [${c.commandId + 1}] L${c.sourceLine ?? '?'} | ${c.raw}`);
+          }
+          if (cmds.length > 40) parts.push(`  ... (${cmds.length - 40} more)`);
+
+          // GCOM source lines that generated the selection — this is the genesis context
+          if (srcCtx.length > 0) {
+            parts.push(`\nGCOM source lines that generated the selection (with surrounding context):`);
+            for (const { lineNumber, text } of srcCtx.slice(0, 60)) {
+              parts.push(`  ${String(lineNumber).padStart(4, ' ')}: ${text}`);
+            }
+          }
+
+          // Full script source for structural understanding
+          if (ctx.scriptSource && ctx.scriptSource.trim()) {
+            const scriptLines = ctx.scriptSource.split('\n');
+            parts.push(`\nFull script source (first ${scriptLines.length} line(s)):`);
+            parts.push('```gcom');
+            parts.push(scriptLines.slice(0, 120).join('\n'));
+            parts.push('```');
+          }
+
+          parts.push(`=== END CONTEXT ===`);
+          contextAddendum = parts.join('\n');
+        }
+      }
+
+      try {
+        const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+          messages: [
+            { role: 'system', content: GCOM_SYSTEM + contextAddendum },
+            ...messages,
+          ],
+          max_tokens: 1200,
+          temperature: 0.4,
+        });
+        const reply = String(aiResponse.response || '');
+        return new Response(JSON.stringify({ reply }), {
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: `AI inference failed: ${e.message || e}` }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+    }
+
     // ── All other requests — serve static assets via Cloudflare assets binding ──
     return env.ASSETS.fetch(request);
   }

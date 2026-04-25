@@ -194,6 +194,11 @@
 
   .command-item:hover { background: rgba(34, 38, 58, 0.6); }
   .command-item.active { background: rgba(20, 184, 166, 0.14); border-left: 2px solid var(--teal); color: var(--text); padding-left: 8px; }
+    .command-item.selected { background: rgba(59, 130, 246, 0.14); border-left: 2px solid var(--blue); color: var(--text); padding-left: 8px; }
+    .command-item.selected.active { background: rgba(59, 130, 246, 0.22); border-left: 2px solid var(--blue); }
+    .ai-context-bar { border-top: 1px solid var(--border); padding: 8px 10px; display: flex; align-items: center; gap: 8px; background: var(--surface); flex-shrink: 0; }
+    .ai-context-bar .btn { flex: 1; font-size: 11px; padding: 5px 8px; }
+    .ai-context-count { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .command-line { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
   .command-text { color: var(--text); font-family: Consolas, monospace; font-size: 12px; word-break: break-word; }
   .command-meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
@@ -338,6 +343,10 @@
         <span id="command-progress">0 / 0</span>
       </div>
       <ul class="command-list" id="command-list"></ul>
+        <div class="ai-context-bar" id="ai-context-bar">
+          <span class="ai-context-count" id="ai-context-count">0 selected</span>
+          <button class="btn" id="send-to-ai-btn" type="button" disabled>Send to AI</button>
+        </div>
       <div class="queue-panel">
         <div class="queue-panel-row">
           <select class="select" id="queue-mode-select" aria-label="Queue execution mode">
@@ -365,6 +374,8 @@ const benchmarkInfoPanel = document.getElementById('benchmark-info-panel');
 const emptyState = document.getElementById('empty-state');
 const commandList = document.getElementById('command-list');
 const commandProgress = document.getElementById('command-progress');
+const sendToAiBtn = document.getElementById('send-to-ai-btn');
+const aiContextCount = document.getElementById('ai-context-count');
 const benchmarkTapePanel = document.getElementById('benchmark-tape-panel');
 const tapeContent = document.getElementById('tape-content');
 const tapeCopyBtn = document.getElementById('tape-copy-btn');
@@ -384,6 +395,8 @@ const queueStatus = document.getElementById('queue-status');
 let timeline = null;
 let commandItems = [];
 let lastActiveCommandId = -1;
+let selectedCommandIds = new Set();
+let lastClickedCommandId = null;
 const PREVIEW_MIN_ZOOM = 0.2;
 const PREVIEW_MAX_ZOOM = 6;
 let canvasCssWidth = 1;
@@ -961,6 +974,8 @@ function updateCommandListActive(previousCommandId, nextCommandId, shouldScroll 
 function renderCommandList() {
   if (!timeline) { commandList.innerHTML = ''; commandItems = []; lastActiveCommandId = -1; _lastCommandListSampleCount = -1; return; }
 
+    selectedCommandIds = new Set();
+    lastClickedCommandId = null;
   const benchSamples = getBenchmarkSamples();
   if ((!timeline.commands || !timeline.commands.length) && benchSamples.length) {
     // Skip full rebuild if sample count hasn't changed
@@ -997,6 +1012,7 @@ function renderCommandList() {
   lastActiveCommandId = -1;
   if (!timeline.commands.length) return;
 
+    updateAiContextBar();
   timeline.commands.forEach(command => {
     const item = document.createElement('li');
     item.className = `command-item${command.commandId === playback.commandCursor ? ' active' : ''}`;
@@ -1006,7 +1022,23 @@ function renderCommandList() {
       ? 'non-motion'
       : `seg ${command.firstSegment + 1}-${command.lastSegment + 1}`;
     item.textContent = `${String(command.commandId + 1).padStart(4, '0')} | ${sourceLabel} | ${segmentLabel} | ${command.display || command.raw}`;
-    item.addEventListener('click', () => setCommandCursor(command.commandId));
+    item.addEventListener('click', (e) => {
+      setCommandCursor(command.commandId);
+      if (e.shiftKey && lastClickedCommandId != null) {
+        const lo = Math.min(lastClickedCommandId, command.commandId);
+        const hi = Math.max(lastClickedCommandId, command.commandId);
+        for (let id = lo; id <= hi; id += 1) selectedCommandIds.add(id);
+      } else if (e.ctrlKey || e.metaKey) {
+        if (selectedCommandIds.has(command.commandId)) selectedCommandIds.delete(command.commandId);
+        else selectedCommandIds.add(command.commandId);
+      } else {
+        selectedCommandIds.clear();
+        selectedCommandIds.add(command.commandId);
+      }
+      lastClickedCommandId = command.commandId;
+      refreshSelectedStyles();
+      updateAiContextBar();
+    });
     commandList.appendChild(item);
     commandItems[command.commandId] = item;
   });
@@ -1150,6 +1182,131 @@ function collectQueueLines(includeNonMotion) {
   });
   return lines;
 }
+
+// ==== AI Context Selection ====
+
+function refreshSelectedStyles() {
+  commandItems.forEach((item, id) => {
+    if (!item) return;
+    if (selectedCommandIds.has(id)) item.classList.add('selected');
+    else item.classList.remove('selected');
+  });
+}
+
+function updateAiContextBar() {
+  const count = selectedCommandIds.size;
+  aiContextCount.textContent = count === 0 ? '0 selected' : `${count} command${count === 1 ? '' : 's'} selected`;
+  const openerReady = Boolean(window.opener && !window.opener.closed);
+  sendToAiBtn.disabled = count === 0 || !openerReady;
+}
+
+function buildAiSelectionPayload() {
+  if (!timeline || !timeline.commands) return null;
+  const sourceLines = String(timeline.scriptSource || '').split('\n');
+
+  const selectedCmds = [];
+  const selectedSegments = [];
+  const usedSourceLineNums = new Set();
+
+  for (const id of [...selectedCommandIds].sort((a, b) => a - b)) {
+    const cmd = timeline.commands[id];
+    if (!cmd) continue;
+    selectedCmds.push({
+      commandId: cmd.commandId,
+      sourceLine: cmd.sourceLine,
+      raw: cmd.raw,
+      display: cmd.display,
+      firstSegment: cmd.firstSegment,
+      lastSegment: cmd.lastSegment
+    });
+    if (cmd.sourceLine != null) usedSourceLineNums.add(cmd.sourceLine);
+    if (cmd.firstSegment >= 0) {
+      for (let si = cmd.firstSegment; si <= cmd.lastSegment; si += 1) {
+        const seg = timeline.segments[si];
+        if (seg) selectedSegments.push({
+          commandId: seg.commandId,
+          sourceLine: seg.sourceLine,
+          raw: seg.raw,
+          motionType: seg.motionType,
+          feedRate: seg.feedRate ?? null,
+          from: { x: seg.from.x, y: seg.from.y, z: seg.from.z ?? 0 },
+          to:   { x: seg.to.x,   y: seg.to.y,   z: seg.to.z   ?? 0 }
+        });
+      }
+    }
+  }
+
+  // Collect the GCOM source line text for each referenced line (plus 1 line of context either side)
+  const contextLines = [];
+  const addedLineNums = new Set();
+  for (const lineNum of [...usedSourceLineNums].sort((a, b) => a - b)) {
+    for (let ln = Math.max(1, lineNum - 1); ln <= lineNum + 1; ln += 1) {
+      if (!addedLineNums.has(ln)) {
+        addedLineNums.add(ln);
+        const text = sourceLines[ln - 1] ?? '';
+        if (text.trim()) contextLines.push({ lineNumber: ln, text });
+      }
+    }
+  }
+
+  // Geometric summary over selected segments
+  let totalDistance = 0;
+  const feedRates = [];
+  const motionTypesSet = new Set();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+  for (const seg of selectedSegments) {
+    const dx = seg.to.x - seg.from.x;
+    const dy = seg.to.y - seg.from.y;
+    const dz = seg.to.z - seg.from.z;
+    totalDistance += Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (seg.feedRate != null) feedRates.push(seg.feedRate);
+    motionTypesSet.add(seg.motionType);
+    for (const pt of [seg.from, seg.to]) {
+      if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+      if (pt.z < minZ) minZ = pt.z; if (pt.z > maxZ) maxZ = pt.z;
+    }
+  }
+
+  const allSourceLineNums = selectedCmds.map(c => c.sourceLine).filter(n => n != null);
+
+  return {
+    commands: selectedCmds,
+    segments: selectedSegments,
+    // Nearby GCOM source lines for each selected command — gives the AI the genesis of these moves
+    sourceContext: contextLines,
+    // Full script source (first 150 lines max) so the AI can see the overall program structure
+    scriptSource: sourceLines.slice(0, 150).join('\n'),
+    scriptTitle: timeline.title || 'Untitled',
+    geometric: {
+      totalDistanceMm: Math.round(totalDistance * 1000) / 1000,
+      avgFeedRate: feedRates.length
+        ? Math.round(feedRates.reduce((a, b) => a + b, 0) / feedRates.length)
+        : null,
+      motionTypes: [...motionTypesSet],
+      minSourceLine: allSourceLineNums.length ? Math.min(...allSourceLineNums) : null,
+      maxSourceLine: allSourceLineNums.length ? Math.max(...allSourceLineNums) : null,
+      bounds: selectedSegments.length ? {
+        min: { x: minX, y: minY, z: minZ },
+        max: { x: maxX, y: maxY, z: maxZ }
+      } : null
+    },
+    totalCommandsInScript: timeline.commandCount,
+    totalSegmentsInScript: timeline.segments.length,
+    scriptStats: timeline.stats
+  };
+}
+
+sendToAiBtn.addEventListener('click', () => {
+  if (!window.opener || window.opener.closed) { updateAiContextBar(); return; }
+  const payload = buildAiSelectionPayload();
+  if (!payload) return;
+  window.opener.postMessage({ type: 'preview-selection', payload }, window.location.origin);
+  sendToAiBtn.textContent = 'Sent ✓';
+  sendToAiBtn.disabled = true;
+  setTimeout(() => { sendToAiBtn.textContent = 'Send to AI'; updateAiContextBar(); }, 1800);
+});
 
 function syncQueuePanelUi() {
   const hasTimeline = Boolean(timeline && timeline.commands && timeline.commands.length);
