@@ -413,6 +413,67 @@ You are repairing a blocked script insertion. You must:
   <!-- ACTIONS: {"insertScript":true,"showPreview":true} -->
 `;
 
+const GCOM_HELP_MANIFEST = `
+GCOM CANONICAL RULES
+Source: basic-help.html distilled manifest
+
+PROGRAM FLOW
+- Supported flow control: FOR/NEXT, IF ... THEN GOTO, IF ... THEN LET, IF ... THEN PRINT, IF ... THEN GOSUB, IF ... THEN END, GOTO, GOSUB, RETURN, END.
+- Unsupported flow control: WHILE, WEND, ENDWHILE, DO/LOOP, O-codes, macro variables.
+
+VARIABLES AND HEADERS
+- Full scripts must use package headers before numbered lines:
+  ; TITLE: ...
+  ; VERSION: ...
+  ; AUTHOR: ...
+  ; DESCRIPTION: ...
+  ; VAR name=value
+- ; DESCRIPTION may appear more than once.
+- Every placeholder used in DESCRIPTION or program text must have a matching ; VAR declaration.
+- Do not reference bare identifiers before they are defined by LET or declared as placeholders with ; VAR.
+
+MATH AND TRIG SEMANTICS
+- SIN(angleDeg), COS(angleDeg), TAN(angleDeg) take degrees directly.
+- ASIN, ACOS, ATAN, ATAN2 return degrees.
+- Use RAD(degValue) only when you explicitly need radians for another computation.
+- Do not convert degrees to radians before calling SIN/COS/TAN.
+
+AUTHORING RULES
+- Validation blocks save/preview when syntax errors exist.
+- Preview/runtime fail on undefined variables.
+- Use REM for program comments, or ';' only for import headers.
+- Do not use // comments.
+- Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
+
+CANONICAL SCRIPT SHAPE
+; TITLE: Example
+; VERSION: 1
+; AUTHOR: GitHub Copilot
+; DESCRIPTION: Explain what the script does using {placeholders}.
+; VAR feed_rate=1000
+; VAR distance=50
+10 LET local_value = {distance}
+20 SEND "G1 X" & local_value & " F" & {feed_rate} TIMEOUT 2000 REQUIRE_OK
+30 END
+
+COMMON FAILURE TRAPS
+- Wrong: 10 LET x = (square_size / 2)
+  Reason: square_size is undefined unless declared as ; VAR square_size=...
+- Wrong: COS(angle * PI / 180)
+  Reason: COS already expects degrees in GCOM.
+- Wrong: LET x = ... + x inside a loop when x is also the center/reference position.
+  Reason: this causes cumulative drift unless explicitly intended.
+
+PREFLIGHT
+Before emitting a script, verify:
+- TITLE and DESCRIPTION headers exist
+- every placeholder has a ; VAR declaration
+- every identifier is defined before first use
+- no unsupported statements are present
+- no // comments are present
+- SIN/COS/TAN inputs are already in degrees
+`;
+
       let contextAddendum = '';
       const ctx = (body.gcomContext && typeof body.gcomContext === 'object') ? body.gcomContext : null;
       if (ctx) {
@@ -550,7 +611,7 @@ You are repairing a blocked script insertion. You must:
       try {
         const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
           messages: [
-            { role: 'system', content: GCOM_SYSTEM + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum },
+            { role: 'system', content: GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum },
             ...messages,
           ],
           max_tokens: 1200,
