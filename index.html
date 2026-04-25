@@ -1074,6 +1074,253 @@
   .new-version-banner-btn:hover {
     background: #fbbf24;
   }
+
+  /* ─── AI Sidebar ──────────────────────────────────────────────────────── */
+  .ai-sidebar {
+    width: 0;
+    min-width: 0;
+    flex: 0 0 0;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    transition: width 0.22s ease, min-width 0.22s ease, flex-basis 0.22s ease;
+  }
+  .ai-sidebar.open {
+    width: 340px;
+    min-width: 300px;
+    flex: 0 0 340px;
+    border-left: 1px solid var(--border);
+  }
+  .ai-sidebar-resizer {
+    position: relative;
+    flex: 0 0 0;
+    min-width: 0;
+    cursor: col-resize;
+    background: var(--surface);
+    touch-action: none;
+    overflow: hidden;
+    transition: flex-basis 0.22s, min-width 0.22s;
+  }
+  .ai-sidebar-resizer.visible {
+    flex: 0 0 10px;
+    min-width: 10px;
+    border-left: 1px solid var(--border);
+  }
+  .ai-sidebar-resizer::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: var(--border);
+    transition: background 0.15s;
+  }
+  .ai-sidebar-resizer.visible:hover::before,
+  body.ai-sidebar-resizing .ai-sidebar-resizer::before { background: var(--teal); }
+  body.ai-sidebar-resizing { cursor: col-resize; user-select: none; }
+
+  .ai-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .ai-sidebar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .ai-context-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(20,184,166,0.08);
+    border-bottom: 1px solid rgba(20,184,166,0.22);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .ai-context-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--teal);
+    flex-shrink: 0;
+  }
+  .ai-context-chips { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+  .ai-context-chip {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(20,184,166,0.15);
+    color: var(--teal);
+    border: 1px solid rgba(20,184,166,0.3);
+    white-space: nowrap;
+  }
+  .ai-context-clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+    font-family: var(--sans);
+  }
+  .ai-context-clear-btn:hover { color: var(--red); background: var(--red-dim); }
+
+  .ai-chat-container {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ai-chat-container::-webkit-scrollbar { width: 4px; }
+  .ai-chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .ai-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 24px 16px;
+    gap: 9px;
+    margin: auto;
+  }
+  .ai-welcome-icon { font-size: 28px; line-height: 1; }
+  .ai-welcome-title { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .ai-welcome-text { font-size: 11px; line-height: 1.6; color: var(--text-muted); max-width: 220px; }
+
+  .ai-msg { display: flex; flex-direction: column; max-width: 92%; gap: 5px; }
+  .ai-msg-user  { align-self: flex-end;   align-items: flex-end;   }
+  .ai-msg-assistant { align-self: flex-start; align-items: flex-start; }
+  .ai-msg-bubble {
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 7px 11px;
+    border-radius: 2px 10px 10px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  .ai-msg-user .ai-msg-bubble {
+    background: rgba(59,130,246,0.15);
+    border-color: rgba(59,130,246,0.25);
+    border-radius: 10px 2px 10px 10px;
+  }
+  .ai-thinking .ai-msg-bubble { padding: 10px 14px; }
+
+  @keyframes ai-dot-pulse {
+    0%, 100% { opacity: 0.25; transform: scale(0.85); }
+    50%       { opacity: 1;    transform: scale(1);    }
+  }
+  .ai-thinking-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin: 0 2px;
+    animation: ai-dot-pulse 1.3s ease-in-out infinite;
+  }
+  .ai-thinking-dot:nth-child(2) { animation-delay: 0.22s; }
+  .ai-thinking-dot:nth-child(3) { animation-delay: 0.44s; }
+
+  .ai-action-bar { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+  .ai-action-btn {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(20,184,166,0.4);
+    background: rgba(20,184,166,0.08);
+    color: var(--teal);
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: all 0.15s;
+  }
+  .ai-action-btn:hover { background: rgba(20,184,166,0.2); }
+  .ai-action-btn:active { transform: scale(0.97); }
+
+  .ai-code-block {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--green);
+    margin: 6px 0 2px;
+    display: block;
+    line-height: 1.5;
+  }
+  .ai-inline-code {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--teal);
+  }
+
+  .ai-chat-input-bar {
+    display: flex;
+    gap: 6px;
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    align-items: flex-end;
+    background: var(--surface);
+  }
+  .ai-chat-input-bar textarea {
+    flex: 1;
+    resize: none;
+    min-height: 36px;
+    max-height: 110px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 7px 10px;
+    font-family: var(--sans);
+  }
+  .ai-send-btn {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    padding: 0;
+    border-radius: 6px;
+    background: var(--teal);
+    border: 1px solid var(--teal);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .ai-send-btn:hover { background: #0d9488; }
+  .ai-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  @media (max-width: 980px) {
+    .ai-sidebar, .ai-sidebar-resizer { display: none; }
+    #ai-sidebar-toggle-btn { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -1260,6 +1507,7 @@
   <div class="status-group">
     <div class="status-pill disconnected" id="transport-pill">Disconnected</div>
     <div class="status-pill unknown" id="machine-pill">Unknown</div>
+    <button class="icon-btn" id="ai-sidebar-toggle-btn" title="Toggle AI Agent">&#129302; AI</button>
   </div>
 </header>
 
@@ -1525,6 +1773,31 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <input type="text" id="cmd-input" disabled autocomplete="off" spellcheck="false" aria-label="GRBL command input">
       </label>
       <button class="send-btn" id="send-btn" disabled>Send</button>
+    </div>
+  </div>
+
+  <div class="ai-sidebar-resizer" id="ai-sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize AI panel"></div>
+
+  <div class="ai-sidebar" id="ai-sidebar" aria-label="AI Agent panel">
+    <div class="ai-sidebar-header">
+      <span class="ai-sidebar-title">&#129302; AI Agent</span>
+      <button class="icon-btn" id="ai-sidebar-close-btn" title="Close AI panel" style="padding:3px 7px;">&#10005;</button>
+    </div>
+    <div class="ai-context-bar" id="ai-context-bar" style="display:none;">
+      <span class="ai-context-label">Context:</span>
+      <div class="ai-context-chips" id="ai-context-chips"></div>
+      <button class="ai-context-clear-btn" id="ai-context-clear-btn" title="Clear selection context">&#10005;</button>
+    </div>
+    <div class="ai-chat-container" id="ai-chat-container">
+      <div class="ai-welcome">
+        <div class="ai-welcome-icon">&#129302;</div>
+        <div class="ai-welcome-title">GCOM AI Agent</div>
+        <div class="ai-welcome-text">Write and refine GCOM scripts with AI. Select commands in the Preview window to use as context for targeted edits.</div>
+      </div>
+    </div>
+    <div class="ai-chat-input-bar">
+      <textarea id="ai-prompt-input" placeholder="Ask me to write a GCOM script, explain G-code, or refine a selection&#x2026;" rows="2"></textarea>
+      <button class="ai-send-btn" id="ai-send-btn" title="Send (Enter)">&#9654;</button>
     </div>
   </div>
 </main>
@@ -6153,6 +6426,15 @@ window.addEventListener('message', event => {
     addLine(`Preview queue: received commands from ${sourceTitle}`, 'sys');
     return;
   }
+  if (event.data.type === 'preview-selection') {
+    const sel = event.data.payload;
+    if (sel && typeof aiSetContext === 'function') {
+      aiSetContext(sel);
+      if (!aiSidebarOpen && typeof aiSetOpen === 'function') aiSetOpen(true);
+      addLine(`AI Agent: selection context received (${(sel.commands || []).length} command(s))`, 'sys');
+    }
+    return;
+  }
   if (event.data.type === 'preview-ready' || event.data.type === 'preview-request-timeline') {
     if (previewWaitingState) {
       postPreviewWaitingState(previewWaitingState);
@@ -8939,6 +9221,243 @@ loadAndCheckVersion();
 setBasicDescriptionTab('edit');
 autoResizeBasicDescription();
 initBenchmarkRuntimeWorker();
+
+// ─── AI Sidebar ───────────────────────────────────────────────────────────────
+const aiSidebarEl        = document.getElementById('ai-sidebar');
+const aiSidebarResizerEl = document.getElementById('ai-sidebar-resizer');
+const aiSidebarToggleBtn = document.getElementById('ai-sidebar-toggle-btn');
+const aiSidebarCloseBtn  = document.getElementById('ai-sidebar-close-btn');
+const aiChatContainerEl  = document.getElementById('ai-chat-container');
+const aiPromptInputEl    = document.getElementById('ai-prompt-input');
+const aiSendBtnEl        = document.getElementById('ai-send-btn');
+const aiContextBarEl     = document.getElementById('ai-context-bar');
+const aiContextChipsEl   = document.getElementById('ai-context-chips');
+const aiContextClearBtnEl = document.getElementById('ai-context-clear-btn');
+
+let aiSidebarOpen = false;
+let aiChatHistory = [];
+let aiSelectionContext = null;
+let aiThinking = false;
+
+function aiSetOpen(open) {
+  aiSidebarOpen = open;
+  if (aiSidebarEl) aiSidebarEl.classList.toggle('open', open);
+  if (aiSidebarResizerEl) aiSidebarResizerEl.classList.toggle('visible', open);
+  if (aiSidebarToggleBtn) aiSidebarToggleBtn.classList.toggle('ready', open);
+  if (open) setTimeout(() => aiPromptInputEl && aiPromptInputEl.focus(), 220);
+}
+
+function aiScrollBottom() {
+  if (aiChatContainerEl) aiChatContainerEl.scrollTop = aiChatContainerEl.scrollHeight;
+}
+
+function aiRenderMsg(role, html, actions) {
+  if (!aiChatContainerEl) return null;
+  const welcome = aiChatContainerEl.querySelector('.ai-welcome');
+  if (welcome) welcome.remove();
+  const el = document.createElement('div');
+  el.className = 'ai-msg ai-msg-' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-msg-bubble';
+  bubble.innerHTML = html;
+  el.appendChild(bubble);
+  if (actions) {
+    const bar = document.createElement('div');
+    bar.className = 'ai-action-bar';
+    if (actions.insertScript) {
+      const btn = document.createElement('button');
+      btn.className = 'ai-action-btn';
+      btn.textContent = 'Insert into Composer';
+      btn.dataset.action = 'insert';
+      bar.appendChild(btn);
+    }
+    if (actions.showPreview) {
+      const btn = document.createElement('button');
+      btn.className = 'ai-action-btn';
+      btn.textContent = 'Show Preview';
+      btn.dataset.action = 'preview';
+      bar.appendChild(btn);
+    }
+    el.appendChild(bar);
+  }
+  aiChatContainerEl.appendChild(el);
+  aiScrollBottom();
+  return el;
+}
+
+function aiShowThinking(show) {
+  const existing = document.getElementById('ai-thinking-indicator');
+  if (show && !existing) {
+    const el = document.createElement('div');
+    el.id = 'ai-thinking-indicator';
+    el.className = 'ai-msg ai-msg-assistant ai-thinking';
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-msg-bubble';
+    bubble.innerHTML = '<span class="ai-thinking-dot"></span><span class="ai-thinking-dot"></span><span class="ai-thinking-dot"></span>';
+    el.appendChild(bubble);
+    if (aiChatContainerEl) aiChatContainerEl.appendChild(el);
+    aiScrollBottom();
+  } else if (!show && existing) {
+    existing.remove();
+  }
+}
+
+function aiMarkdown(text) {
+  const parts = text.split(/(```[\w]*\n[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      const isGcom = /^```gcom\n/i.test(part);
+      const content = part.replace(/^```[\w]*\n/, '').replace(/```$/, '').trim();
+      const escaped = content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return '<pre class="ai-code-block"' + (isGcom ? ' data-type="gcom"' : '') + '>' + escaped + '</pre>';
+    }
+    return part
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>')
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+  }).join('');
+}
+
+function aiHandleAction(action, msgEl) {
+  if (action === 'insert') {
+    const pre = msgEl.querySelector('.ai-code-block[data-type="gcom"]') || msgEl.querySelector('.ai-code-block');
+    if (!pre) { aiRenderMsg('assistant', 'No script block found to insert.', null); return; }
+    const script = pre.textContent.trim();
+    if (basicScriptInput) {
+      basicScriptInput.value = script;
+      if (typeof markBasicScriptStructuralDirty === 'function') markBasicScriptStructuralDirty();
+      if (typeof basicValidateDraft === 'function') {
+        basicValidationState = basicValidateDraft();
+        if (typeof updateBasicValidationUi === 'function') updateBasicValidationUi();
+      }
+      if (basicSection) basicSection.open = true;
+    }
+    aiRenderMsg('assistant', 'Script loaded into the GCOM Composer. Review it, then click <strong>Run Script</strong> when ready.', null);
+  } else if (action === 'preview') {
+    if (typeof openBasicPreview === 'function') {
+      openBasicPreview();
+      aiRenderMsg('assistant', 'Preview opened. Select commands in the command tape to use as context for further refinement.', null);
+    }
+  }
+}
+
+async function aiSend(userText) {
+  userText = (userText || '').trim();
+  if (!userText || aiThinking) return;
+  aiThinking = true;
+  if (aiSendBtnEl) aiSendBtnEl.disabled = true;
+  if (aiPromptInputEl) { aiPromptInputEl.value = ''; aiPromptInputEl.style.height = ''; }
+  aiRenderMsg('user', userText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), null);
+  aiChatHistory.push({ role: 'user', content: userText });
+  aiShowThinking(true);
+  const gcomContext = aiSelectionContext ? {
+    selectedCommands: aiSelectionContext.commands || [],
+    selectedSegments: aiSelectionContext.segments || [],
+    sourceLines: aiSelectionContext.sourceLines || [],
+    geometricContext: aiSelectionContext.geometric || {}
+  } : null;
+  try {
+    const res = await fetch('/api/ai/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: aiChatHistory, gcomContext })
+    });
+    aiShowThinking(false);
+    if (!res.ok) {
+      let errMsg = 'AI request failed';
+      try { errMsg = (await res.json()).error || errMsg; } catch {}
+      aiRenderMsg('assistant', '<span style="color:var(--red)">' + errMsg.replace(/</g,'&lt;') + '</span>', null);
+    } else {
+      const data = await res.json();
+      const reply = String(data.reply || '');
+      aiChatHistory.push({ role: 'assistant', content: reply });
+      const cleanReply = reply.replace(/<!--\s*ACTIONS:[^>]*-->/g, '').trim();
+      const hasScript = /```gcom/i.test(reply);
+      let parsedActions = null;
+      const actionMatch = reply.match(/<!--\s*ACTIONS:\s*(\{[^}]*\})\s*-->/);
+      if (actionMatch) { try { parsedActions = JSON.parse(actionMatch[1]); } catch {} }
+      const actions = (hasScript || parsedActions) ? {
+        insertScript: hasScript || !!parsedActions?.insertScript,
+        showPreview: !!parsedActions?.showPreview
+      } : null;
+      const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions);
+      if (msgEl) {
+        msgEl.querySelectorAll('.ai-action-btn').forEach(btn => {
+          btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, msgEl));
+        });
+      }
+    }
+    if (aiChatHistory.length > 40) aiChatHistory = aiChatHistory.slice(-40);
+  } catch (e) {
+    aiShowThinking(false);
+    aiRenderMsg('assistant', '<span style="color:var(--red)">Network error: ' + String(e.message || e).replace(/</g,'&lt;') + '</span>', null);
+  }
+  aiThinking = false;
+  if (aiSendBtnEl) aiSendBtnEl.disabled = false;
+  if (aiPromptInputEl) aiPromptInputEl.focus();
+}
+
+function aiSetContext(payload) {
+  aiSelectionContext = payload || null;
+  if (!aiContextBarEl || !aiContextChipsEl) return;
+  if (!aiSelectionContext) {
+    aiContextBarEl.style.display = 'none';
+    aiContextChipsEl.innerHTML = '';
+    return;
+  }
+  const cmds = (aiSelectionContext.commands || []).length;
+  const segs = (aiSelectionContext.segments || []).length;
+  const geo  = aiSelectionContext.geometric || {};
+  const dist = typeof geo.totalDistance === 'number' ? geo.totalDistance.toFixed(1) + 'mm' : null;
+  const minL = geo.minLine, maxL = geo.maxLine;
+  let chips = '<span class="ai-context-chip">' + cmds + ' cmd' + (cmds !== 1 ? 's' : '') + '</span>';
+  if (segs) chips += '<span class="ai-context-chip">' + segs + ' seg' + (segs !== 1 ? 's' : '') + '</span>';
+  if (minL) chips += '<span class="ai-context-chip">L' + minL + (maxL && maxL !== minL ? '&ndash;' + maxL : '') + '</span>';
+  if (dist) chips += '<span class="ai-context-chip">' + dist + '</span>';
+  aiContextChipsEl.innerHTML = chips;
+  aiContextBarEl.style.display = 'flex';
+}
+
+// AI sidebar drag-to-resize
+let _aiDrag = false, _aiDragX = 0, _aiDragW = 0;
+if (aiSidebarResizerEl) {
+  aiSidebarResizerEl.addEventListener('mousedown', e => {
+    if (!aiSidebarOpen || !aiSidebarEl) return;
+    _aiDrag = true;
+    _aiDragX = e.clientX;
+    _aiDragW = aiSidebarEl.offsetWidth;
+    document.body.classList.add('ai-sidebar-resizing');
+    e.preventDefault();
+  });
+}
+document.addEventListener('mousemove', e => {
+  if (!_aiDrag || !aiSidebarEl) return;
+  const delta = _aiDragX - e.clientX;
+  const w = Math.max(280, Math.min(600, _aiDragW + delta));
+  aiSidebarEl.style.width = w + 'px';
+  aiSidebarEl.style.minWidth = w + 'px';
+  aiSidebarEl.style.flexBasis = w + 'px';
+});
+document.addEventListener('mouseup', () => {
+  if (!_aiDrag) return;
+  _aiDrag = false;
+  document.body.classList.remove('ai-sidebar-resizing');
+});
+
+if (aiSidebarToggleBtn) aiSidebarToggleBtn.addEventListener('click', () => aiSetOpen(!aiSidebarOpen));
+if (aiSidebarCloseBtn)  aiSidebarCloseBtn.addEventListener('click',  () => aiSetOpen(false));
+if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
+if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
+if (aiPromptInputEl) {
+  aiPromptInputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(aiPromptInputEl.value); }
+  });
+  aiPromptInputEl.addEventListener('input', () => {
+    aiPromptInputEl.style.height = '';
+    aiPromptInputEl.style.height = Math.min(110, aiPromptInputEl.scrollHeight) + 'px';
+  });
+}
 </script>
 </body>
 </html>
