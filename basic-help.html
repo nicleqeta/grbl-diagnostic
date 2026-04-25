@@ -284,17 +284,17 @@
       <pre><code>REM FORM() &mdash; static message, buttons only
 10 LET choice = FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0)
 20 IF choice = 0 THEN GOTO 9000
-30 PRINT "Mode: " &amp; STR(choice)
+30 PRINT "Mode: " &amp; choice
 
-REM FORM() &mdash; dynamic message (STR() optional; numbers auto-convert)
+REM FORM() &mdash; dynamic message ( optional; numbers auto-convert)
 10 LET accel = SETTING("$120")
 20 LET answer = FORM("Current $120 = " &amp; accel &amp; " mm/s&#xB2;. [Keep] [Double]", accel, accel * 2)
-30 SEND "$120=" &amp; STR(answer) TIMEOUT 2000 REQUIRE_OK
+30 SEND "$120=" &amp; answer TIMEOUT 2000 REQUIRE_OK
 
 REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
-10 PRINT "Current $120 = " &amp; STR(SETTING("$120"))
+10 PRINT "Current $120 = " &amp; SETTING("$120")
 20 LET new_accel = INPUT(FORM("Set $120? [Keep Current] [Double It] &mdash; or type a value:", SETTING("$120"), SETTING("$120") * 2))
-30 SEND "$120=" &amp; STR(new_accel) TIMEOUT 2000 REQUIRE_OK</code></pre>
+30 SEND "$120=" &amp; new_accel TIMEOUT 2000 REQUIRE_OK</code></pre>
     </section>
 
     <section class="card">
@@ -312,7 +312,7 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
       <p>Rule of thumb for sender mode selection: serial buffer below ~512 bytes usually benefits from buffered sends; serial buffer above ~512 bytes is often as fast or faster with ACK-gated sends (<code>SENDACK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
       <pre><code>10 LET speed = 900
-    20 SEND "M3 S" & STR(speed) TIMEOUT 1200 REQUIRE_OK
+    20 SEND "M3 S" & speed TIMEOUT 1200 REQUIRE_OK
     30 STATUS
     40 HOLD
     50 WAIT 500
@@ -405,11 +405,11 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 30 STATUS
 40 LET serial_cap = BF_SERIAL()
 50 LET planner_cap = BF_PLANNER()
-60 PRINT "Serial buffer: " &amp; STR(serial_cap) &amp; " bytes"
-70 PRINT "Planner slots: " &amp; STR(planner_cap)
+60 PRINT "Serial buffer: " &amp; serial_cap &amp; " bytes"
+70 PRINT "Planner slots: " &amp; planner_cap
 80 SET SEND_MODE AUTO
 90 FOR i = 1 TO 100
-100 SEND "G0 X" &amp; STR(i) BUFFERED
+100 SEND "G0 X" &amp; i BUFFERED
 110 NEXT i
 120 WAIT_IDLE 30000
 130 RESET_SETTINGS
@@ -430,7 +430,7 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
       <pre><code>10 LET speed = 1200
     20 PRINT "Starting run"
     30 RESULT "target_speed", speed
-    40 CONFIRM "Run with speed " & STR(speed) & "?"
+    40 CONFIRM "Run with speed " & speed & "?"
     50 REPORT
     60 END</code></pre>
     </section>
@@ -448,7 +448,7 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 20 FOR i = 1 TO 5
 30 LET sum = sum + i
 40 NEXT i
-50 PRINT "Sum = " & STR(sum)
+50 PRINT "Sum = " & sum
 60 END</code></pre>
     </section>
 
@@ -504,10 +504,10 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 70 LET xr = ROUND(len * COS(angDeg), 3)
 80 LET safeFeed = CLAMP(5000, 200, 3000)
 90 LET lane = 17 % 5
-100 PRINT "Angle(deg): " & STR(angDeg)
-110 PRINT "Projected X: " & STR(xr)
-120 PRINT "Safe feed: " & STR(safeFeed)
-130 PRINT "Lane: " & STR(lane)
+100 PRINT "Angle(deg): " & angDeg
+110 PRINT "Projected X: " & xr
+120 PRINT "Safe feed: " & safeFeed
+130 PRINT "Lane: " & lane
 140 PRINT "State: " & STATE()
 150 END</code></pre>
     </section>
@@ -552,13 +552,13 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
       <pre><code>REM Chart: accel on X, elapsed ms on Y, one line per distance
 10 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Duration (ms) title=Accel vs Speed"
 20 LET accel = 400
-30 PRINT "BENCH START accel=" &amp; STR(accel) &amp; " distance=10"
+30 PRINT "BENCH START accel=" &amp; accel &amp; " distance=10"
 40 SEND "G1 X10 F5000" BUFFERED
 50 SEND "G1 X-10 F5000" BUFFERED
 60 WAIT_IDLE 8000
-70 PRINT "BENCH END accel=" &amp; STR(accel) &amp; " distance=10"
+70 PRINT "BENCH END accel=" &amp; accel &amp; " distance=10"
 80 LET ms = BENCH_LAST_MS()
-90 PRINT "Took " &amp; STR(ms) &amp; " ms"</code></pre>
+90 PRINT "Took " &amp; ms &amp; " ms"</code></pre>
     </section>
 
     <section class="card">
@@ -580,7 +580,7 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 ; VAR start_accel=200
 ; VAR coarse_step=50
 10 PRINT "X-axis acceleration test"
-20 PRINT "Start at " &amp; STR({start_accel})</code></pre>
+20 PRINT "Start at " &amp; {start_accel}</code></pre>
     </section>
 
     <section class="card">
@@ -631,8 +631,8 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 150 LET max_tested_accel = 0
 160 LET max_mid_speed_mm_min = 0
 170 LET apply_choice = 0
-180 PRINT "Original $120 = " &amp; STR(original_accel)
-190 PRINT "Original $110 = " &amp; STR(original_feed)
+180 PRINT "Original $120 = " &amp; original_accel
+190 PRINT "Original $110 = " &amp; original_feed
 200 PRINT "Temporarily setting feed speed high"
 210 SEND "$110=60000" TIMEOUT 2000 REQUIRE_OK
 220 SEND "G21" TIMEOUT 1000 REQUIRE_OK
@@ -651,7 +651,7 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 340 GOTO 710
 
 410 LET first_bad = current_accel
-420 PRINT "First bad coarse value = " &amp; STR(first_bad)
+420 PRINT "First bad coarse value = " &amp; first_bad
 430 IF last_good = 0 THEN GOTO 920
 440 LET fine_good = last_good
 450 PRINT "Starting fine search..."
@@ -667,18 +667,18 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 
 610 LET fine_bad = current_accel
 620 LET recommended = fine_bad - {fine_step}
-630 PRINT "First bad fine value = " &amp; STR(fine_bad)
+630 PRINT "First bad fine value = " &amp; fine_bad
 640 GOTO 710
 
 710 LET max_mid_speed_mm_min = SQRT(max_tested_accel * {x_travel}) * 60
-720 SEND "$110=" &amp; STR(original_feed) TIMEOUT 2000 REQUIRE_OK
+720 SEND "$110=" &amp; original_feed TIMEOUT 2000 REQUIRE_OK
 730 WAIT {settle_ms}
-740 PRINT "Last good coarse value = " &amp; STR(last_good)
-750 PRINT "First bad coarse value = " &amp; STR(first_bad)
-760 PRINT "Last good fine value = " &amp; STR(fine_good)
-770 PRINT "First bad fine value = " &amp; STR(fine_bad)
-780 PRINT "Suggested conservative $120 = " &amp; STR(recommended)
-790 PRINT "Estimated peak speed at travel midpoint = " &amp; STR(max_mid_speed_mm_min) &amp; " mm/min"
+740 PRINT "Last good coarse value = " &amp; last_good
+750 PRINT "First bad coarse value = " &amp; first_bad
+760 PRINT "Last good fine value = " &amp; fine_good
+770 PRINT "First bad fine value = " &amp; fine_bad
+780 PRINT "Suggested conservative $120 = " &amp; recommended
+790 PRINT "Estimated peak speed at travel midpoint = " &amp; max_mid_speed_mm_min &amp; " mm/min"
 800 RESULT "original_x_accel", original_accel
 810 RESULT "last_good_coarse", last_good
 820 RESULT "first_bad_coarse", first_bad
@@ -688,10 +688,10 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 860 RESULT "max_tested_accel", max_tested_accel
 870 RESULT "theoretical_midpoint_speed_mm_min", max_mid_speed_mm_min
 880 REPORT
-890 PRINT "Original $120 = " &amp; STR(original_accel) &amp; ", suggested $120 = " &amp; STR(recommended)
+890 PRINT "Original $120 = " &amp; original_accel &amp; ", suggested $120 = " &amp; recommended
 900 LET apply_choice = FORM("$120 was " &amp; original_accel &amp; ", suggested is " &amp; recommended &amp; ". [Apply Suggested] [Keep Original]", 1, 0)
 905 IF apply_choice &lt;&gt; 1 THEN GOTO 960
-910 SEND "$120=" &amp; STR(recommended) TIMEOUT 2000 REQUIRE_OK
+910 SEND "$120=" &amp; recommended TIMEOUT 2000 REQUIRE_OK
 915 WAIT {settle_ms}
 916 PRINT "Updated $120 to suggested value."
 917 RESULT "applied_x_accel", recommended
@@ -702,18 +702,18 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 940 PRINT "Keeping recommendation at original $120."
 950 GOTO 710
 
-960 SEND "$120=" &amp; STR(original_accel) TIMEOUT 2000 REQUIRE_OK
+960 SEND "$120=" &amp; original_accel TIMEOUT 2000 REQUIRE_OK
 970 WAIT {settle_ms}
 980 PRINT "Kept original $120 setting."
 985 RESULT "applied_x_accel", original_accel
 990 END
 
-1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
+1000 SEND "$120=" &amp; current_accel TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
 1020 FOR j = 1 TO {repeats}
-1030 SEND "G1 X" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1030 SEND "G1 X" &amp; {x_travel} &amp; " F" &amp; {x_feed} TIMEOUT 2000 REQUIRE_OK
 1040 WAIT_IDLE {idle_timeout}
-1050 SEND "G1 X-" &amp; STR({x_travel}) &amp; " F" &amp; STR({x_feed}) TIMEOUT 2000 REQUIRE_OK
+1050 SEND "G1 X-" &amp; {x_travel} &amp; " F" &amp; {x_feed} TIMEOUT 2000 REQUIRE_OK
 1060 WAIT_IDLE {idle_timeout}
 1070 NEXT j
 1080 LET answer = FORM("Tested $120=" &amp; current_accel &amp; ". [Bad or Skip] [Still Clean]", 1, 0)
@@ -801,19 +801,19 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 235 LET plateau_reset_accel = 0
 236 LET plateau_reset_ms = 0
 240 LET stagnant_steps = 0
-250 PRINT "Distance " &amp; STR(current_distance) &amp; " mm with batch_count=" &amp; STR(batch_count)
+250 PRINT "Distance " &amp; current_distance &amp; " mm with batch_count=" &amp; batch_count
 
 300 FOR test_accel = {start_accel} TO {max_accel} STEP {accel_step}
 310 LET current_accel = test_accel
 320 GOSUB 1000
 330 LET current_ms = BENCH_LAST_MS()
-340 PRINT "Measured distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " ms=" &amp; STR(ROUND(current_ms, 3))
+340 PRINT "Measured distance=" &amp; current_distance &amp; " accel=" &amp; current_accel &amp; " ms=" &amp; ROUND(current_ms, 3)
 350 IF best_batch_ms = 0 THEN GOTO 500
 355 IF current_ms &lt;= best_batch_ms THEN GOTO 520
 360 IF current_ms + {plateau_ms} &lt; plateau_reset_ms THEN GOTO 560
 370 LET stagnant_steps = stagnant_steps + 1
 380 IF stagnant_steps &lt; {plateau_consecutive} THEN GOTO 700
-390 PRINT "Plateau reached for distance=" &amp; STR(current_distance) &amp; " after " &amp; STR(stagnant_steps) &amp; " near-flat steps."
+390 PRINT "Plateau reached for distance=" &amp; current_distance &amp; " after " &amp; stagnant_steps &amp; " near-flat steps."
 400 GOTO 800
 
 500 LET best_batch_ms = current_ms
@@ -821,23 +821,23 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 515 LET plateau_reset_ms = current_ms
 516 LET plateau_reset_accel = current_accel
 517 LET stagnant_steps = 0
-518 PRINT "Initial baseline at distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(best_batch_accel) &amp; " batch_ms=" &amp; STR(ROUND(best_batch_ms, 3))
+518 PRINT "Initial baseline at distance=" &amp; current_distance &amp; " accel=" &amp; best_batch_accel &amp; " batch_ms=" &amp; ROUND(best_batch_ms, 3)
 519 GOTO 700
 
 520 LET best_batch_ms = current_ms
 530 LET best_batch_accel = current_accel
-540 PRINT "New fastest batch at distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(best_batch_accel) &amp; " batch_ms=" &amp; STR(ROUND(best_batch_ms, 3))
+540 PRINT "New fastest batch at distance=" &amp; current_distance &amp; " accel=" &amp; best_batch_accel &amp; " batch_ms=" &amp; ROUND(best_batch_ms, 3)
 550 IF current_ms + {plateau_ms} &gt;= plateau_reset_ms THEN GOTO 700
 560 LET plateau_reset_ms = current_ms
 570 LET plateau_reset_accel = current_accel
 580 LET stagnant_steps = 0
-590 PRINT "Plateau reset at distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(plateau_reset_accel) &amp; " reset_ms=" &amp; STR(ROUND(plateau_reset_ms, 3))
+590 PRINT "Plateau reset at distance=" &amp; current_distance &amp; " accel=" &amp; plateau_reset_accel &amp; " reset_ms=" &amp; ROUND(plateau_reset_ms, 3)
 
 700 NEXT test_accel
 
 800 LET recommended_accel = INT((((plateau_reset_accel * (100 + {margin_pct})) / 100) + 50) / 100) * 100
-810 PRINT "Best observed acceleration at distance=" &amp; STR(current_distance) &amp; " is " &amp; STR(best_batch_accel) &amp; " with batch_ms=" &amp; STR(ROUND(best_batch_ms, 3))
-820 PRINT "Measured elbow at distance=" &amp; STR(current_distance) &amp; " is " &amp; STR(plateau_reset_accel) &amp; "; recommended buffered setting=" &amp; STR(recommended_accel)
+810 PRINT "Best observed acceleration at distance=" &amp; current_distance &amp; " is " &amp; best_batch_accel &amp; " with batch_ms=" &amp; ROUND(best_batch_ms, 3)
+820 PRINT "Measured elbow at distance=" &amp; current_distance &amp; " is " &amp; plateau_reset_accel &amp; "; recommended buffered setting=" &amp; recommended_accel
 830 LET final_best_accel = best_batch_accel
 840 LET final_elbow_accel = plateau_reset_accel
 850 LET final_recommended_accel = recommended_accel
@@ -845,16 +845,16 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 870 LET current_distance = current_distance * 2
 880 GOTO 200
 
-1000 SEND "$120=" &amp; STR(current_accel) TIMEOUT 2000 REQUIRE_OK
+1000 SEND "$120=" &amp; current_accel TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
-1020 PRINT "BENCH START distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1020 PRINT "BENCH START distance=" &amp; current_distance &amp; " accel=" &amp; current_accel &amp; " batch=" &amp; batch_count &amp; " repeat=1 feed=" &amp; {x_feed}
 1025 REM Batch loop: each pass performs 2 buffered moves; WAIT_IDLE runs once after the whole batch.
 1030 FOR pass_index = 1 TO batch_count
-1040 SEND "G1 X" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) BUFFERED
-1050 SEND "G1 X-" &amp; STR(current_distance) &amp; " F" &amp; STR({x_feed}) BUFFERED
+1040 SEND "G1 X" &amp; current_distance &amp; " F" &amp; {x_feed} BUFFERED
+1050 SEND "G1 X-" &amp; current_distance &amp; " F" &amp; {x_feed} BUFFERED
 1060 NEXT pass_index
 1070 WAIT_IDLE {idle_timeout}
-1080 PRINT "BENCH END distance=" &amp; STR(current_distance) &amp; " accel=" &amp; STR(current_accel) &amp; " batch=" &amp; STR(batch_count) &amp; " repeat=1 feed=" &amp; STR({x_feed})
+1080 PRINT "BENCH END distance=" &amp; current_distance &amp; " accel=" &amp; current_accel &amp; " batch=" &amp; batch_count &amp; " repeat=1 feed=" &amp; {x_feed}
 1090 RETURN
 
 8000 LET last_distance = current_distance / 2
@@ -862,21 +862,21 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 8020 LET accel_pct = 0
 8030 IF original_accel = 0 THEN GOTO 8050
 8040 LET accel_pct = ROUND((accel_delta / original_accel) * 100, 1)
-8050 PRINT "Summary: longest distance=" &amp; STR(last_distance) &amp; " mm. Best observed $120=" &amp; STR(final_best_accel) &amp; " with batch_ms=" &amp; STR(ROUND(final_best_ms, 3))
-8055 PRINT "Measured elbow $120=" &amp; STR(final_elbow_accel) &amp; ". Recommended buffered $120=" &amp; STR(final_recommended_accel)
-8060 PRINT "Previous $120=" &amp; STR(original_accel) &amp; " delta=" &amp; STR(accel_delta) &amp; " (" &amp; STR(accel_pct) &amp; "%)"
+8050 PRINT "Summary: longest distance=" &amp; last_distance &amp; " mm. Best observed $120=" &amp; final_best_accel &amp; " with batch_ms=" &amp; ROUND(final_best_ms, 3)
+8055 PRINT "Measured elbow $120=" &amp; final_elbow_accel &amp; ". Recommended buffered $120=" &amp; final_recommended_accel
+8060 PRINT "Previous $120=" &amp; original_accel &amp; " delta=" &amp; accel_delta &amp; " (" &amp; accel_pct &amp; "%)"
 8070 IF accel_delta &gt; 0 THEN GOTO 8100
 8080 IF accel_delta &lt; 0 THEN GOTO 8130
 8090 GOTO 8160
-8100 LET rationale = "Suggested is higher because it adds " &amp; STR({margin_pct}) &amp; "% headroom above the measured elbow. This preserves most of the gain while leaving a practical buffer."
+8100 LET rationale = "Suggested is higher because it adds " &amp; {margin_pct} &amp; "% headroom above the measured elbow. This preserves most of the gain while leaving a practical buffer."
 8110 GOTO 8170
 8130 LET rationale = "Suggested is lower because the measured elbow at the longest stroke was below the current setting. This can improve consistency and reduce stress."
 8140 GOTO 8170
 8160 LET rationale = "Suggested matches previous because the buffered elbow recommendation lands on the existing setting."
 8170 LET apply_accel = INPUT(FORM("Apply $120 update? Previous=" &amp; original_accel &amp; " Suggested=" &amp; final_recommended_accel &amp; " Delta=" &amp; accel_delta &amp; " (" &amp; accel_pct &amp; "%). Longest stroke=" &amp; last_distance &amp; " mm. Best batch=" &amp; ROUND(final_best_ms, 3) &amp; " ms. Elbow=" &amp; final_elbow_accel &amp; ". " &amp; rationale &amp; " [Apply Suggested] [Keep Previous]", final_recommended_accel, original_accel))
-8180 SEND "$120=" &amp; STR(apply_accel) TIMEOUT 2000 REQUIRE_OK
+8180 SEND "$120=" &amp; apply_accel TIMEOUT 2000 REQUIRE_OK
 8190 WAIT {settle_ms}
-8200 PRINT "Set $120 = " &amp; STR(apply_accel)
+8200 PRINT "Set $120 = " &amp; apply_accel
 8210 RESULT "applied_x_accel", apply_accel
 8220 RESULT "original_x_accel", original_accel
 8230 RESULT "last_distance_mm", last_distance
@@ -925,12 +925,12 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
 
 120 REM Read $30 to confirm full two-way (command + response) comms are working
 130 LET max_rpm = READ("$30")
-140 PRINT "Max spindle RPM ($30) = " &amp; STR(max_rpm)
+140 PRINT "Max spindle RPM ($30) = " &amp; max_rpm
 150 PRINT "Startup complete &mdash; add machine-specific steps below."
 160 STATUS
 170 END
 
-9000 PRINT "No response within " &amp; STR({banner_timeout}) &amp; " ms."
+9000 PRINT "No response within " &amp; {banner_timeout} &amp; " ms."
 9010 PRINT "Check baud rate ({baud}) and USB cable, then retry."
 9020 DISCONNECT
 9030 END</code></pre>
