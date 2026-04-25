@@ -9325,13 +9325,19 @@ let aiChatHistory = [];
 let aiSelectionContext = null;
 let aiThinking = false;
 let aiRepairInFlight = false;
+let aiLastBlockedContext = null;
+const MAX_AUTO_REPAIRS_PER_SIGNATURE = 1;
+const AUTO_REPAIR_COOLDOWN_MS = 20000;
 const AI_SESSION_KEY = 'gcomposer_ai_session_memory_v1';
 let aiSessionMemory = {
   recentFailures: [],
   successfulRepairs: [],
   signatureCounts: {},
   pendingBrainPrs: [],
-  approvedBrainRules: []
+  approvedBrainRules: [],
+  autoRepairAttemptsBySignature: {},
+  lastAutoRepairAt: 0,
+  lastRepairFingerprintBySignature: {}
 };
 
 function aiSaveSessionMemory() {
@@ -9349,6 +9355,13 @@ function aiLoadSessionMemory() {
     aiSessionMemory.signatureCounts = parsed.signatureCounts && typeof parsed.signatureCounts === 'object' ? parsed.signatureCounts : {};
     aiSessionMemory.pendingBrainPrs = Array.isArray(parsed.pendingBrainPrs) ? parsed.pendingBrainPrs.slice(-20) : [];
     aiSessionMemory.approvedBrainRules = Array.isArray(parsed.approvedBrainRules) ? parsed.approvedBrainRules.slice(-40) : [];
+    aiSessionMemory.autoRepairAttemptsBySignature = parsed.autoRepairAttemptsBySignature && typeof parsed.autoRepairAttemptsBySignature === 'object'
+      ? parsed.autoRepairAttemptsBySignature
+      : {};
+    aiSessionMemory.lastAutoRepairAt = Number(parsed.lastAutoRepairAt || 0);
+    aiSessionMemory.lastRepairFingerprintBySignature = parsed.lastRepairFingerprintBySignature && typeof parsed.lastRepairFingerprintBySignature === 'object'
+      ? parsed.lastRepairFingerprintBySignature
+      : {};
   } catch {}
 }
 
@@ -9360,6 +9373,51 @@ function aiBuildFailureSignature(blockReason) {
   const rule = String(blockReason?.ruleId || 'unknown');
   const details = Array.isArray(blockReason?.details) ? blockReason.details.slice(0, 3).join(' | ') : '';
   return `${rule}::${details}`.slice(0, 400);
+}
+
+function aiExtractFirstGcomBlock(text) {
+  const match = String(text || '').match(/```gcom\s*\n([\s\S]*?)```/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function aiFingerprintScript(scriptText) {
+  return String(scriptText || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function aiCanAutoRepair(signature) {
+  const attempts = Number((aiSessionMemory.autoRepairAttemptsBySignature || {})[signature] || 0);
+  if (attempts >= MAX_AUTO_REPAIRS_PER_SIGNATURE) {
+    return {
+      ok: false,
+      message:
+        '<strong>Auto-repair paused to avoid loops.</strong><br>' +
+        'This failure was already auto-repaired once. Click <strong>Try Repair Again</strong> to run a manual retry.'
+    };
+  }
+  const now = Date.now();
+  const lastAt = Number(aiSessionMemory.lastAutoRepairAt || 0);
+  if (lastAt > 0 && (now - lastAt) < AUTO_REPAIR_COOLDOWN_MS) {
+    const waitSeconds = Math.ceil((AUTO_REPAIR_COOLDOWN_MS - (now - lastAt)) / 1000);
+    return {
+      ok: false,
+      message:
+        '<strong>Auto-repair cooldown active.</strong><br>' +
+        'Wait about ' + waitSeconds + 's, or click <strong>Try Repair Again</strong> for a manual retry.'
+    };
+  }
+  return { ok: true, message: '' };
+}
+
+function aiNoteAutoRepairAttempt(signature) {
+  if (!aiSessionMemory.autoRepairAttemptsBySignature || typeof aiSessionMemory.autoRepairAttemptsBySignature !== 'object') {
+    aiSessionMemory.autoRepairAttemptsBySignature = {};
+  }
+  aiSessionMemory.autoRepairAttemptsBySignature[signature] = Number(aiSessionMemory.autoRepairAttemptsBySignature[signature] || 0) + 1;
+  aiSessionMemory.lastAutoRepairAt = Date.now();
+  aiSaveSessionMemory();
 }
 
 function aiBuildSessionLearningSummary() {
@@ -9448,14 +9506,30 @@ function aiRecordRepairSuccess(signature, repairedScriptPreview) {
   aiSaveSessionMemory();
 }
 
-async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
+async function aiAutoRepairFromBlock(blockReason, failedScript, signature, options = {}) {
+  const manual = !!options.manual;
   if (aiRepairInFlight) return;
+
+  if (!manual) {
+    const gate = aiCanAutoRepair(signature);
+    if (!gate.ok) {
+      const blockedEl = aiRenderMsg('assistant', gate.message, { retryRepair: true });
+      if (blockedEl) {
+        blockedEl.querySelectorAll('.ai-action-btn').forEach(btn => {
+          btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, blockedEl));
+        });
+      }
+      return;
+    }
+    aiNoteAutoRepairAttempt(signature);
+  }
+
   aiRepairInFlight = true;
   aiRenderMsg('assistant',
     '<strong>Insert blocked.</strong> I will pivot now.<br><br>' +
     '<strong>What failed:</strong> ' + aiEscapeHtml((blockReason.details || [blockReason.ruleId || 'unknown issue']).join('; ')) + '<br>' +
     '<strong>What I need to do:</strong> regenerate a valid GCOM package with compliant headers and syntax.<br>' +
-    '<strong>Next step:</strong> sending one automatic repair attempt.',
+    '<strong>Next step:</strong> ' + (manual ? 'sending one manual repair attempt.' : 'sending one automatic repair attempt.'),
     null
   );
   aiShowThinking(true);
@@ -9493,7 +9567,7 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
     });
     aiShowThinking(false);
     if (!res.ok) {
-      let errMsg = 'Auto-repair request failed';
+      let errMsg = manual ? 'Repair request failed' : 'Auto-repair request failed';
       try { errMsg = (await res.json()).error || errMsg; } catch {}
       aiRenderMsg('assistant', '<span style="color:var(--red)">' + aiEscapeHtml(errMsg) + '</span>', null);
       return;
@@ -9502,6 +9576,33 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
     const data = await res.json();
     const reply = String(data.reply || '');
     aiChatHistory.push({ role: 'assistant', content: reply });
+
+    const repairedScript = aiExtractFirstGcomBlock(reply);
+    if (repairedScript) {
+      const fingerprint = aiFingerprintScript(repairedScript);
+      const previousFingerprint = String((aiSessionMemory.lastRepairFingerprintBySignature || {})[signature] || '');
+      if (previousFingerprint && previousFingerprint === fingerprint) {
+        const loopEl = aiRenderMsg(
+          'assistant',
+          '<strong>Auto-repair paused to avoid loops.</strong><br>' +
+          'The latest repair output is identical to the previous repair for this issue. ' +
+          'Adjust constraints, then click <strong>Try Repair Again</strong> if needed.',
+          { retryRepair: true }
+        );
+        if (loopEl) {
+          loopEl.querySelectorAll('.ai-action-btn').forEach(btn => {
+            btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, loopEl));
+          });
+        }
+        return;
+      }
+      if (!aiSessionMemory.lastRepairFingerprintBySignature || typeof aiSessionMemory.lastRepairFingerprintBySignature !== 'object') {
+        aiSessionMemory.lastRepairFingerprintBySignature = {};
+      }
+      aiSessionMemory.lastRepairFingerprintBySignature[signature] = fingerprint;
+      aiSaveSessionMemory();
+    }
+
     const actionsCommentRe = new RegExp('<!--\\s*ACTIONS:[^>]*-->', 'g');
     const cleanReply = reply.replace(actionsCommentRe, '').trim();
     const hasScript = reply.toLowerCase().includes('```gcom');
@@ -9522,7 +9623,8 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
     if (hasScript) aiRecordRepairSuccess(signature, reply);
   } catch (e) {
     aiShowThinking(false);
-    aiRenderMsg('assistant', '<span style="color:var(--red)">Auto-repair network error: ' + aiEscapeHtml(String(e && e.message ? e.message : e)) + '</span>', null);
+    const prefix = manual ? 'Repair network error: ' : 'Auto-repair network error: ';
+    aiRenderMsg('assistant', '<span style="color:var(--red)">' + prefix + aiEscapeHtml(String(e && e.message ? e.message : e)) + '</span>', null);
   } finally {
     aiRepairInFlight = false;
   }
@@ -9531,7 +9633,8 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
 function aiHandleInsertBlock(blockReason, failedScript, messageHtml) {
   aiRenderMsg('assistant', messageHtml, null);
   const signature = aiRecordBlockFailure(blockReason, failedScript);
-  aiAutoRepairFromBlock(blockReason, failedScript, signature);
+  aiLastBlockedContext = { blockReason, failedScript, signature };
+  aiAutoRepairFromBlock(blockReason, failedScript, signature, { manual: false });
 }
 
 function aiSetOpen(open) {
@@ -9586,6 +9689,13 @@ function aiRenderMsg(role, html, actions) {
       btn.dataset.action = 'preview';
       bar.appendChild(btn);
     }
+    if (actions.retryRepair) {
+      const btn = document.createElement('button');
+      btn.className = 'ai-action-btn';
+      btn.textContent = 'Try Repair Again';
+      btn.dataset.action = 'retry-repair';
+      bar.appendChild(btn);
+    }
     el.appendChild(bar);
   }
   aiChatContainerEl.appendChild(el);
@@ -9628,6 +9738,20 @@ function aiMarkdown(text) {
 }
 
 function aiHandleAction(action, msgEl) {
+  if (action === 'retry-repair') {
+    if (!aiLastBlockedContext) {
+      aiRenderMsg('assistant', 'No blocked script context is available to retry.', null);
+      return;
+    }
+    aiAutoRepairFromBlock(
+      aiLastBlockedContext.blockReason,
+      aiLastBlockedContext.failedScript,
+      aiLastBlockedContext.signature,
+      { manual: true }
+    );
+    return;
+  }
+
   if (action === 'insert') {
     const pre = msgEl.querySelector('.ai-code-block[data-type="gcom"]') || msgEl.querySelector('.ai-code-block');
     if (!pre) { aiRenderMsg('assistant', 'No script block found to insert.', null); return; }
