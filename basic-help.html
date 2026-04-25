@@ -253,7 +253,7 @@
         <span class="chip">Line-numbered scripts</span>
         <span class="chip">Case-insensitive commands</span>
         <span class="chip">Numbers + strings</span>
-        <span class="chip">CONNECT / DISCONNECT</span>
+        <span class="chip">CONNECT / CONNECT WS / DISCONNECT</span>
         <span class="chip">SET runtime settings</span>
         <span class="chip">WAIT_FOR_LINE / READ_LINE</span>
       </div>
@@ -339,14 +339,15 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
 
     <section class="card">
       <h2>4. Connection Management</h2>
-      <p>Scripts can open the serial port themselves using <code>CONNECT</code>, enabling fully scriptable connection sequences without the Connection sidebar. A script containing <code>CONNECT</code> may run even when no port is currently open.</p>
+      <p>Scripts can open a connection themselves using <code>CONNECT</code> or <code>CONNECT WS</code>, enabling fully scriptable connection sequences without using the Connection sidebar. A script containing either form may run even when no connection is currently open.</p>
+
+      <h3 style="margin:16px 0 8px; font-size:15px; color:var(--teal);">USB / Serial</h3>
       <ul>
         <li><code>CONNECT</code>: Show the browser serial port picker and connect at 115200&nbsp;baud with default settings.</li>
         <li><code>CONNECT BAUD expr</code>: Connect at the specified baud rate.</li>
         <li><code>CONNECT BAUD expr DTR "mode"</code>: Apply a DTR signal mode after opening. Accept: <code>"default"</code>, <code>"pulse"</code>, <code>"low"</code>, <code>"high"</code>.</li>
-        <li><code>CONNECT BAUD expr DTR "mode" WAIT expr</code>: Pause N&nbsp;ms post-connect (useful when a DTR pulse reboots the controller — gives it time to boot).</li>
+        <li><code>CONNECT BAUD expr DTR "mode" WAIT expr</code>: Pause N&nbsp;ms post-connect (useful when a DTR pulse reboots the controller &mdash; gives it time to boot).</li>
         <li><code>CONNECT &hellip; OBSERVE</code>: Connect in observe-only mode; no commands are sent.</li>
-        <li><code>DISCONNECT</code>: Close the current serial connection.</li>
       </ul>
       <p>All keyword arguments are optional and combinable in any order. If the user cancels the port picker the script stops gracefully.</p>
       <pre><code>10 SET SEND_DELAY 0
@@ -359,6 +360,28 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
 9000 PRINT "No response — check cable."
 9010 DISCONNECT
 9020 END</code></pre>
+
+      <h3 style="margin:16px 0 8px; font-size:15px; color:var(--teal);">WebSocket (WiFi / FluidNC)</h3>
+      <p>Use <code>CONNECT WS</code> to connect to a FluidNC or ESP32-based controller over WiFi. No browser port picker appears &mdash; the script connects directly to the address you supply.</p>
+      <ul>
+        <li><code>CONNECT WS "host"</code>: Connect to <em>host</em> on port&nbsp;80 (FluidNC v4.0+ default).</li>
+        <li><code>CONNECT WS "host" PORT expr</code>: Connect to <em>host</em> on the specified port. Use port&nbsp;81 for FluidNC versions earlier than v4.0.</li>
+        <li><code>DISCONNECT</code>: Close either a serial or WebSocket connection.</li>
+      </ul>
+      <p><em>host</em> is an IP address or hostname, e.g. <code>"192.168.1.100"</code>. The script stops if the WebSocket connection fails (unreachable host, refused connection, etc.).</p>
+      <pre><code>10 SET SEND_DELAY 0
+20 CONNECT WS "192.168.1.100"
+REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
+30 LET reply = WAIT_FOR_LINE("Grbl|FluidNC|&lt;", 5000)
+40 IF reply = "" THEN GOTO 9000
+50 PRINT "Connected: " &amp; reply
+60 SEND "$I"
+70 LET info = WAIT_FOR_LINE("\[VER:", 3000)
+80 PRINT "Firmware: " &amp; info
+90 DISCONNECT
+100 END
+9000 PRINT "No response — check WiFi address and port."
+9010 END</code></pre>
     </section>
 
     <section class="card">
