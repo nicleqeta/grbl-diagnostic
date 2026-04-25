@@ -1178,6 +1178,82 @@
   }
   .ai-context-clear-btn:hover { color: var(--red); background: var(--red-dim); }
 
+  .ai-proposals-panel {
+    display: none;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: rgba(59,130,246,0.06);
+    flex-shrink: 0;
+  }
+  .ai-proposals-panel.visible { display: block; }
+  .ai-proposals-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+    border-bottom: 1px solid rgba(59,130,246,0.18);
+  }
+  .ai-proposals-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--blue);
+    border: 1px solid rgba(59,130,246,0.35);
+    border-radius: 999px;
+    padding: 1px 6px;
+  }
+  .ai-proposals-list {
+    max-height: 170px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+  }
+  .ai-proposal-item {
+    border: 1px solid rgba(59,130,246,0.25);
+    background: rgba(59,130,246,0.08);
+    border-radius: 6px;
+    padding: 7px;
+    font-size: 11px;
+    color: var(--text);
+  }
+  .ai-proposal-title {
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .ai-proposal-body {
+    color: var(--text-muted);
+    line-height: 1.45;
+    margin-bottom: 6px;
+  }
+  .ai-proposal-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .ai-proposal-btn {
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: var(--surface2);
+    color: var(--text-dim);
+    font-family: var(--sans);
+  }
+  .ai-proposal-btn.approve {
+    border-color: rgba(34,197,94,0.45);
+    color: var(--green);
+    background: rgba(34,197,94,0.12);
+  }
+  .ai-proposal-btn.reject {
+    border-color: rgba(239,68,68,0.45);
+    color: var(--red);
+    background: rgba(239,68,68,0.11);
+  }
+
   .ai-chat-container {
     flex: 1;
     min-height: 0;
@@ -1794,6 +1870,13 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <div class="ai-welcome-title">GCOM AI Agent</div>
         <div class="ai-welcome-text">Write and refine GCOM scripts with AI. Select commands in the Preview window to use as context for targeted edits.</div>
       </div>
+    </div>
+    <div class="ai-proposals-panel" id="ai-proposals-panel">
+      <div class="ai-proposals-head">
+        <span>Pending Brain PRs</span>
+        <span class="ai-proposals-count" id="ai-proposals-count">0</span>
+      </div>
+      <div class="ai-proposals-list" id="ai-proposals-list"></div>
     </div>
     <div class="ai-chat-input-bar">
       <textarea id="ai-prompt-input" placeholder="Ask me to write a GCOM script, explain G-code, or refine a selection&#x2026;" rows="2"></textarea>
@@ -9233,11 +9316,223 @@ const aiSendBtnEl        = document.getElementById('ai-send-btn');
 const aiContextBarEl     = document.getElementById('ai-context-bar');
 const aiContextChipsEl   = document.getElementById('ai-context-chips');
 const aiContextClearBtnEl = document.getElementById('ai-context-clear-btn');
+const aiProposalsPanelEl = document.getElementById('ai-proposals-panel');
+const aiProposalsCountEl = document.getElementById('ai-proposals-count');
+const aiProposalsListEl  = document.getElementById('ai-proposals-list');
 
 let aiSidebarOpen = false;
 let aiChatHistory = [];
 let aiSelectionContext = null;
 let aiThinking = false;
+let aiRepairInFlight = false;
+const AI_SESSION_KEY = 'gcomposer_ai_session_memory_v1';
+let aiSessionMemory = {
+  recentFailures: [],
+  successfulRepairs: [],
+  signatureCounts: {},
+  pendingBrainPrs: [],
+  approvedBrainRules: []
+};
+
+function aiSaveSessionMemory() {
+  try { sessionStorage.setItem(AI_SESSION_KEY, JSON.stringify(aiSessionMemory)); } catch {}
+}
+
+function aiLoadSessionMemory() {
+  try {
+    const raw = sessionStorage.getItem(AI_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    aiSessionMemory.recentFailures = Array.isArray(parsed.recentFailures) ? parsed.recentFailures.slice(-20) : [];
+    aiSessionMemory.successfulRepairs = Array.isArray(parsed.successfulRepairs) ? parsed.successfulRepairs.slice(-20) : [];
+    aiSessionMemory.signatureCounts = parsed.signatureCounts && typeof parsed.signatureCounts === 'object' ? parsed.signatureCounts : {};
+    aiSessionMemory.pendingBrainPrs = Array.isArray(parsed.pendingBrainPrs) ? parsed.pendingBrainPrs.slice(-20) : [];
+    aiSessionMemory.approvedBrainRules = Array.isArray(parsed.approvedBrainRules) ? parsed.approvedBrainRules.slice(-40) : [];
+  } catch {}
+}
+
+function aiEscapeHtml(text) {
+  return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function aiBuildFailureSignature(blockReason) {
+  const rule = String(blockReason?.ruleId || 'unknown');
+  const details = Array.isArray(blockReason?.details) ? blockReason.details.slice(0, 3).join(' | ') : '';
+  return `${rule}::${details}`.slice(0, 400);
+}
+
+function aiBuildSessionLearningSummary() {
+  const topFailures = Object.entries(aiSessionMemory.signatureCounts || {})
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 5)
+    .map(([signature, count]) => ({ signature, count }));
+  return {
+    topFailures,
+    latestFailure: aiSessionMemory.recentFailures[aiSessionMemory.recentFailures.length - 1] || null,
+    latestSuccess: aiSessionMemory.successfulRepairs[aiSessionMemory.successfulRepairs.length - 1] || null,
+    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20)
+  };
+}
+
+function aiRenderProposals() {
+  if (!aiProposalsPanelEl || !aiProposalsCountEl || !aiProposalsListEl) return;
+  const items = Array.isArray(aiSessionMemory.pendingBrainPrs) ? aiSessionMemory.pendingBrainPrs : [];
+  aiProposalsCountEl.textContent = String(items.length);
+  aiProposalsPanelEl.classList.toggle('visible', items.length > 0);
+  if (!items.length) {
+    aiProposalsListEl.innerHTML = '';
+    return;
+  }
+  aiProposalsListEl.innerHTML = items.map(item => {
+    const id = aiEscapeHtml(item.id);
+    return `<div class="ai-proposal-item" data-proposal-id="${id}">
+      <div class="ai-proposal-title">${aiEscapeHtml(item.title || 'Brain Rule Proposal')}</div>
+      <div class="ai-proposal-body">${aiEscapeHtml(item.body || '').replace(/\n/g, '<br>')}</div>
+      <div class="ai-proposal-actions">
+        <button class="ai-proposal-btn approve" data-action="approve" data-proposal-id="${id}">Approve</button>
+        <button class="ai-proposal-btn reject" data-action="reject" data-proposal-id="${id}">Reject</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function aiMaybeQueueBrainProposal(blockReason, signature) {
+  const count = Number(aiSessionMemory.signatureCounts[signature] || 0);
+  if (count < 3) return;
+  const existsPending = aiSessionMemory.pendingBrainPrs.some(p => p.signature === signature);
+  const existsApproved = aiSessionMemory.approvedBrainRules.some(p => p.signature === signature);
+  if (existsPending || existsApproved) return;
+  const proposal = {
+    id: `pr_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+    signature,
+    createdAt: new Date().toISOString(),
+    title: `Rule: prevent ${blockReason.ruleId || 'repeat failures'}`,
+    body:
+      `Observed ${count} repeated insert blocks for signature:\n${signature}\n\n` +
+      `Proposed instruction patch:\n` +
+      `- Before returning script, self-check headers (; TITLE, ; DESCRIPTION, ; VAR).\n` +
+      `- Avoid unsupported statements and normalize comments.\n` +
+      `- Reflect with: What failed / What changed / Why valid.`
+  };
+  aiSessionMemory.pendingBrainPrs.push(proposal);
+  aiSessionMemory.pendingBrainPrs = aiSessionMemory.pendingBrainPrs.slice(-20);
+  aiSaveSessionMemory();
+  aiRenderProposals();
+}
+
+function aiRecordBlockFailure(blockReason, failedScript) {
+  const signature = aiBuildFailureSignature(blockReason);
+  const entry = {
+    signature,
+    ruleId: blockReason.ruleId || 'unknown',
+    details: Array.isArray(blockReason.details) ? blockReason.details.slice(0, 10) : [],
+    failedScript: String(failedScript || '').slice(0, 4000),
+    at: new Date().toISOString()
+  };
+  aiSessionMemory.recentFailures.push(entry);
+  aiSessionMemory.recentFailures = aiSessionMemory.recentFailures.slice(-20);
+  aiSessionMemory.signatureCounts[signature] = Number(aiSessionMemory.signatureCounts[signature] || 0) + 1;
+  aiSaveSessionMemory();
+  aiMaybeQueueBrainProposal(blockReason, signature);
+  return signature;
+}
+
+function aiRecordRepairSuccess(signature, repairedScriptPreview) {
+  aiSessionMemory.successfulRepairs.push({
+    signature,
+    repairedScriptPreview: String(repairedScriptPreview || '').slice(0, 1200),
+    at: new Date().toISOString()
+  });
+  aiSessionMemory.successfulRepairs = aiSessionMemory.successfulRepairs.slice(-20);
+  aiSaveSessionMemory();
+}
+
+async function aiAutoRepairFromBlock(blockReason, failedScript, signature) {
+  if (aiRepairInFlight) return;
+  aiRepairInFlight = true;
+  aiRenderMsg('assistant',
+    '<strong>Insert blocked.</strong> I will pivot now.<br><br>' +
+    '<strong>What failed:</strong> ' + aiEscapeHtml((blockReason.details || [blockReason.ruleId || 'unknown issue']).join('; ')) + '<br>' +
+    '<strong>What I need to do:</strong> regenerate a valid GCOM package with compliant headers and syntax.<br>' +
+    '<strong>Next step:</strong> sending one automatic repair attempt.',
+    null
+  );
+  aiShowThinking(true);
+
+  const composerContext = {
+    meta: getBasicScriptMeta(),
+    vars: normalizeBasicVars(basicLoadedVars || {}),
+    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000),
+    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20)
+  };
+  const payload = {
+    mode: 'repair',
+    failedScript: String(failedScript || ''),
+    blockReason,
+    signature,
+    sessionLearning: aiBuildSessionLearningSummary(),
+    gcomContext: aiSelectionContext ? { ...aiSelectionContext } : null,
+    composerContext,
+    messages: [
+      ...aiChatHistory.slice(-10),
+      {
+        role: 'user',
+        content:
+          'Repair the blocked script now. Include concise reflection sections: What failed, What changed, Why valid. ' +
+          'Then output a corrected script package in ```gcom``` with required headers and supported syntax only.'
+      }
+    ]
+  };
+
+  try {
+    const res = await fetch('/api/ai/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    aiShowThinking(false);
+    if (!res.ok) {
+      let errMsg = 'Auto-repair request failed';
+      try { errMsg = (await res.json()).error || errMsg; } catch {}
+      aiRenderMsg('assistant', '<span style="color:var(--red)">' + aiEscapeHtml(errMsg) + '</span>', null);
+      return;
+    }
+
+    const data = await res.json();
+    const reply = String(data.reply || '');
+    aiChatHistory.push({ role: 'assistant', content: reply });
+    const actionsCommentRe = new RegExp('<!--\\s*ACTIONS:[^>]*-->', 'g');
+    const cleanReply = reply.replace(actionsCommentRe, '').trim();
+    const hasScript = reply.toLowerCase().includes('```gcom');
+    let parsedActions = null;
+    const actionPayloadRe = new RegExp('<!--\\s*ACTIONS:\\s*(\\{[^}]*\\})\\s*-->');
+    const actionMatch = reply.match(actionPayloadRe);
+    if (actionMatch) { try { parsedActions = JSON.parse(actionMatch[1]); } catch {} }
+    const actions = (hasScript || parsedActions) ? {
+      insertScript: hasScript || !!(parsedActions && parsedActions.insertScript),
+      showPreview: !!(parsedActions && parsedActions.showPreview)
+    } : null;
+    const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions);
+    if (msgEl) {
+      msgEl.querySelectorAll('.ai-action-btn').forEach(btn => {
+        btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, msgEl));
+      });
+    }
+    if (hasScript) aiRecordRepairSuccess(signature, reply);
+  } catch (e) {
+    aiShowThinking(false);
+    aiRenderMsg('assistant', '<span style="color:var(--red)">Auto-repair network error: ' + aiEscapeHtml(String(e && e.message ? e.message : e)) + '</span>', null);
+  } finally {
+    aiRepairInFlight = false;
+  }
+}
+
+function aiHandleInsertBlock(blockReason, failedScript, messageHtml) {
+  aiRenderMsg('assistant', messageHtml, null);
+  const signature = aiRecordBlockFailure(blockReason, failedScript);
+  aiAutoRepairFromBlock(blockReason, failedScript, signature);
+}
 
 function aiSetOpen(open) {
   aiSidebarOpen = open;
@@ -9340,7 +9635,11 @@ function aiHandleAction(action, msgEl) {
       if (/^\s*\d+\s+WEND\b/i.test(line)) unsupported.push(`Source line ${lineNum}: WEND is not supported in GCOM BASIC.`);
     });
     if (unsupported.length) {
-      aiRenderMsg('assistant', 'Insert blocked. The generated script uses unsupported statements:<br>' + unsupported.slice(0, 6).map(s => '- ' + s.replace(/</g, '&lt;')).join('<br>') + (unsupported.length > 6 ? '<br>- ...' : '') + '<br><br>Ask me to convert it to valid GCOM BASIC (FOR/NEXT + IF/GOTO only).', null);
+      aiHandleInsertBlock(
+        { ruleId: 'unsupported-statements', details: unsupported.slice(0, 10) },
+        normalized,
+        'Insert blocked. The generated script uses unsupported statements:<br>' + unsupported.slice(0, 6).map(s => '- ' + s.replace(/</g, '&lt;')).join('<br>') + (unsupported.length > 6 ? '<br>- ...' : '')
+      );
       return;
     }
 
@@ -9353,12 +9652,12 @@ function aiHandleAction(action, msgEl) {
       if (!hasTitleHeader) missing.push('` ; TITLE: ...`');
       if (!hasDescriptionHeader) missing.push('` ; DESCRIPTION: ...`');
       if (!hasAnyVarHeader) missing.push('at least one ` ; VAR name=value`');
-      aiRenderMsg(
-        'assistant',
+      aiHandleInsertBlock(
+        { ruleId: 'missing-required-headers', details: missing },
+        normalized,
         'Insert blocked. AI scripts must include metadata headers so Composer fields can be populated automatically.<br><br>Missing: ' +
         missing.join(', ').replace(/</g, '&lt;') +
-        '<br><br>Use this format:<br><pre class="ai-code-block" data-type="gcom">; TITLE: Example\n; VERSION: 1.0\n; AUTHOR: You\n; DESCRIPTION: What the script does\n; VAR feed_rate=800\n10 LET feed_rate = {feed_rate}\n20 END</pre>',
-        null
+        '<br><br>Use this format:<br><pre class="ai-code-block" data-type="gcom">; TITLE: Example\n; VERSION: 1.0\n; AUTHOR: You\n; DESCRIPTION: What the script does\n; VAR feed_rate=800\n10 LET feed_rate = {feed_rate}\n20 END</pre>'
       );
       return;
     }
@@ -9369,11 +9668,19 @@ function aiHandleAction(action, msgEl) {
         candidatePackage = parseBasicImportText(normalized, 'ai-generated.gcom');
       }
     } catch (e) {
-      aiRenderMsg('assistant', 'Insert blocked. Header parsing failed: ' + String((e && e.message) || e).replace(/</g, '&lt;'), null);
+      aiHandleInsertBlock(
+        { ruleId: 'header-parse-failed', details: [String((e && e.message) || e)] },
+        normalized,
+        'Insert blocked. Header parsing failed: ' + String((e && e.message) || e).replace(/</g, '&lt;')
+      );
       return;
     }
     if (!candidatePackage) {
-      aiRenderMsg('assistant', 'Insert blocked. Could not parse AI output as a valid GCOM package.', null);
+      aiHandleInsertBlock(
+        { ruleId: 'package-parse-empty', details: ['Could not parse as valid GCOM package'] },
+        normalized,
+        'Insert blocked. Could not parse AI output as a valid GCOM package.'
+      );
       return;
     }
 
@@ -9385,11 +9692,11 @@ function aiHandleAction(action, msgEl) {
     const definedVarNames = new Set(Object.keys(candidatePackage.vars || {}));
     const missingVarDefs = [...referenced].filter(name => !definedVarNames.has(name));
     if (missingVarDefs.length) {
-      aiRenderMsg(
-        'assistant',
+      aiHandleInsertBlock(
+        { ruleId: 'missing-var-definitions', details: missingVarDefs },
+        normalized,
         'Insert blocked. Declare all placeholders with `; VAR name=value` headers. Missing: ' +
-        missingVarDefs.join(', ').replace(/</g, '&lt;'),
-        null
+        missingVarDefs.join(', ').replace(/</g, '&lt;')
       );
       return;
     }
@@ -9403,13 +9710,12 @@ function aiHandleAction(action, msgEl) {
     }
 
     if (validationErrors.length) {
-      aiRenderMsg(
-        'assistant',
+      aiHandleInsertBlock(
+        { ruleId: 'syntax-validation-failed', details: validationErrors.slice(0, 20) },
+        normalized,
         'Insert blocked due to syntax errors:<br>' +
         validationErrors.slice(0, 8).map(e => '- ' + String(e).replace(/</g, '&lt;')).join('<br>') +
-        (validationErrors.length > 8 ? '<br>- ...' : '') +
-        '<br><br>Ask me to regenerate a valid script using only supported statements.',
-        null
+        (validationErrors.length > 8 ? '<br>- ...' : '')
       );
       return;
     }
@@ -9452,13 +9758,20 @@ async function aiSend(userText) {
   const composerContext = {
     meta: getBasicScriptMeta(),
     vars: normalizeBasicVars(basicLoadedVars || {}),
-    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000)
+    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000),
+    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20)
   };
   try {
     const res = await fetch('/api/ai/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: aiChatHistory, gcomContext, composerContext })
+      body: JSON.stringify({
+        messages: aiChatHistory,
+        gcomContext,
+        composerContext,
+        mode: 'chat',
+        sessionLearning: aiBuildSessionLearningSummary()
+      })
     });
     aiShowThinking(false);
     if (!res.ok) {
@@ -9548,6 +9861,36 @@ if (aiSidebarToggleBtn) aiSidebarToggleBtn.addEventListener('click', () => aiSet
 if (aiSidebarCloseBtn)  aiSidebarCloseBtn.addEventListener('click',  () => aiSetOpen(false));
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
+if (aiProposalsListEl) {
+  aiProposalsListEl.addEventListener('click', e => {
+    const target = e.target;
+    if (!target || !target.dataset) return;
+    const action = target.dataset.action;
+    const id = target.dataset.proposalId;
+    if (!action || !id) return;
+    const idx = aiSessionMemory.pendingBrainPrs.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    const proposal = aiSessionMemory.pendingBrainPrs[idx];
+    aiSessionMemory.pendingBrainPrs.splice(idx, 1);
+    if (action === 'approve') {
+      aiSessionMemory.approvedBrainRules.push({
+        id: proposal.id,
+        signature: proposal.signature,
+        instructionPatch: proposal.body,
+        approvedAt: new Date().toISOString()
+      });
+      aiSessionMemory.approvedBrainRules = aiSessionMemory.approvedBrainRules.slice(-40);
+      aiRenderMsg('assistant', 'Brain PR approved. I will apply this rule in this session.', null);
+    } else if (action === 'reject') {
+      aiRenderMsg('assistant', 'Brain PR rejected. I will not apply this proposed rule.', null);
+    }
+    aiSaveSessionMemory();
+    aiRenderProposals();
+  });
+}
+
+aiLoadSessionMemory();
+aiRenderProposals();
 if (aiPromptInputEl) {
   aiPromptInputEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(aiPromptInputEl.value); }
