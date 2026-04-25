@@ -464,6 +464,18 @@ COMMON FAILURE TRAPS
 - Wrong: LET x = ... + x inside a loop when x is also the center/reference position.
   Reason: this causes cumulative drift unless explicitly intended.
 
+VAR DEFAULT VALUES
+When declaring ; VAR headers, use realistic defaults so preview produces meaningful motion output:
+- Coordinates / positions: non-zero typical values (e.g., x_start=0, y_start=0, x_end=100, y_end=100)
+- Feed rates: realistic mm/min (e.g., feed_rate=800, plunge_rate=300, rapid_rate=3000)
+- Distances, depth, travel: typical CNC mm values (e.g., distance=50, depth=5, safe_z=5, x_travel=100, y_travel=100)
+- Diameters, radii: typical sizes (e.g., tool_diameter=6, hole_diameter=12, radius=25)
+- Counts (steps, passes, repeats): small positive integers (e.g., steps=36, passes=3, repeats=4)
+- Angles: typical degree values (e.g., start_angle=0, end_angle=360, step_angle=10)
+- Timeouts / settle: ms values (e.g., idle_timeout=12000, settle_ms=200)
+- Never use 0 for any geometric parameter — zero causes no motion in preview.
+- Never leave ; VAR name= empty.
+
 PREFLIGHT
 Before emitting a script, verify:
 - TITLE and DESCRIPTION headers exist
