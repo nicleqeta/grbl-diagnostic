@@ -6786,6 +6786,25 @@ async function runBasicScript(source) {
         continue;
       }
 
+      // CONNECT WS "host" [PORT expr]
+      if (/^CONNECT\s+WS\b/i.test(stmt)) {
+        let tail = stmt.replace(/^CONNECT\s+WS\s*/i, '').trim();
+        const hostM = tail.match(/^"([^"]*)"|^(\S+)/);
+        const wsHost = hostM ? (hostM[1] !== undefined ? hostM[1] : hostM[2]) : '';
+        if (hostM) tail = tail.slice(hostM[0].length).trim();
+        let wsPortNum = 80;
+        const wsPortM = tail.match(/\bPORT\s+(\S+)/i);
+        if (wsPortM) wsPortNum = Math.round(Number(await basicEvalExprRuntime(wsPortM[1], basicVars)));
+        if (!wsHost) {
+          addLine(`Line ${lineNum}: CONNECT WS: host is required`, 'err');
+          stopScript(); break;
+        }
+        const ok = await basicDoConnectWS(wsHost, wsPortNum);
+        if (!ok) { stopScript(); break; }
+        pc++;
+        continue;
+      }
+
       // CONNECT [BAUD expr] [DTR expr] [WAIT expr] [OBSERVE]
       if (/^CONNECT(?:\s|$)/i.test(stmt)) {
         const connectParams = { baud: 115200, dtr: 'default', waitMs: 0, observe: false };
@@ -8560,6 +8579,69 @@ async function startReadLoop() {
 
 // Open a serial port from within a GCOM script. Called by the CONNECT statement.
 // Returns true on success, false if the user cancelled or an error occurred.
+async function basicDoConnectWS(host, portNum = 80) {
+  if (isTransportConnected()) {
+    addLine('CONNECT WS: already connected; use DISCONNECT first', 'err');
+    return false;
+  }
+  const url = `ws://${host}:${portNum}`;
+  addLine(`CONNECT WS: connecting to ${url}`, 'basic');
+  resetReadySignalState();
+  setConnectionUi('connecting');
+  setTransportState('connecting');
+  setMachineState('unknown');
+  syncRuntimeWorkerConnectionState('connecting', 'unknown');
+  setStartupBanner(null);
+  grblObservedRxBufBytes = 0;
+  const token = ++activeSequenceToken;
+  return new Promise((resolve) => {
+    wsSocket = new WebSocket(url);
+    wsSocket.binaryType = 'arraybuffer';
+    wsSocket.onopen = () => {
+      if (activeSequenceToken !== token) { wsSocket.close(); resolve(false); return; }
+      currentRun = {
+        name: 'websocket', description: `WebSocket: ${url}`, source: 'websocket',
+        baud: 0, dtrMode: 'n/a', observeOnly: false,
+        showRequestResponseCorrelation: false,
+        waitMs: 0, bannerTimeoutMs: basicScriptSettings.bannerTimeout,
+        sequenceDelayMs: basicScriptSettings.sequenceDelay,
+        commands: [], invalidCommands: [], portInfo: null,
+        presetSummary: `WebSocket ${url}`,
+        startupResolved: 'pending', startupReadyLine: null, startupBannerLine: null
+      };
+      setConnectionUi('connected');
+      setTransportState('connected');
+      setMachineState('unknown');
+      syncRuntimeWorkerConnectionState('connected', 'unknown');
+      addLine(`CONNECT WS: connected to ${url}`, 'sys');
+      void runStartupSequence(currentRun, token);
+      resolve(true);
+    };
+    wsSocket.onmessage = (event) => {
+      const text = typeof event.data === 'string'
+        ? event.data
+        : new TextDecoder().decode(event.data);
+      for (const raw of text.split('\n')) {
+        const trimmed = raw.replace(/\r/g, '').trim();
+        if (!trimmed) continue;
+        addLine(trimmed, 'rx');
+        handleSequenceResponseLine(trimmed);
+        handleBasicBufferedResponseLine(trimmed);
+      }
+    };
+    wsSocket.onerror = () => {
+      addLine(`CONNECT WS: error connecting to ${url}`, 'err');
+      markConnectionFault('WebSocket error');
+      resolve(false);
+    };
+    wsSocket.onclose = (ev) => {
+      if (!wsSocket) return; // already cleaned up by disconnectPort
+      addLine(`WebSocket closed (code ${ev.code})`, 'sys');
+      markConnectionFault('WebSocket closed');
+    };
+  });
+}
+
 async function basicDoConnect({ baud = 115200, dtr = 'default', waitMs = 0, observe = false } = {}) {
   if (port) { addLine('CONNECT: already connected; use DISCONNECT first', 'err'); return false; }
   const dtrNorm = normalizeDtrMode(dtr);
