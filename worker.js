@@ -378,11 +378,13 @@ SCRIPT PACKAGE FORMAT (required when generating a full script):
 ; TITLE: <title>
 ; VERSION: <version>
 ; AUTHOR: <author>
-; DESCRIPTION: <plain english summary>
+; DESCRIPTION: <plain english summary including key variable placeholders>
 ; VAR name=value
 <numbered GCOM program lines>
 
 Always include TITLE and DESCRIPTION headers, plus VAR headers for any placeholders used in description or program text.
+When writing DESCRIPTION, include the most relevant runtime knobs as placeholders (for example {feed_rate}, {depth}, {safe_z}, {passes}, {step_mm}) so the Composer description is immediately useful.
+Prefer 2-5 high-impact placeholders in DESCRIPTION. Do not list every variable.
 Preserve and reuse existing variable names and metadata provided in context when possible.
 
 When outputting a GCOM script always wrap it in a fenced block tagged \`\`\`gcom ... \`\`\`.
@@ -429,6 +431,8 @@ VARIABLES AND HEADERS
   ; DESCRIPTION: ...
   ; VAR name=value
 - ; DESCRIPTION may appear more than once.
+- ; DESCRIPTION should mention the primary tunable parameters using placeholders (typically 2-5): feed, distance/size, depth/z, step/count, speed/time.
+- Prefer high-impact placeholders in DESCRIPTION (e.g., {feed_rate}, {distance}, {depth}, {passes}, {safe_z}) rather than listing all vars.
 - Every placeholder used in DESCRIPTION or program text must have a matching ; VAR declaration.
 - Do not reference bare identifiers before they are defined by LET or declared as placeholders with ; VAR.
 
@@ -449,9 +453,10 @@ CANONICAL SCRIPT SHAPE
 ; TITLE: Example
 ; VERSION: 1
 ; AUTHOR: GitHub Copilot
-; DESCRIPTION: Explain what the script does using {placeholders}.
+; DESCRIPTION: Cut a slot of {distance}mm at {feed_rate} mm/min with a safe retract of {safe_z}mm.
 ; VAR feed_rate=1000
 ; VAR distance=50
+; VAR safe_z=5
 10 LET local_value = {distance}
 20 SEND "G1 X" & local_value & " F" & {feed_rate} TIMEOUT 2000 REQUIRE_OK
 30 END
@@ -479,6 +484,7 @@ When declaring ; VAR headers, use realistic defaults so preview produces meaning
 PREFLIGHT
 Before emitting a script, verify:
 - TITLE and DESCRIPTION headers exist
+- DESCRIPTION includes the most pertinent placeholders for user-tunable behavior
 - every placeholder has a ; VAR declaration
 - every identifier is defined before first use
 - no unsupported statements are present
