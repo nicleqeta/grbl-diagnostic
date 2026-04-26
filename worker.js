@@ -362,8 +362,12 @@ Core statements:
   BENCH START | BENCH END
 
 Math: ABS INT ROUND(v,d) SQRT SIN COS TAN ASIN ACOS ATAN ATAN2(y,x) RAD DEG RND(max)
-      PI MOD(a,b) MIN(a,b) MAX(a,b) CLAMP(v,lo,hi) HYPOT(a,b) LN LOG LOG10 TRUNC SIGN
-String: STR(expr) & (concat)
+  PI MOD(a,b) MIN(a,b) MAX(a,b) CLAMP(v,lo,hi) HYPOT(a,b) LN LOG LOG10 TRUNC SIGN
+String: STR(expr) LEN(text) TRIM(text) UPPER(text) LOWER(text)
+    SUBSTR(text,start[,length]) CONTAINS(text,needle) STARTS_WITH(text,prefix)
+    ENDS_WITH(text,suffix) REPLACE(text,find,with[,max])
+Tokenization: SPLIT_COUNT(text,delim) SPLIT_PART(text,delim,index[,fallback])
+     SPLIT_INTO(text,delim,prefix)
 State: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(key[,fallback])
 Template variables use {name=default} syntax substituted before execution.
 
@@ -441,6 +445,16 @@ MATH AND TRIG SEMANTICS
 - ASIN, ACOS, ATAN, ATAN2 return degrees.
 - Use RAD(degValue) only when you explicitly need radians for another computation.
 - Do not convert degrees to radians before calling SIN/COS/TAN.
+
+STRING AND TOKEN HELPERS
+- STR(value) converts to text; LEN returns character count.
+- TRIM/UPPER/LOWER normalize incoming text before comparisons.
+- SUBSTR is 1-based: SUBSTR(text, 1, 3) returns first 3 characters.
+- CONTAINS/STARTS_WITH/ENDS_WITH return 1 or 0 and can be used directly in IF conditions.
+- REPLACE(text, find, with[, max]) replaces up to max matches; omitting max replaces all.
+- SPLIT_PART(text, delim, index[, fallback]) is 1-based token lookup.
+- SPLIT_COUNT returns token count for a delimiter.
+- SPLIT_INTO(text, delim, prefix) writes prefix_COUNT and prefix_1..prefix_N variables.
 
 ARC / CIRCLE RULES (G2/G3)
 - Prefer center-format arcs (I/J) over radius-format (R) when possible; center format is more stable.

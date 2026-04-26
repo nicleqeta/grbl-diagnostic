@@ -256,6 +256,31 @@ Future versions of gcomposer may introduce higher-level scripting formats that c
 * user prompts
 * deterministic execution
 
+### String And Token Helpers
+
+GCOM includes lightweight string helpers for runtime parsing and safer comparisons:
+
+* text normalization: `TRIM`, `UPPER`, `LOWER`, `LEN`
+* matching: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
+* extraction: `SUBSTR`, `REPLACE`
+* tokenization: `SPLIT_COUNT`, `SPLIT_PART`, `SPLIT_INTO`
+
+`SPLIT_INTO(text, delim, prefix)` writes tokens into variables:
+
+* `prefix_COUNT`
+* `prefix_1 ... prefix_N`
+
+Example:
+
+```
+10 LET status = "<Idle|MPos:10.000,20.500,-1.250|FS:0,0>"
+20 LET n = SPLIT_INTO(status, "|", "tok")
+30 IF n >= 2 THEN LET pos = SPLIT_PART(tok_2, ":", 2, "0,0,0")
+40 LET x = SPLIT_PART(pos, ",", 1, "0")
+50 PRINT "X=" & x & " Mode=" & TRIM(REPLACE(tok_1, "<", ""))
+60 END
+```
+
 ---
 
 ### Execution Model
