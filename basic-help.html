@@ -457,6 +457,18 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
       <ul>
         <li><code>PI</code>: Circle constant (3.141592653589793).</li>
         <li><code>STR(expr)</code>: Convert value to string.</li>
+        <li><code>LEN(text)</code>: String length.</li>
+        <li><code>TRIM(text)</code>: Trim leading/trailing whitespace.</li>
+        <li><code>UPPER(text)</code>: Convert text to uppercase.</li>
+        <li><code>LOWER(text)</code>: Convert text to lowercase.</li>
+        <li><code>SUBSTR(text, start[, length])</code>: 1-based substring with optional length.</li>
+        <li><code>CONTAINS(text, needle)</code>: Returns <code>1</code> when found, otherwise <code>0</code>.</li>
+        <li><code>STARTS_WITH(text, prefix)</code>: Returns <code>1</code> when true, otherwise <code>0</code>.</li>
+        <li><code>ENDS_WITH(text, suffix)</code>: Returns <code>1</code> when true, otherwise <code>0</code>.</li>
+        <li><code>REPLACE(text, find, with[, maxReplacements])</code>: Replace matches in text. Omit <code>maxReplacements</code> to replace all.</li>
+        <li><code>SPLIT_COUNT(text, delim)</code>: Number of tokens after split.</li>
+        <li><code>SPLIT_PART(text, delim, index[, fallback])</code>: 1-based token lookup with optional fallback.</li>
+        <li><code>SPLIT_INTO(text, delim, prefix)</code>: Writes <code>prefix_COUNT</code> and <code>prefix_1..prefix_N</code> variables. Returns token count.</li>
         <li><code>ABS(expr)</code>: Absolute value.</li>
         <li><code>INT(expr)</code>: Integer truncation.</li>
         <li><code>TRUNC(expr)</code>: Integer truncation (alias of <code>INT</code>).</li>
@@ -495,21 +507,25 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
         <li><code>ELAPSED(t0)</code>: Milliseconds elapsed since <code>t0</code> (a value previously captured by <code>CLOCK()</code>). Returns a number so it can be used in further math.</li>
         <li><code>FORMAT_MS(ms)</code>: Format a millisecond number as a human-readable string — <code>"456 ms"</code> or <code>"1.23 s"</code>. Returns a string; use only inside <code>PRINT</code> or string concatenation.</li>
       </ul>
-      <pre><code>10 LET dx = 3
-20 LET dy = 4
-30 LET len = HYPOT(dx, dy)
-40 LET ang = ATAN2(dy, dx)
-50 LET angRad = RAD(ang)
-60 LET angDeg = DEG(angRad)
-70 LET xr = ROUND(len * COS(angDeg), 3)
-80 LET safeFeed = CLAMP(5000, 200, 3000)
-90 LET lane = 17 % 5
-100 PRINT "Angle(deg): " & angDeg
-110 PRINT "Projected X: " & xr
-120 PRINT "Safe feed: " & safeFeed
-130 PRINT "Lane: " & lane
-140 PRINT "State: " & STATE()
-150 END</code></pre>
+      <pre><code>10 LET status = "&lt;Idle|MPos:10.000,20.500,-1.250|FS:0,0|Ov:100,100,100&gt;"
+    20 LET clean = TRIM(status)
+    30 LET mode = SPLIT_PART(clean, "|", 1, "UNKNOWN")
+    40 LET mode = REPLACE(mode, "&lt;", "")
+    50 LET mode = REPLACE(mode, ">", "")
+    60 LET fieldCount = SPLIT_COUNT(clean, "|")
+    70 LET tokenCount = SPLIT_INTO(clean, "|", "tok")
+    80 IF tokenCount &gt;= 2 THEN LET posField = tok_2
+    90 IF tokenCount &gt;= 2 THEN LET xyzText = SPLIT_PART(posField, ":", 2, "0,0,0")
+    100 LET x = SPLIT_PART(xyzText, ",", 1, "0")
+    110 LET y = SPLIT_PART(xyzText, ",", 2, "0")
+    120 LET z = SPLIT_PART(xyzText, ",", 3, "0")
+    130 PRINT "Mode=" & UPPER(mode) & " fields=" & fieldCount
+    140 PRINT "XYZ=" & x & "," & y & "," & z
+    150 PRINT "Has MPos? " & CONTAINS(clean, "MPos:")
+    160 PRINT "Starts with '&lt;'? " & STARTS_WITH(clean, "&lt;")
+    170 PRINT "Ends with '&gt;'? " & ENDS_WITH(clean, ">")
+    180 PRINT "Chars in line=" & LEN(clean)
+    190 END</code></pre>
     </section>
 
     <section class="card">

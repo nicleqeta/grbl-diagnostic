@@ -1450,6 +1450,18 @@
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
   BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
+  LEN(s)           String length
+  TRIM(s)          Trim leading/trailing whitespace
+  UPPER(s)         Convert to uppercase
+  LOWER(s)         Convert to lowercase
+  SUBSTR(s,i[,n])  1-based substring from i with optional length n
+  CONTAINS(s,t)    Return 1 if s contains t, else 0
+  STARTS_WITH(s,t) Return 1 if s starts with t, else 0
+  ENDS_WITH(s,t)   Return 1 if s ends with t, else 0
+  REPLACE(s,a,b[,max]) Replace up to max matches of a with b (all when max omitted)
+  SPLIT_COUNT(s,d) Number of tokens when splitting s by delimiter d
+  SPLIT_PART(s,d,i[,fallback]) 1-based token i from split result
+  SPLIT_INTO(s,d,prefix) Populate prefix_COUNT and prefix_1..prefix_N variables
   CLOCK()          Current timestamp in milliseconds (performance.now()). Use with ELAPSED().
   ELAPSED(t0)      Milliseconds elapsed since t0 (a value returned by CLOCK()).
   FORMAT_MS(ms)    Format a millisecond value as a readable string: "456 ms" or "1.23 s".
@@ -3328,6 +3340,18 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '__string__')
     .replace(/\bPI\b/gi, '__pi__')
     .replace(/\bSTR\s*\(/gi, '__str__(')
+    .replace(/\bLEN\s*\(/gi, '__len__(')
+    .replace(/\bTRIM\s*\(/gi, '__trim__(')
+    .replace(/\bUPPER\s*\(/gi, '__upper__(')
+    .replace(/\bLOWER\s*\(/gi, '__lower__(')
+    .replace(/\bSUBSTR\s*\(/gi, '__substr__(')
+    .replace(/\bCONTAINS\s*\(/gi, '__contains__(')
+    .replace(/\bSTARTS_WITH\s*\(/gi, '__starts_with__(')
+    .replace(/\bENDS_WITH\s*\(/gi, '__ends_with__(')
+    .replace(/\bREPLACE\s*\(/gi, '__replace__(')
+    .replace(/\bSPLIT_COUNT\s*\(/gi, '__split_count__(')
+    .replace(/\bSPLIT_PART\s*\(/gi, '__split_part__(')
+    .replace(/\bSPLIT_INTO\s*\(/gi, '__split_into__(')
     .replace(/\bABS\s*\(/gi, '__abs__(')
     .replace(/\bINT\s*\(/gi, '__int__(')
     .replace(/\bCEIL\s*\(/gi, '__ceil__(')
@@ -3368,7 +3392,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bFORMAT_MS\s*\(/gi, '__format_ms__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bf_serial__', '__bf_planner__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__len__', '__trim__', '__upper__', '__lower__', '__substr__', '__contains__', '__starts_with__', '__ends_with__', '__replace__', '__split_count__', '__split_part__', '__split_into__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bf_serial__', '__bf_planner__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -3378,7 +3402,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bf_serial__ = () => 0; const __bf_planner__ = () => -1; const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __len__ = value => String(value).length; const __trim__ = value => String(value).trim(); const __upper__ = value => String(value).toUpperCase(); const __lower__ = value => String(value).toLowerCase(); const __substr__ = (value, start, length) => { const src = String(value); const from = Math.max(0, Math.trunc(Number(start) || 1) - 1); if (length === undefined) return src.slice(from); const span = Math.max(0, Math.trunc(Number(length) || 0)); return src.slice(from, from + span); }; const __contains__ = (value, needle) => String(value).includes(String(needle)) ? 1 : 0; const __starts_with__ = (value, prefix) => String(value).startsWith(String(prefix)) ? 1 : 0; const __ends_with__ = (value, suffix) => String(value).endsWith(String(suffix)) ? 1 : 0; const __replace__ = (value, find, withValue, maxReplacements = -1) => { const src = String(value); const needle = String(find); const repl = String(withValue); if (!needle.length) return src; let limit = Math.trunc(Number(maxReplacements)); if (!Number.isFinite(limit) || limit < 0) limit = Number.MAX_SAFE_INTEGER; let out = ''; let i = 0; let count = 0; while (i < src.length) { if (count < limit && src.startsWith(needle, i)) { out += repl; i += needle.length; count += 1; } else { out += src[i++]; } } return out; }; const __split_count__ = (value, delim) => { const src = String(value); const d = String(delim); return d === '' ? src.length : src.split(d).length; }; const __split_part__ = (value, delim, index, fallback = '') => { const src = String(value); const d = String(delim); const idx = Math.trunc(Number(index)); if (!Number.isFinite(idx) || idx < 1) return String(fallback); const parts = d === '' ? src.split('') : src.split(d); return idx <= parts.length ? parts[idx - 1] : String(fallback); }; const __split_into__ = (value, delim, prefix) => 0; const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bf_serial__ = () => 0; const __bf_planner__ = () => -1; const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -4825,6 +4849,145 @@ function basicEvalExpr(expr, vars) {
         const inner = parseExpr();
         expect('OP', ')');
         return String(inner);
+      }
+      if (name === 'LEN' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return String(inner).length;
+      }
+      if (name === 'TRIM' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return String(inner).trim();
+      }
+      if (name === 'UPPER' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return String(inner).toUpperCase();
+      }
+      if (name === 'LOWER' && hasCallSyntax()) {
+        expect('OP', '(');
+        const inner = parseExpr();
+        expect('OP', ')');
+        return String(inner).toLowerCase();
+      }
+      if (name === 'SUBSTR' && hasCallSyntax()) {
+        expect('OP', '(');
+        const value = parseExpr();
+        expect('OP', ',');
+        const startExpr = parseExpr();
+        let lengthExpr;
+        if (peek() && peek().type === 'OP' && peek().value === ',') {
+          consume();
+          lengthExpr = parseExpr();
+        }
+        expect('OP', ')');
+        const src = String(value);
+        const from = Math.max(0, Math.trunc(Number(startExpr) || 1) - 1);
+        if (lengthExpr === undefined) return src.slice(from);
+        const span = Math.max(0, Math.trunc(Number(lengthExpr) || 0));
+        return src.slice(from, from + span);
+      }
+      if (name === 'CONTAINS' && hasCallSyntax()) {
+        const [value, needle] = parseTwoArgFunctionArgs(name);
+        return String(value).includes(String(needle)) ? 1 : 0;
+      }
+      if (name === 'STARTS_WITH' && hasCallSyntax()) {
+        const [value, prefix] = parseTwoArgFunctionArgs(name);
+        return String(value).startsWith(String(prefix)) ? 1 : 0;
+      }
+      if (name === 'ENDS_WITH' && hasCallSyntax()) {
+        const [value, suffix] = parseTwoArgFunctionArgs(name);
+        return String(value).endsWith(String(suffix)) ? 1 : 0;
+      }
+      if (name === 'REPLACE' && hasCallSyntax()) {
+        expect('OP', '(');
+        const value = parseExpr();
+        expect('OP', ',');
+        const findExpr = parseExpr();
+        expect('OP', ',');
+        const withExpr = parseExpr();
+        let maxReplacements = -1;
+        if (peek() && peek().type === 'OP' && peek().value === ',') {
+          consume();
+          maxReplacements = parseExpr();
+        }
+        expect('OP', ')');
+        const src = String(value);
+        const needle = String(findExpr);
+        const repl = String(withExpr);
+        if (!needle.length) return src;
+        let limit = Math.trunc(Number(maxReplacements));
+        if (!Number.isFinite(limit) || limit < 0) limit = Number.MAX_SAFE_INTEGER;
+        let out = '';
+        let i = 0;
+        let count = 0;
+        while (i < src.length) {
+          if (count < limit && src.startsWith(needle, i)) {
+            out += repl;
+            i += needle.length;
+            count += 1;
+          } else {
+            out += src[i];
+            i += 1;
+          }
+        }
+        return out;
+      }
+      if (name === 'SPLIT_COUNT' && hasCallSyntax()) {
+        const [value, delim] = parseTwoArgFunctionArgs(name);
+        const src = String(value);
+        const d = String(delim);
+        return d === '' ? src.length : src.split(d).length;
+      }
+      if (name === 'SPLIT_PART' && hasCallSyntax()) {
+        expect('OP', '(');
+        const value = parseExpr();
+        expect('OP', ',');
+        const delim = parseExpr();
+        expect('OP', ',');
+        const indexExpr = parseExpr();
+        let fallback = '';
+        if (peek() && peek().type === 'OP' && peek().value === ',') {
+          consume();
+          fallback = parseExpr();
+        }
+        expect('OP', ')');
+        const src = String(value);
+        const d = String(delim);
+        const idx = Math.trunc(Number(indexExpr));
+        if (!Number.isFinite(idx) || idx < 1) return String(fallback);
+        const parts = d === '' ? src.split('') : src.split(d);
+        return idx <= parts.length ? parts[idx - 1] : String(fallback);
+      }
+      if (name === 'SPLIT_INTO' && hasCallSyntax()) {
+        expect('OP', '(');
+        const value = parseExpr();
+        expect('OP', ',');
+        const delim = parseExpr();
+        expect('OP', ',');
+        const prefixExpr = parseExpr();
+        expect('OP', ')');
+
+        const src = String(value);
+        const d = String(delim);
+        const prefixRaw = String(prefixExpr || '').trim();
+        if (!prefixRaw) throw new Error('SPLIT_INTO requires a non-empty prefix');
+        const prefix = basicNormalizeRuntimeVarName(prefixRaw);
+        const countKey = `${prefix}_COUNT`;
+        const previousCount = Math.max(0, Math.trunc(Number(vars[countKey] || 0)));
+        for (let i = 1; i <= previousCount; i++) {
+          delete vars[`${prefix}_${i}`];
+        }
+        const parts = d === '' ? src.split('') : src.split(d);
+        for (let i = 0; i < parts.length; i++) {
+          vars[`${prefix}_${i + 1}`] = parts[i];
+        }
+        vars[countKey] = parts.length;
+        return parts.length;
       }
       if (name === 'ABS' && hasCallSyntax()) {
         expect('OP', '(');
