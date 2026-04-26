@@ -4048,13 +4048,39 @@ function normalizeSavedScriptPayload(payload) {
   }
   const programText = String(payload.programText || '').trim();
   if (!programText) throw new Error('Saved script is missing programText');
+  
+  // Parse optional v2 metadata (machine override, compile target)
+  let machineOverride = null;
+  if (payload.machine_override && typeof payload.machine_override === 'object') {
+    machineOverride = {
+      machine_name: String(payload.machine_override.machine_name || '').trim(),
+      base_profile_id: String(payload.machine_override.base_profile_id || '').trim(),
+      macros: payload.machine_override.macros || {},
+      tool_change_procedure: String(payload.machine_override.tool_change_procedure || '').trim(),
+      parking_position: payload.machine_override.parking_position || null,
+      spindle_config: payload.machine_override.spindle_config || null,
+      notes: String(payload.machine_override.notes || '').trim()
+    };
+  }
+  
+  let compileTarget = null;
+  if (payload.compile_target && typeof payload.compile_target === 'object') {
+    compileTarget = {
+      base_profile_id: String(payload.compile_target.base_profile_id || '').trim(),
+      include_machine_override: Boolean(payload.compile_target.include_machine_override)
+    };
+  }
+  
   return {
     title: String(payload.title || '').trim(),
     version: String(payload.version || '').trim(),
     author: String(payload.author || '').trim(),
     description: String(payload.description || '').trim(),
     programText,
-    vars: normalizeBasicVars(payload.vars || {})
+    vars: normalizeBasicVars(payload.vars || {}),
+    // v2_preview: optional machine override and compile target metadata
+    machine_override: machineOverride,
+    compile_target: compileTarget
   };
 }
 
@@ -8987,7 +9013,7 @@ function collectBasicScriptPayload() {
   if (!basicRawProgram) throw new Error('Script source is required');
   if (basicValidationState.errors.length) throw new Error('Fix BASIC syntax errors before saving');
 
-  return {
+  const payload = {
     title: meta.title,
     version: meta.version,
     author: meta.author,
@@ -8995,6 +9021,23 @@ function collectBasicScriptPayload() {
     programText: basicRawProgram,
     vars: { ...basicLoadedVars }
   };
+  
+  // Phase 7: Include optional machine override and compile target metadata
+  const activeProfile = getActiveControllerProfile();
+  if (activeProfile) {
+    payload.compile_target = {
+      base_profile_id: activeProfile.id,
+      include_machine_override: false  // Can be toggled by UI later
+    };
+    
+    // If machine override data is loaded from profiles, include it
+    if (activeProfile.v2_preview && activeProfile.v2_preview.machine_override) {
+      payload.machine_override = activeProfile.v2_preview.machine_override;
+      payload.compile_target.include_machine_override = true;
+    }
+  }
+  
+  return payload;
 }
 
 function buildBasicForumPost() {
