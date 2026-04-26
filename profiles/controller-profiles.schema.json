@@ -725,6 +725,73 @@
           }
         }
       }
+    },
+    "machineOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "machine_name",
+        "base_profile_id"
+      ],
+      "properties": {
+        "machine_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "User-friendly name of the machine this override applies to"
+        },
+        "base_profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to base profile (grbl-vanilla, fluidnc, etc)"
+        },
+        "macros": {
+          "type": "object",
+          "description": "Machine-specific macro expansions for common operations",
+          "minProperties": 0,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gcode"],
+            "properties": {
+              "gcode": {
+                "type": "string",
+                "description": "GCODE sequence for this macro"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "tool_change_procedure": {
+          "type": "string",
+          "description": "GCODE sequence for tool change, if non-standard"
+        },
+        "parking_position": {
+          "type": "object",
+          "description": "Safe parking coordinates",
+          "additionalProperties": false,
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" }
+          }
+        },
+        "spindle_config": {
+          "type": "object",
+          "description": "Machine-specific spindle behavior",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["VFD", "PWM", "relay"] },
+            "max_rpm": { "type": "number" },
+            "min_rpm": { "type": "number" }
+          }
+        },
+        "notes": {
+          "type": "string",
+          "description": "Machine notes (optional; may include imported docs/postprocessor refs)"
+        }
+      }
     }
   }
 }
