@@ -312,11 +312,11 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
       <p>Rule of thumb for sender mode selection: serial buffer below ~512 bytes usually benefits from buffered sends; serial buffer above ~512 bytes is often as fast or faster with ACK-gated sends (<code>SENDACK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
       <pre><code>10 LET speed = 900
-    20 SEND "M3 S" & speed TIMEOUT 1200 REQUIRE_OK
-    30 STATUS
-    40 HOLD
-    50 WAIT 500
-    60 RESUME</code></pre>
+20 SEND "M3 S" & speed TIMEOUT 1200 REQUIRE_OK
+30 STATUS
+40 HOLD
+50 WAIT 500
+60 RESUME</code></pre>
     </section>
 
     <section class="card">
@@ -353,7 +353,7 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <pre><code>10 SET SEND_DELAY 0
 20 CONNECT BAUD 115200
 30 STATUS
-    40 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
+40 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
 50 IF reply = "" THEN GOTO 9000
 60 PRINT "Connected: " &amp; reply
 70 END
@@ -372,7 +372,7 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
       <pre><code>10 SET SEND_DELAY 0
 20 CONNECT WS "192.168.1.100"
 REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
-    30 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
+30 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
 40 IF reply = "" THEN GOTO 9000
 50 PRINT "Connected: " &amp; reply
 60 SEND "$I"
@@ -428,11 +428,11 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
         <li><code>stmtA : stmtB</code>: Statement chaining on one numbered line. Execution is left-to-right; colons inside quoted strings are ignored.</li>
       </ul>
       <pre><code>10 LET speed = 1200
-    20 PRINT "Starting run"
-    30 RESULT "target_speed", speed
-    40 CONFIRM "Run with speed " & speed & "?"
-    50 REPORT
-    60 END</code></pre>
+20 PRINT "Starting run"
+30 RESULT "target_speed", speed
+40 CONFIRM "Run with speed " & speed & "?"
+50 REPORT
+60 END</code></pre>
     </section>
 
     <section class="card">
@@ -508,24 +508,24 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
         <li><code>FORMAT_MS(ms)</code>: Format a millisecond number as a human-readable string — <code>"456 ms"</code> or <code>"1.23 s"</code>. Returns a string; use only inside <code>PRINT</code> or string concatenation.</li>
       </ul>
       <pre><code>10 LET status = "&lt;Idle|MPos:10.000,20.500,-1.250|FS:0,0|Ov:100,100,100&gt;"
-    20 LET clean = TRIM(status)
-    30 LET mode = SPLIT_PART(clean, "|", 1, "UNKNOWN")
-    40 LET mode = REPLACE(mode, "&lt;", "")
-    50 LET mode = REPLACE(mode, ">", "")
-    60 LET fieldCount = SPLIT_COUNT(clean, "|")
-    70 LET tokenCount = SPLIT_INTO(clean, "|", "tok")
-    80 IF tokenCount &gt;= 2 THEN LET posField = tok_2
-    90 IF tokenCount &gt;= 2 THEN LET xyzText = SPLIT_PART(posField, ":", 2, "0,0,0")
-    100 LET x = SPLIT_PART(xyzText, ",", 1, "0")
-    110 LET y = SPLIT_PART(xyzText, ",", 2, "0")
-    120 LET z = SPLIT_PART(xyzText, ",", 3, "0")
-    130 PRINT "Mode=" & UPPER(mode) & " fields=" & fieldCount
-    140 PRINT "XYZ=" & x & "," & y & "," & z
-    150 PRINT "Has MPos? " & CONTAINS(clean, "MPos:")
-    160 PRINT "Starts with '&lt;'? " & STARTS_WITH(clean, "&lt;")
-    170 PRINT "Ends with '&gt;'? " & ENDS_WITH(clean, ">")
-    180 PRINT "Chars in line=" & LEN(clean)
-    190 END</code></pre>
+20 LET clean = TRIM(status)
+30 LET mode = SPLIT_PART(clean, "|", 1, "UNKNOWN")
+40 LET mode = REPLACE(mode, "&lt;", "")
+50 LET mode = REPLACE(mode, ">", "")
+60 LET fieldCount = SPLIT_COUNT(clean, "|")
+70 LET tokenCount = SPLIT_INTO(clean, "|", "tok")
+80 IF tokenCount &gt;= 2 THEN LET posField = tok_2
+90 IF tokenCount &gt;= 2 THEN LET xyzText = SPLIT_PART(posField, ":", 2, "0,0,0")
+100 LET x = SPLIT_PART(xyzText, ",", 1, "0")
+110 LET y = SPLIT_PART(xyzText, ",", 2, "0")
+120 LET z = SPLIT_PART(xyzText, ",", 3, "0")
+130 PRINT "Mode=" & UPPER(mode) & " fields=" & fieldCount
+140 PRINT "XYZ=" & x & "," & y & "," & z
+150 PRINT "Has MPos? " & CONTAINS(clean, "MPos:")
+160 PRINT "Starts with '&lt;'? " & STARTS_WITH(clean, "&lt;")
+170 PRINT "Ends with '&gt;'? " & ENDS_WITH(clean, ">")
+180 PRINT "Chars in line=" & LEN(clean)
+190 END</code></pre>
     </section>
 
     <section class="card">
