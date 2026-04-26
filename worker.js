@@ -567,6 +567,7 @@ Before emitting a script, verify:
         const composerParts = [];
         const meta = (composerCtx.meta && typeof composerCtx.meta === 'object') ? composerCtx.meta : {};
         const vars = (composerCtx.vars && typeof composerCtx.vars === 'object') ? composerCtx.vars : {};
+        const profile = (composerCtx.controllerProfile && typeof composerCtx.controllerProfile === 'object') ? composerCtx.controllerProfile : null;
         const varEntries = Object.entries(vars).slice(0, 80);
 
         composerParts.push(`\n\n=== CURRENT COMPOSER CONTEXT ===`);
@@ -587,6 +588,33 @@ Before emitting a script, verify:
           composerParts.push('```gcom');
           composerParts.push(lines.join('\n'));
           composerParts.push('```');
+        }
+        if (profile) {
+          const guidance = (profile.ai_guidance && typeof profile.ai_guidance === 'object') ? profile.ai_guidance : {};
+          const ackPolicy = (profile.ack_policy && typeof profile.ack_policy === 'object') ? profile.ack_policy : {};
+          const capabilities = (profile.capabilities && typeof profile.capabilities === 'object') ? profile.capabilities : {};
+          const gcodeCore = Array.isArray(capabilities.gcode_core) ? capabilities.gcode_core.slice(0, 120) : [];
+
+          composerParts.push(`Active controller profile:`);
+          if (profile.id) composerParts.push(`- id: ${profile.id}`);
+          if (profile.label) composerParts.push(`- label: ${profile.label}`);
+          if (profile.controller_family) composerParts.push(`- family: ${profile.controller_family}`);
+          if (profile.status) composerParts.push(`- status: ${profile.status}`);
+          if (ackPolicy.mode) composerParts.push(`- ack mode: ${ackPolicy.mode}`);
+          if (Number.isFinite(Number(ackPolicy.default_timeout_ms)) && Number(ackPolicy.default_timeout_ms) > 0) {
+            composerParts.push(`- ack default timeout ms: ${Number(ackPolicy.default_timeout_ms)}`);
+          }
+          if (gcodeCore.length) composerParts.push(`- supported core G-codes: ${gcodeCore.join(', ')}`);
+          if (guidance.summary) composerParts.push(`- guidance summary: ${guidance.summary}`);
+          if (Array.isArray(guidance.preferred_style) && guidance.preferred_style.length) {
+            composerParts.push(`- preferred style: ${guidance.preferred_style.join(' | ')}`);
+          }
+          if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
+            composerParts.push(`- avoid: ${guidance.avoid.join(' | ')}`);
+          }
+          if (guidance.compatibility_policy) {
+            composerParts.push(`- compatibility policy: ${guidance.compatibility_policy}`);
+          }
         }
         composerParts.push(`=== END COMPOSER CONTEXT ===`);
 
