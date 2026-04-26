@@ -693,6 +693,67 @@
           ]
         }
       }
+    },
+    "machine_overrides": {
+      "my_cnc_3030": {
+        "machine_name": "My CNC 3030",
+        "base_profile_id": "grbl-vanilla",
+        "macros": {
+          "SAFE_Z": {
+            "gcode": "G0 Z50",
+            "description": "Raise Z to safe clearance (50mm)"
+          },
+          "PROBE_Z": {
+            "gcode": "G38.2 Z-25 F100",
+            "description": "Probe Z-axis downward at 100mm/min"
+          },
+          "TOOL_1_OFFSET": {
+            "gcode": "G10 L20 P1 Z0",
+            "description": "Set tool 1 Z offset to current position"
+          }
+        },
+        "tool_change_procedure": "G0 Z50; SAFE_Z\nM5; Spindle off\nM0; Manual pause for tool change\nG0 Z0; Lower to previous Z",
+        "parking_position": {
+          "x": 0,
+          "y": 0,
+          "z": 50
+        },
+        "spindle_config": {
+          "type": "PWM",
+          "max_rpm": 10000,
+          "min_rpm": 0
+        },
+        "notes": "3030 aluminum frame with GRBL 1.1h, PWM spindle, no auto tool changer"
+      },
+      "haas_vf_mini_simulation": {
+        "machine_name": "HAAS VF-2 Simulation Profile",
+        "base_profile_id": "grbl-vanilla",
+        "macros": {
+          "SPINDLE_ON_CW": {
+            "gcode": "M3 S2000",
+            "description": "Spindle CW at 2000 RPM"
+          },
+          "SPINDLE_OFF": {
+            "gcode": "M5",
+            "description": "Spindle off"
+          },
+          "COOLANT_ON": {
+            "gcode": "M8",
+            "description": "Flood coolant on"
+          }
+        },
+        "parking_position": {
+          "x": 0,
+          "y": 0,
+          "z": 100
+        },
+        "spindle_config": {
+          "type": "VFD",
+          "max_rpm": 5000,
+          "min_rpm": 500
+        },
+        "notes": "HAAS VF-2 style machine setup; spindle gearing, VFD control"
+      }
     }
   }
 }
