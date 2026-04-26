@@ -1441,8 +1441,8 @@
   BUILT-IN FUNCTIONS (used inside expressions)
   ---------------------------------------------
   INPUT(prompt)    Prompt user for a value (returns number or string)
-  READ(timeout)    Read next serial line (returns string, timeout in ms)
-  SETTING(n)       Read GRBL setting $n (returns numeric value)
+  READ("$n")       Read GRBL setting $n from $$ (returns numeric value)
+  SETTING("$n")    Alias of READ("$n") (returns numeric value)
   GCODE_PARAM(k)   Read cached CNC-style parameter (#100, "100", "_x", "#<_x>")
   GCODE_PARAM(k,d) Read cached param with fallback default d
   BF_SERIAL()      Estimated serial RX capacity in bytes (from observed Bf serial field, fallback RX_BUFFER)
@@ -1517,7 +1517,7 @@
   ------------
   Scripts can be previewed without a connected machine.
   The preview engine dry-runs the script synchronously:
-    - INPUT(), READ(), SETTING(), GCODE_PARAM(), BF_SERIAL(), STATE(), BENCH_LAST_MS(), CLOCK(), ELAPSED() calls return 0 (noted in preview log)
+    - INPUT(), READ("$n"), SETTING("$n"), GCODE_PARAM(), BF_SERIAL(), STATE(), BENCH_LAST_MS(), CLOCK(), ELAPSED() calls return 0 (noted in preview log)
     - BF_PLANNER() is previewed as a non-live value; at runtime it returns -1 when planner capacity is unknown
     - FORMAT_MS() returns "0 ms" in preview expression validation contexts
     - SEND commands are displayed as motion command events
