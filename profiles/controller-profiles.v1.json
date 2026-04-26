@@ -157,14 +157,14 @@
       "boilerplate": {
         "title": "GRBL Base Diagnostic",
         "description": "Baseline serial checks and status query.",
-        "gcom": "10 PRINT \"GRBL base starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$$\" WAIT FOR OK\n40 SEND \"?\"\n50 END"
+        "gcom": "10 PRINT \"GRBL base starter\"\n20 SEND \"$I\" REQUIRE_OK\n30 SEND \"$$\" REQUIRE_OK\n40 SEND \"?\"\n50 END"
       },
       "ai_guidance": {
         "summary": "Generate conservative GRBL-compatible GCode and preserve explicit operator intent.",
         "preferred_style": [
           "Prefer G90 and explicit feed rates for motion lines.",
           "Prefer explicit spindle and coolant state transitions.",
-          "Use WAIT FOR OK around setup and state-changing commands."
+          "Use REQUIRE_OK on setup and state-changing SEND commands."
         ],
         "avoid": [
           "Do not emit cutter compensation G41/G42.",
@@ -326,14 +326,14 @@
       "boilerplate": {
         "title": "Vanilla GRBL Starter",
         "description": "Minimal setup sequence for common GRBL 1.1 machines.",
-        "gcom": "10 PRINT \"Vanilla GRBL starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$G\" WAIT FOR OK\n40 SEND \"G90\" WAIT FOR OK\n50 SEND \"G21\" WAIT FOR OK\n60 SEND \"?\"\n70 END"
+        "gcom": "10 PRINT \"Vanilla GRBL starter\"\n20 SEND \"$I\" REQUIRE_OK\n30 SEND \"$G\" REQUIRE_OK\n40 SEND \"G90\" REQUIRE_OK\n50 SEND \"G21\" REQUIRE_OK\n60 SEND \"?\"\n70 END"
       },
       "ai_guidance": {
         "summary": "Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.",
         "preferred_style": [
           "Initialize parser state explicitly with G90 and unit mode.",
           "Use conservative modal transitions and explicit feed rates.",
-          "Wrap setup commands with WAIT FOR OK."
+          "Wrap setup commands with REQUIRE_OK on SEND."
         ],
         "avoid": [
           "Do not emit FluidNC-specific config commands.",
@@ -493,7 +493,7 @@
       "boilerplate": {
         "title": "FluidNC Starter",
         "description": "Fast sanity sequence for FluidNC with GRBL-compatible sender flow.",
-        "gcom": "10 PRINT \"FluidNC starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$G\" WAIT FOR OK\n40 SEND \"?\"\n50 SEND \"$Config/Filename=config.yaml\" WAIT FOR OK\n60 END"
+        "gcom": "10 PRINT \"FluidNC starter\"\n20 SEND \"$I\" REQUIRE_OK\n30 SEND \"$G\" REQUIRE_OK\n40 SEND \"?\"\n50 SEND \"$Config/Filename=config.yaml\" REQUIRE_OK\n60 END"
       },
       "ai_guidance": {
         "summary": "Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.",
