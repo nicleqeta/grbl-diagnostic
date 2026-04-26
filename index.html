@@ -2322,7 +2322,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       boilerplate: {
         title: 'GRBL Base Diagnostic',
         description: 'Baseline serial checks and status query.',
-        gcom: '10 PRINT "GRBL base starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$$" WAIT FOR OK\n40 SEND "?"\n50 END'
+        gcom: '10 PRINT "GRBL base starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$$" REQUIRE_OK\n40 SEND "?"\n50 END'
       }
     },
     'grbl-vanilla': {
@@ -2340,7 +2340,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       boilerplate: {
         title: 'Vanilla GRBL Starter',
         description: 'Minimal setup sequence for common GRBL 1.1 machines.',
-        gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$G" WAIT FOR OK\n40 SEND "G90" WAIT FOR OK\n50 SEND "G21" WAIT FOR OK\n60 SEND "?"\n70 END'
+        gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 SEND "?"\n70 END'
       }
     },
     fluidnc: {
@@ -2358,7 +2358,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       boilerplate: {
         title: 'FluidNC Starter',
         description: 'Fast sanity sequence for FluidNC with GRBL-compatible sender flow.',
-        gcom: '10 PRINT "FluidNC starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$G" WAIT FOR OK\n40 SEND "?"\n50 SEND "$Config/Filename=config.yaml" WAIT FOR OK\n60 END'
+        gcom: '10 PRINT "FluidNC starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "?"\n50 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n60 END'
       }
     }
   }
