@@ -237,12 +237,13 @@ Future versions of gcomposer may introduce higher-level scripting formats that c
 
 ```
 10 LET feedrate = 1000
-20 SEND "G28" WAIT FOR IDLE
-30 PRINT "Homing complete"
-40 FOR i = 1 TO 5
-50   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) WAIT FOR OK
-60 NEXT i
-70 END
+20 SEND "G28" REQUIRE_OK
+30 WAIT_IDLE 15000
+40 PRINT "Homing complete"
+50 FOR i = 1 TO 5
+60   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) REQUIRE_OK
+70 NEXT i
+80 END
 ```
 
 ---
@@ -251,7 +252,7 @@ Future versions of gcomposer may introduce higher-level scripting formats that c
 
 * variables and math
 * loops and branching
-* WAIT conditions (`OK`, `IDLE`, `GRBL`)
+* wait controls (`WAIT`, `WAIT_IDLE`, `WAIT_STATE`) and ack-gated sends (`REQUIRE_OK`)
 * serial input handling
 * user prompts
 * deterministic execution
