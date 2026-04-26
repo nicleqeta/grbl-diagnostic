@@ -1616,8 +1616,6 @@
         <option value="fluidnc">FluidNC</option>
       </select>
       <div class="help-text" id="controller-profile-help" style="margin-top:-2px; margin-bottom:8px;">Profile controls compatibility checks and starter defaults. Vanilla GRBL is selected by default.</div>
-      <div class="diag-box muted" id="controller-profile-diag-box" style="margin-top:0; margin-bottom:8px;">Profile diagnostics will appear after profile registry load.</div>
-      <button class="btn" id="controller-profile-copy-btn" type="button" style="margin-bottom:8px;">Copy Profile Diagnostics</button>
       <div class="transport-toggle">
         <button class="transport-toggle-btn active" id="transport-serial-btn" type="button">USB / Serial</button>
         <button class="transport-toggle-btn" id="transport-ws-btn" type="button">WebSocket</button>
@@ -2023,8 +2021,6 @@ const copyLinkBtn  = document.getElementById('copy-link-btn');
 const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
 const controllerProfileSelect = document.getElementById('controller-profile-select');
 const controllerProfileHelp = document.getElementById('controller-profile-help');
-const controllerProfileDiagBox = document.getElementById('controller-profile-diag-box');
-const controllerProfileCopyBtn = document.getElementById('controller-profile-copy-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
@@ -7930,8 +7926,6 @@ if (applyGcomStarterBtn) {
   });
 }
 
-updateControllerProfileDiagnosticsUi();
-
 // Enable/disable run button based on connection and script content
 basicScriptInput.addEventListener('input', () => {
   markBasicScriptStructuralDirty();
@@ -8212,64 +8206,6 @@ function refreshControllerProfileHelp() {
   controllerProfileHelp.textContent = `${profile.label}: ${summary}`;
 }
 
-function updateControllerProfileDiagnosticsUi() {
-  if (!controllerProfileDiagBox) return;
-  const profile = getActiveControllerProfile();
-  if (!profile) {
-    controllerProfileDiagBox.className = 'diag-box muted';
-    controllerProfileDiagBox.textContent = 'No active controller profile.';
-    return;
-  }
-
-  const ackMode = getControllerAckMode();
-  const ackTimeout = getControllerDefaultAckTimeoutMs(3500);
-  const ackPolicy = profile.ack_policy || {};
-  const responsePatterns = profile.response_patterns || {};
-  const okRegex = String(ackPolicy.ok_regex || '^ok$');
-  const errRegex = String(ackPolicy.error_regex || '^error:\\d+');
-  const alarmRegex = String(ackPolicy.alarm_regex || '^ALARM:\\d+');
-  const bannerRegex = String(responsePatterns.startup_banner_regex || '^(?:grblhal|grbl)');
-  const statusRegex = String(responsePatterns.status_report_regex || '^<[^>]+>$');
-
-  controllerProfileDiagBox.className = 'diag-box';
-  controllerProfileDiagBox.textContent = [
-    `Active profile: ${profile.label || profile.id}`,
-    `Ack mode: ${ackMode} (default timeout: ${ackTimeout} ms)`,
-    `Ack regex: ok=${okRegex} | error=${errRegex} | alarm=${alarmRegex}`,
-    `Line parsing: banner=${bannerRegex} | status=${statusRegex}`
-  ].join('\n');
-}
-
-function buildControllerProfileDiagnosticsPayload() {
-  const profile = getActiveControllerProfile();
-  if (!profile) return 'No active controller profile.';
-
-  const ackMode = getControllerAckMode();
-  const ackTimeout = getControllerDefaultAckTimeoutMs(3500);
-  const ackPolicy = profile.ack_policy || {};
-  const responsePatterns = profile.response_patterns || {};
-  const sourceUrl = window.location.href;
-
-  return [
-    `Timestamp: ${new Date().toISOString()}`,
-    `Active profile id: ${profile.id || activeControllerProfileId || 'unknown'}`,
-    `Active profile label: ${profile.label || profile.id || 'unknown'}`,
-    `Ack mode: ${ackMode}`,
-    `Ack default timeout ms: ${ackTimeout}`,
-    `Ack regex ok: ${String(ackPolicy.ok_regex || '^ok$')}`,
-    `Ack regex error: ${String(ackPolicy.error_regex || '^error:\\d+')}`,
-    `Ack regex alarm: ${String(ackPolicy.alarm_regex || '^ALARM:\\d+')}`,
-    `Startup banner regex: ${String(responsePatterns.startup_banner_regex || '^(?:grblhal|grbl)')}`,
-    `Status report regex: ${String(responsePatterns.status_report_regex || '^<[^>]+>$')}`,
-    `Source URL: ${sourceUrl}`
-  ].join('\n');
-}
-
-async function copyControllerProfileDiagnostics() {
-  const payload = buildControllerProfileDiagnosticsPayload();
-  await copyTextPayload(payload, 'Profile diagnostics copied to clipboard', 'gcomposer-profile-diagnostics');
-}
-
 function setActiveControllerProfile(profileId, { persist = true, announce = false } = {}) {
   const nextId = controllerProfilesById[profileId] ? profileId : (controllerProfileRegistry?.default_profile_id || DEFAULT_CONTROLLER_PROFILE_ID);
   activeControllerProfileId = nextId;
@@ -8279,7 +8215,6 @@ function setActiveControllerProfile(profileId, { persist = true, announce = fals
   }
   if (persist) setStoredControllerProfileId(nextId);
   refreshControllerProfileHelp();
-  updateControllerProfileDiagnosticsUi();
   if (announce && activeControllerProfile) addLine(`Controller profile set: ${activeControllerProfile.label}`, 'sys');
 }
 
@@ -9428,11 +9363,6 @@ clearBtn.addEventListener('click', () => {
   scrollTerminalToBottom(true);
 });
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
-if (controllerProfileCopyBtn) {
-  controllerProfileCopyBtn.addEventListener('click', () => {
-    void copyControllerProfileDiagnostics();
-  });
-}
 copyLogPlainBtn.addEventListener('click', () => {
   if (!logLines.length) { addLine('No diagnostics log available yet', 'sys'); return; }
   void copyTextPayload(logLines.join('\n'), 'Diagnostics log copied to clipboard', 'gcomposer');
