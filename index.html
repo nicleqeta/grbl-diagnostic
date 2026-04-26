@@ -1567,7 +1567,6 @@
   <div class="logo">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" role="img" aria-label="gcomposer logo dark">
       <line x1="0" y1="10" x2="8" y2="10" stroke="#0F6E56" stroke-width="2" stroke-linecap="round"/>
-      <line x1="0" y1="20" x2="8" y2="20" stroke="#0F6E56" stroke-width="2" stroke-linecap="round"/>
       <line x1="0" y1="30" x2="8" y2="30" stroke="#0F6E56" stroke-width="2" stroke-linecap="round"/>
       <line x1="56" y1="10" x2="64" y2="10" stroke="#0F6E56" stroke-width="2" stroke-linecap="round"/>
       <line x1="56" y1="20" x2="64" y2="20" stroke="#0F6E56" stroke-width="2" stroke-linecap="round"/>
@@ -3864,10 +3863,29 @@ function basicValidateScript(source, paramNames = []) {
 
 function basicValidateDraft() {
   const variableValidation = basicValidateVariableDefinitions();
-  const scriptValidation = basicValidateScript(basicScriptInput.value, variableValidation.names);
+  const compiled = compileBasicProgramSource(basicScriptInput.value);
+  if (!compiled.success) {
+    return basicBuildValidationState(
+      [...variableValidation.errors, `Compile error: ${compiled.error}`],
+      [],
+      {},
+      []
+    );
+  }
+
+  const scriptValidation = basicValidateScript(compiled.effectiveScript, variableValidation.names);
+  const compileWarnings = (compiled.diagnostics || []).map(diag => {
+    if (typeof diag === 'string') return `Compiler: ${diag}`;
+    if (diag && typeof diag.message === 'string') return `Compiler: ${diag.message}`;
+    try {
+      return `Compiler: ${JSON.stringify(diag)}`;
+    } catch {
+      return 'Compiler: [unserializable diagnostic]';
+    }
+  });
   return basicBuildValidationState(
     [...variableValidation.errors, ...scriptValidation.errors],
-    [...scriptValidation.warnings],
+    [...scriptValidation.warnings, ...compileWarnings],
     scriptValidation.lines,
     scriptValidation.order
   );
@@ -4549,6 +4567,68 @@ function basicParseLines(source) {
   });
 
   return { lines, order, statementsByLine, sequence, lineStartIndex };
+}
+
+function compileHighLevelScript(source, profile = null) {
+  const rawSource = String(source || '');
+  const profileId = profile && typeof profile.id === 'string' ? profile.id : null;
+  // Stage-1 compiler is an explicit passthrough envelope so runtime behavior stays unchanged.
+  return {
+    success: true,
+    gcom: rawSource,
+    diagnostics: [],
+    compiler: {
+      stage: 'stage-1-passthrough',
+      profile_id: profileId
+    }
+  };
+}
+
+function compileBasicProgramSource(source, options = {}) {
+  const rawSource = String(source || '');
+  const useSubstitution = options && options.substitute === false ? false : true;
+  const scriptSource = useSubstitution ? substituteVars(rawSource, basicLoadedVars) : rawSource;
+  const profile = options && Object.prototype.hasOwnProperty.call(options, 'profile')
+    ? options.profile
+    : getActiveControllerProfile();
+
+  let compileResult;
+  try {
+    compileResult = compileHighLevelScript(scriptSource, profile);
+  } catch (error) {
+    return {
+      success: false,
+      scriptSource,
+      effectiveScript: '',
+      diagnostics: [],
+      error: error && error.message ? error.message : String(error)
+    };
+  }
+
+  if (!compileResult || compileResult.success === false || typeof compileResult.gcom !== 'string') {
+    return {
+      success: false,
+      scriptSource,
+      effectiveScript: '',
+      diagnostics: Array.isArray(compileResult?.diagnostics) ? compileResult.diagnostics : [],
+      error: 'compiler did not return executable GCOM output'
+    };
+  }
+
+  return {
+    success: true,
+    scriptSource,
+    effectiveScript: compileResult.gcom,
+    diagnostics: Array.isArray(compileResult.diagnostics) ? compileResult.diagnostics : [],
+    compileResult
+  };
+}
+
+function formatCompileSummary(compiled) {
+  const stage = String(compiled?.compileResult?.compiler?.stage || 'unknown');
+  const profileId = String(compiled?.compileResult?.compiler?.profile_id || 'none');
+  const diagnosticCount = Array.isArray(compiled?.diagnostics) ? compiled.diagnostics.length : 0;
+  return `stage=${stage}, profile=${profileId}, diagnostics=${diagnosticCount}`;
 }
 
 // ─── BASIC Expression Evaluator (no eval) ───────────────────────────────────
@@ -6171,8 +6251,8 @@ function previewEvalExpr(expr, vars, timeline, sourceLine, stmt) {
   return basicEvalExpr(rewritten, vars);
 }
 
-function buildBasicPreviewTimeline(source) {
-  const scriptSource = substituteVars(source, basicLoadedVars);
+function buildBasicPreviewTimeline(source, options = {}) {
+  const scriptSource = options && options.skipSubstitute ? String(source || '') : substituteVars(source, basicLoadedVars);
   const timeline = createBasicPreviewTimeline(scriptSource);
   const { sequence, lineStartIndex } = basicParseLines(scriptSource);
   const motionState = createPreviewMotionState();
@@ -6660,26 +6740,48 @@ function openBasicPreview() {
     return;
   }
 
-  latestPreviewTimeline = buildBasicPreviewTimeline(src);
+  const compiled = compileBasicProgramSource(src);
+  if (!compiled.success) {
+    addLine(`Cannot preview: compile error: ${compiled.error}`, 'err');
+    return;
+  }
+  const compileSummary = formatCompileSummary(compiled);
+
+  latestPreviewTimeline = buildBasicPreviewTimeline(compiled.effectiveScript, { skipSubstitute: true });
   clearPreviewWaitingState();
   const previewWindow = ensurePreviewWindow({ compact: false });
   if (!previewWindow) return;
   previewWindow.focus();
   postLatestPreviewTimeline();
-  addLine(`Preview compiled: ${latestPreviewTimeline.commands.length} command(s), ${latestPreviewTimeline.segments.length} segment(s)`, 'sys');
+  addLine(`Preview compiled: ${latestPreviewTimeline.commands.length} command(s), ${latestPreviewTimeline.segments.length} segment(s) [${compileSummary}]`, 'sys');
 }
 
 async function runBasicScript(source) {
   if (basicRunning) return;
   if (gcodeRunning) { addLine('Cannot run GCOM script while G-code queue is running', 'err'); return; }
-  const scriptSource = substituteVars(source, basicLoadedVars);
+  const compiled = compileBasicProgramSource(source);
+
+  // TODO(hl-compiler-stage-1): Compile high-level script to line-numbered GCOM
+  // before parsing, while preserving the existing GCOM runtime execution model.
+  // The compile step should resolve active base-profile behavior at compile time.
+  if (!compiled.success) {
+    basicSetStatus(`Compile error: ${compiled.error}`, true);
+    return;
+  }
+  const effectiveScript = compiled.effectiveScript;
+  const compileSummary = formatCompileSummary(compiled);
+
   const configText = buildBasicPreviewText(false);
+  const confirmText = [
+    configText || 'Run the loaded GCOM script on your connected machine?',
+    `Compile target: ${compileSummary}`
+  ].join('\n\n');
   const configVars = basicLoadedVars || {};
 
   // Open benchmark preview window now, while still in the synchronous user-gesture context
   // (popup blockers reject window.open() from async/worker callbacks, so this must happen
   // before the first await).  Only open if the script actually contains BENCH markers.
-  if (/\bBENCH\s+(START|END)\b/i.test(scriptSource)) {
+  if (/\bBENCH\s+(START|END)\b/i.test(effectiveScript)) {
     const previewTitle = buildBasicDisplayName(getBasicScriptMeta()) || 'BASIC Benchmark';
     ensurePreviewWindow({ compact: true });
     postPreviewWaitingState({
@@ -6689,13 +6791,13 @@ async function runBasicScript(source) {
   }
 
   // Show confirm dialog
-  const confirmed = await basicShowConfirm(configText || 'Run the loaded GCOM script on your connected machine?', configVars);
+  const confirmed = await basicShowConfirm(confirmText, configVars);
   if (!confirmed) {
     addLine('Script run cancelled', 'sys');
     return;
   }
 
-  if (!isTransportConnected() && !/^\s*\d+\s+CONNECT\b/im.test(scriptSource)) {
+  if (!isTransportConnected() && !/^\s*\d+\s+CONNECT\b/im.test(effectiveScript)) {
     addLine('No active connection. Connect to your machine first, or add a CONNECT statement to your script.', 'err');
     return;
   }
@@ -6714,9 +6816,10 @@ async function runBasicScript(source) {
   refreshBasicBenchmarkPreview(true);
   updateBasicControlUi();
   renderGcodeQueue();
-  addLine('--- GCOM script started ---', 'basic');
+  addLine(`--- GCOM script started [${compileSummary}] ---`, 'basic');
 
-  const { sequence, lineStartIndex } = basicParseLines(scriptSource);
+  // TODO(hl-compiler-stage-2): Feed compiled GCOM into parser once compiler is wired.
+  const { sequence, lineStartIndex } = basicParseLines(effectiveScript);
   let pc = 0; // index into flattened statement sequence
   let activeLineNum = null;
   let stopLogged = false;
