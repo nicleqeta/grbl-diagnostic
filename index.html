@@ -1398,6 +1398,10 @@
     #ai-sidebar-toggle-btn { display: none; }
   }
 </style>
+
+<!-- Compiler modules: Tier 1 opcodes, IR, and compilation pipeline -->
+<script src="opcode-ir.js"></script>
+<script src="compiler-pipeline.js"></script>
 </head>
 <body>
 <!--
@@ -4572,7 +4576,25 @@ function basicParseLines(source) {
 function compileHighLevelScript(source, profile = null) {
   const rawSource = String(source || '');
   const profileId = profile && typeof profile.id === 'string' ? profile.id : null;
-  // Stage-1 compiler is an explicit passthrough envelope so runtime behavior stays unchanged.
+  
+  // Use real pipeline if compileWithRealPipeline is available; otherwise pass-through
+  if (typeof compileWithRealPipeline === 'function') {
+    const pipelineResult = compileWithRealPipeline(rawSource, profile);
+    return {
+      success: pipelineResult.success,
+      gcom: pipelineResult.gcom,
+      ir: pipelineResult.ir,
+      diagnostics: pipelineResult.diagnostics,
+      compiler: {
+        stage: pipelineResult.metadata.stage,
+        profile_id: profileId,
+        tier1_opcodes_encountered: pipelineResult.metadata.tier1_opcodes_encountered,
+        ir_nodes_generated: pipelineResult.metadata.ir_nodes_generated
+      }
+    };
+  }
+  
+  // Fallback: explicit passthrough envelope so runtime behavior stays unchanged
   return {
     success: true,
     gcom: rawSource,
