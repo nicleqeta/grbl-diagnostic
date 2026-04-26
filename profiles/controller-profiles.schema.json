@@ -1,0 +1,443 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gcomposer.app/schemas/controller-profiles.schema.json",
+  "title": "GCOM Controller Profile Registry",
+  "description": "Strict profile registry for controller flavor aware GCOM/GCode generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "registry_id",
+    "default_profile_id",
+    "profiles"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "registry_id": {
+      "type": "string",
+      "const": "gcomposer-controller-profiles"
+    },
+    "default_profile_id": {
+      "type": "string",
+      "enum": [
+        "grbl-vanilla",
+        "fluidnc"
+      ]
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grbl-base",
+        "grbl-vanilla",
+        "fluidnc"
+      ],
+      "properties": {
+        "grbl-base": {
+          "$ref": "#/$defs/grblBaseProfile"
+        },
+        "grbl-vanilla": {
+          "$ref": "#/$defs/grblVanillaProfile"
+        },
+        "fluidnc": {
+          "$ref": "#/$defs/fluidNcProfile"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "regexPattern": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aiGuidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "preferred_style",
+        "avoid",
+        "compatibility_policy"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preferred_style": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "avoid": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "compatibility_policy": {
+          "type": "string",
+          "enum": [
+            "allow_warn_block"
+          ]
+        }
+      }
+    },
+    "boilerplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "description",
+        "gcom"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gcom": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary",
+        "supports_usb_serial",
+        "supports_websocket"
+      ],
+      "properties": {
+        "primary": {
+          "type": "string",
+          "enum": [
+            "serial-ascii"
+          ]
+        },
+        "supports_usb_serial": {
+          "type": "boolean"
+        },
+        "supports_websocket": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ackPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "default_timeout_ms",
+        "ok_regex",
+        "error_regex",
+        "alarm_regex"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "required",
+            "optional",
+            "none"
+          ]
+        },
+        "default_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "ok_regex": {
+          "$ref": "#/$defs/regexPattern"
+        },
+        "error_regex": {
+          "$ref": "#/$defs/regexPattern"
+        },
+        "alarm_regex": {
+          "$ref": "#/$defs/regexPattern"
+        }
+      }
+    },
+    "realtimeCommands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "feed_hold",
+        "cycle_start",
+        "soft_reset"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "?"
+        },
+        "feed_hold": {
+          "type": "string",
+          "const": "!"
+        },
+        "cycle_start": {
+          "type": "string",
+          "const": "~"
+        },
+        "soft_reset": {
+          "type": "string",
+          "pattern": "^(\\^X|\\\\x18)$"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gcode_core",
+        "grbl_system",
+        "realtime",
+        "notes"
+      ],
+      "properties": {
+        "gcode_core": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[GMT$][A-Z0-9.]*$"
+          }
+        },
+        "grbl_system": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^\\$[A-Z0-9#/.*=]+$"
+          }
+        },
+        "realtime": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(\\?|!|~|\\^X|0x[0-9A-Fa-f]{2})$"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "compatibilityRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match",
+        "decision",
+        "reason_code",
+        "message"
+      ],
+      "properties": {
+        "match": {
+          "$ref": "#/$defs/regexPattern"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "warn",
+            "block"
+          ]
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "profileCommon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "controller_family",
+        "status",
+        "inherits",
+        "transport",
+        "ack_policy",
+        "response_patterns",
+        "realtime_commands",
+        "capabilities",
+        "compatibility_rules",
+        "boilerplate",
+        "ai_guidance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "controller_family": {
+          "type": "string",
+          "enum": [
+            "grbl"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stable",
+            "experimental",
+            "planned"
+          ]
+        },
+        "inherits": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transport": {
+          "$ref": "#/$defs/transport"
+        },
+        "ack_policy": {
+          "$ref": "#/$defs/ackPolicy"
+        },
+        "response_patterns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "startup_banner_regex",
+            "status_report_regex",
+            "message_prefixes"
+          ],
+          "properties": {
+            "startup_banner_regex": {
+              "$ref": "#/$defs/regexPattern"
+            },
+            "status_report_regex": {
+              "$ref": "#/$defs/regexPattern"
+            },
+            "message_prefixes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "realtime_commands": {
+          "$ref": "#/$defs/realtimeCommands"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "compatibility_rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/compatibilityRule"
+          }
+        },
+        "boilerplate": {
+          "$ref": "#/$defs/boilerplate"
+        },
+        "ai_guidance": {
+          "$ref": "#/$defs/aiGuidance"
+        }
+      }
+    },
+    "grblBaseProfile": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/profileCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "const": "grbl-base"
+            },
+            "label": {
+              "const": "GRBL Base"
+            },
+            "status": {
+              "const": "stable"
+            },
+            "inherits": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "grblVanillaProfile": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/profileCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "const": "grbl-vanilla"
+            },
+            "label": {
+              "const": "Vanilla GRBL"
+            },
+            "status": {
+              "const": "stable"
+            },
+            "inherits": {
+              "const": "grbl-base"
+            }
+          }
+        }
+      ]
+    },
+    "fluidNcProfile": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/profileCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "const": "fluidnc"
+            },
+            "label": {
+              "const": "FluidNC"
+            },
+            "status": {
+              "const": "stable"
+            },
+            "inherits": {
+              "const": "grbl-base"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

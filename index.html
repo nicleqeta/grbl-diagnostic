@@ -1607,6 +1607,14 @@
 
     <div class="section">
       <div class="section-label">Connection</div>
+      <div class="section-label" style="margin-bottom:6px;">Controller Flavor</div>
+      <select id="controller-profile-select" title="Select the active controller compatibility profile.">
+        <option value="grbl-vanilla">Vanilla GRBL</option>
+        <option value="fluidnc">FluidNC</option>
+      </select>
+      <div class="help-text" id="controller-profile-help" style="margin-top:-2px; margin-bottom:8px;">Profile controls compatibility checks and starter defaults. Vanilla GRBL is selected by default.</div>
+      <div class="diag-box muted" id="controller-profile-diag-box" style="margin-top:0; margin-bottom:8px;">Profile diagnostics will appear after profile registry load.</div>
+      <button class="btn" id="controller-profile-copy-btn" type="button" style="margin-bottom:8px;">Copy Profile Diagnostics</button>
       <div class="transport-toggle">
         <button class="transport-toggle-btn active" id="transport-serial-btn" type="button">USB / Serial</button>
         <button class="transport-toggle-btn" id="transport-ws-btn" type="button">WebSocket</button>
@@ -1689,6 +1697,15 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         <span class="section-toggle-icon">&#9656;</span>
       </summary>
       <div class="section-content">
+        <div class="section-label" style="margin-bottom:6px;">Starter Boilerplate</div>
+        <div class="mini-grid" style="margin-bottom:8px;">
+          <select id="gcom-starter-select" title="Pick a starter script and profile.">
+            <option value="blank">Blank GCOM</option>
+            <option value="profile:grbl-vanilla">Vanilla GRBL Starter</option>
+            <option value="profile:fluidnc">FluidNC Starter</option>
+          </select>
+          <button class="btn" id="apply-gcom-starter-btn" type="button">Apply Starter</button>
+        </div>
         <div class="basic-meta-grid three-up">
             <input type="text" id="basic-title-input" placeholder="Script title, e.g. Ramp Test" title="Required title for the saved script and share preview.">
             <input type="text" id="basic-version-input" placeholder="Version" title="Optional version such as 1.2.">
@@ -2001,6 +2018,10 @@ const builderNameInput = document.getElementById('builder-name-input');
 const builderCommandsInput = document.getElementById('builder-commands-input');
 const copyLinkBtn  = document.getElementById('copy-link-btn');
 const resetAdvancedBtn = document.getElementById('reset-advanced-btn');
+const controllerProfileSelect = document.getElementById('controller-profile-select');
+const controllerProfileHelp = document.getElementById('controller-profile-help');
+const controllerProfileDiagBox = document.getElementById('controller-profile-diag-box');
+const controllerProfileCopyBtn = document.getElementById('controller-profile-copy-btn');
 const cmdBtns      = document.querySelectorAll('.cmd-btn');
 const terminalRealtimeBtns = document.querySelectorAll('.term-rt-btn');
 const noSerialSec  = document.getElementById('no-serial-section');
@@ -2028,6 +2049,8 @@ const basicImportFileInput = document.getElementById('basic-import-file-input');
 const basicSaveBtn     = document.getElementById('basic-save-btn');
 const basicCopyShareBtn= document.getElementById('basic-copy-share-btn');
 const basicCopyForumBtn= document.getElementById('basic-copy-forum-btn');
+const gcomStarterSelect = document.getElementById('gcom-starter-select');
+const applyGcomStarterBtn = document.getElementById('apply-gcom-starter-btn');
 const basicPreviewBtn  = document.getElementById('basic-preview-btn');
 const basicRunBtn      = document.getElementById('basic-run-btn');
 const basicStopBtn     = document.getElementById('basic-stop-btn');
@@ -2199,6 +2222,10 @@ function _flushTerminalDivs() {
 const APP_TITLE = 'gcomposer';
 const DISCOURSE_TITLE = 'gcomposer / GRBL serial console Log';
 const TERMINAL_RENDER_MODE_KEY = 'gcomposer-terminal-render-mode';
+const CONTROLLER_PROFILE_STORAGE_KEY = 'gcomposer-controller-profile-id';
+const CONTROLLER_PROFILES_URL = './profiles/controller-profiles.v1.json';
+const CONTROLLER_PROFILE_SCHEMA_VERSION = '1.0.0';
+const DEFAULT_CONTROLLER_PROFILE_ID = 'grbl-vanilla';
 const TERMINAL_ARROW_TO_TYPE = new Map([
   ['\u2192', 'tx'],
   ['\u2190', 'rx'],
@@ -2212,7 +2239,7 @@ const SIDEBAR_MAX_WIDTH = 680;
 const RESERVED_SCRIPT_QUERY_KEYS = new Set([
   'gcom', 'preset', 'cmd', 'cmds', 'name', 'baud', 'dtr', 'observe', 'wait',
   'delay', 'banner_timeout', 'banner_wait', 'show_req_resp', 'source', 'scrape',
-  'post', 'gcom_post', 'basic_post'
+  'post', 'gcom_post', 'basic_post', 'profile', 'starter'
 ]);
 
 const TRANSPORT_STATE_META = {
@@ -2254,6 +2281,73 @@ let readySignalAt = null;
 let startupBannerLine = null;
 let sidebarResizeState = null;
 let startupScriptRequest = null;
+let controllerProfileRegistry = null;
+let controllerProfilesById = {};
+let activeControllerProfileId = DEFAULT_CONTROLLER_PROFILE_ID;
+let activeControllerProfile = null;
+
+const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
+  schema_version: CONTROLLER_PROFILE_SCHEMA_VERSION,
+  registry_id: 'gcomposer-controller-profiles',
+  default_profile_id: DEFAULT_CONTROLLER_PROFILE_ID,
+  profiles: {
+    'grbl-base': {
+      id: 'grbl-base',
+      label: 'GRBL Base',
+      inherits: null,
+      compatibility_rules: [
+        {
+          match: '^G41|^G42',
+          decision: 'block',
+          reason_code: 'CUTTER_COMP_UNSUPPORTED',
+          message: 'GRBL-family profiles treat G41/G42 as unsupported.'
+        }
+      ],
+      boilerplate: {
+        title: 'GRBL Base Diagnostic',
+        description: 'Baseline serial checks and status query.',
+        gcom: '10 PRINT "GRBL base starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$$" WAIT FOR OK\n40 SEND "?"\n50 END'
+      }
+    },
+    'grbl-vanilla': {
+      id: 'grbl-vanilla',
+      label: 'Vanilla GRBL',
+      inherits: 'grbl-base',
+      compatibility_rules: [
+        {
+          match: '^\\$Config/',
+          decision: 'block',
+          reason_code: 'FLUIDNC_ONLY_COMMAND',
+          message: 'This command is specific to FluidNC.'
+        }
+      ],
+      boilerplate: {
+        title: 'Vanilla GRBL Starter',
+        description: 'Minimal setup sequence for common GRBL 1.1 machines.',
+        gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$G" WAIT FOR OK\n40 SEND "G90" WAIT FOR OK\n50 SEND "G21" WAIT FOR OK\n60 SEND "?"\n70 END'
+      }
+    },
+    fluidnc: {
+      id: 'fluidnc',
+      label: 'FluidNC',
+      inherits: 'grbl-base',
+      compatibility_rules: [
+        {
+          match: '^\\$Config/Filename=',
+          decision: 'allow',
+          reason_code: 'FLUIDNC_CONFIG_FILENAME',
+          message: 'FluidNC config filename command is supported.'
+        }
+      ],
+      boilerplate: {
+        title: 'FluidNC Starter',
+        description: 'Fast sanity sequence for FluidNC with GRBL-compatible sender flow.',
+        gcom: '10 PRINT "FluidNC starter"\n20 SEND "$I" WAIT FOR OK\n30 SEND "$G" WAIT FOR OK\n40 SEND "?"\n50 SEND "$Config/Filename=config.yaml" WAIT FOR OK\n60 END'
+      }
+    }
+  }
+});
+
 let currentRun = {
   name: 'manual', description: 'Manual connect', source: 'manual',
   baud: parseInt(baudSelect.value, 10), dtrMode: 'default',
@@ -2387,12 +2481,13 @@ function basicResolveBufferedIntentMode() {
 
 function handleBasicBufferedResponseLine(line) {
   if (!basicBufferedStreamState.pendingBytes.length) return;
-  if (/^ok$/i.test(line)) {
+  const responseClass = classifyControllerResponseLine(line);
+  if (responseClass === 'ok') {
     basicBufferedStreamState.inFlightBytes -= basicBufferedStreamState.pendingBytes.shift() || 0;
     if (basicBufferedStreamState.inFlightBytes < 0) basicBufferedStreamState.inFlightBytes = 0;
     return;
   }
-  if (/^error:\d+/i.test(line) || /ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) {
+  if (responseClass === 'error' || responseClass === 'alarm') {
     basicBufferedStreamState.lastError = String(line || 'Buffered send failed');
     basicBufferedStreamState.pendingBytes.length = 0;
     basicBufferedStreamState.inFlightBytes = 0;
@@ -5154,8 +5249,8 @@ async function basicReadGrbl(settingStr, modeLabel = 'READ') {
         basicGrblSettings[`$${m[1]}`] = value;
         basicSetGcodeParam(m[1], value);
       }
-      // When we see ok, the $$ dump is complete - resolve with the value
-      if (/^ok$/i.test(line) && !done) {
+      // When ack arrives, the $$ dump is complete; resolve with the value.
+      if (classifyControllerResponseLine(line) === 'ok' && !done) {
         done = true;
         incomingLineInterceptor = null;
         const val = basicGrblSettings[setting];
@@ -7529,13 +7624,14 @@ async function gcodeRunJobFast(job) {
       if (cmdIdx >= job.lines.length && pending.length === 0) done({ ok: true });
     }
     incomingLineInterceptor = function(line) {
-      if (/^ok$/i.test(line)) {
+      const responseClass = classifyControllerResponseLine(line);
+      if (responseClass === 'ok') {
         if (pending.length > 0) {
           inFlight -= pending.shift();
           if (inFlight < 0) inFlight = 0;
         }
         scheduleNext();
-      } else if (/^error:\d+/i.test(line) || /ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) {
+      } else if (responseClass === 'error' || responseClass === 'alarm') {
         done({ ok: false, error: line });
       }
     };
@@ -7671,6 +7767,20 @@ basicStopBtn.addEventListener('click', () => {
   void basicEmergencyStopFromUi();
 });
 
+if (controllerProfileSelect) {
+  controllerProfileSelect.addEventListener('change', () => {
+    setActiveControllerProfile(controllerProfileSelect.value, { persist: true, announce: true });
+  });
+}
+
+if (applyGcomStarterBtn) {
+  applyGcomStarterBtn.addEventListener('click', () => {
+    applySelectedGcomStarter();
+  });
+}
+
+updateControllerProfileDiagnosticsUi();
+
 // Enable/disable run button based on connection and script content
 basicScriptInput.addEventListener('input', () => {
   markBasicScriptStructuralDirty();
@@ -7709,7 +7819,7 @@ let incomingLineInterceptor = null;
 // EXISTING SERIAL / DIAGNOSTIC CODE
 
 function looksLikeGrblBanner(line) {
-  return /^(?:grblhal\b|grbl\b)/i.test(String(line || '').trim());
+  return getControllerStartupBannerRegex().test(String(line || '').trim());
 }
 
 function looksLikeReadyLine(line) {
@@ -7877,6 +7987,394 @@ function normalizeCommandInput(raw) {
   const needsLineEnding = payload.length === 0 || ![0x0A, 0x0D].includes(payload[payload.length - 1]);
   const finalPayload = needsLineEnding ? Uint8Array.from([...payload, 0x0A]) : payload;
   return { input: text, send: text.endsWith('\n') ? text : `${text}\n`, payload: finalPayload, display: text, waitForAck: true };
+}
+
+function deepCloneJsonLike(value) {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map(item => deepCloneJsonLike(item));
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, entry] of Object.entries(value)) out[key] = deepCloneJsonLike(entry);
+  return out;
+}
+
+function mergeProfileWithBase(baseProfile, profile) {
+  const merged = deepCloneJsonLike(baseProfile || {});
+  const source = deepCloneJsonLike(profile || {});
+  for (const [key, value] of Object.entries(source)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && merged[key] && typeof merged[key] === 'object' && !Array.isArray(merged[key])) {
+      merged[key] = { ...merged[key], ...value };
+      continue;
+    }
+    merged[key] = value;
+  }
+  return merged;
+}
+
+function isValidControllerRegistryShape(registry) {
+  if (!registry || typeof registry !== 'object') return false;
+  if (registry.schema_version !== CONTROLLER_PROFILE_SCHEMA_VERSION) return false;
+  if (registry.registry_id !== 'gcomposer-controller-profiles') return false;
+  if (!registry.profiles || typeof registry.profiles !== 'object') return false;
+  return Boolean(registry.profiles['grbl-base'] && registry.profiles['grbl-vanilla'] && registry.profiles.fluidnc);
+}
+
+function buildResolvedControllerProfiles(registry) {
+  const sourceProfiles = registry?.profiles || {};
+  const resolved = {};
+  const base = sourceProfiles['grbl-base'] || {};
+  for (const [profileId, profile] of Object.entries(sourceProfiles)) {
+    resolved[profileId] = profileId === 'grbl-base'
+      ? deepCloneJsonLike(profile)
+      : mergeProfileWithBase(base, profile);
+    resolved[profileId].id = profileId;
+  }
+  return resolved;
+}
+
+function getStoredControllerProfileId() {
+  try {
+    return window.localStorage.getItem(CONTROLLER_PROFILE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredControllerProfileId(profileId) {
+  try {
+    window.localStorage.setItem(CONTROLLER_PROFILE_STORAGE_KEY, profileId);
+  } catch {}
+}
+
+function getActiveControllerProfile() {
+  return activeControllerProfile || controllerProfilesById[DEFAULT_CONTROLLER_PROFILE_ID] || null;
+}
+
+function refreshControllerProfileHelp() {
+  if (!controllerProfileHelp) return;
+  const profile = getActiveControllerProfile();
+  if (!profile) {
+    controllerProfileHelp.textContent = 'Profile controls compatibility checks and starter defaults.';
+    return;
+  }
+  const summary = (profile.ai_guidance && profile.ai_guidance.summary) || 'Compatibility checks and starter defaults are active.';
+  controllerProfileHelp.textContent = `${profile.label}: ${summary}`;
+}
+
+function updateControllerProfileDiagnosticsUi() {
+  if (!controllerProfileDiagBox) return;
+  const profile = getActiveControllerProfile();
+  if (!profile) {
+    controllerProfileDiagBox.className = 'diag-box muted';
+    controllerProfileDiagBox.textContent = 'No active controller profile.';
+    return;
+  }
+
+  const ackMode = getControllerAckMode();
+  const ackTimeout = getControllerDefaultAckTimeoutMs(3500);
+  const ackPolicy = profile.ack_policy || {};
+  const responsePatterns = profile.response_patterns || {};
+  const okRegex = String(ackPolicy.ok_regex || '^ok$');
+  const errRegex = String(ackPolicy.error_regex || '^error:\\d+');
+  const alarmRegex = String(ackPolicy.alarm_regex || '^ALARM:\\d+');
+  const bannerRegex = String(responsePatterns.startup_banner_regex || '^(?:grblhal|grbl)');
+  const statusRegex = String(responsePatterns.status_report_regex || '^<[^>]+>$');
+
+  controllerProfileDiagBox.className = 'diag-box';
+  controllerProfileDiagBox.textContent = [
+    `Active profile: ${profile.label || profile.id}`,
+    `Ack mode: ${ackMode} (default timeout: ${ackTimeout} ms)`,
+    `Ack regex: ok=${okRegex} | error=${errRegex} | alarm=${alarmRegex}`,
+    `Line parsing: banner=${bannerRegex} | status=${statusRegex}`
+  ].join('\n');
+}
+
+function buildControllerProfileDiagnosticsPayload() {
+  const profile = getActiveControllerProfile();
+  if (!profile) return 'No active controller profile.';
+
+  const ackMode = getControllerAckMode();
+  const ackTimeout = getControllerDefaultAckTimeoutMs(3500);
+  const ackPolicy = profile.ack_policy || {};
+  const responsePatterns = profile.response_patterns || {};
+  const sourceUrl = window.location.href;
+
+  return [
+    `Timestamp: ${new Date().toISOString()}`,
+    `Active profile id: ${profile.id || activeControllerProfileId || 'unknown'}`,
+    `Active profile label: ${profile.label || profile.id || 'unknown'}`,
+    `Ack mode: ${ackMode}`,
+    `Ack default timeout ms: ${ackTimeout}`,
+    `Ack regex ok: ${String(ackPolicy.ok_regex || '^ok$')}`,
+    `Ack regex error: ${String(ackPolicy.error_regex || '^error:\\d+')}`,
+    `Ack regex alarm: ${String(ackPolicy.alarm_regex || '^ALARM:\\d+')}`,
+    `Startup banner regex: ${String(responsePatterns.startup_banner_regex || '^(?:grblhal|grbl)')}`,
+    `Status report regex: ${String(responsePatterns.status_report_regex || '^<[^>]+>$')}`,
+    `Source URL: ${sourceUrl}`
+  ].join('\n');
+}
+
+async function copyControllerProfileDiagnostics() {
+  const payload = buildControllerProfileDiagnosticsPayload();
+  await copyTextPayload(payload, 'Profile diagnostics copied to clipboard', 'gcomposer-profile-diagnostics');
+}
+
+function setActiveControllerProfile(profileId, { persist = true, announce = false } = {}) {
+  const nextId = controllerProfilesById[profileId] ? profileId : (controllerProfileRegistry?.default_profile_id || DEFAULT_CONTROLLER_PROFILE_ID);
+  activeControllerProfileId = nextId;
+  activeControllerProfile = controllerProfilesById[nextId] || null;
+  if (controllerProfileSelect && controllerProfileSelect.value !== nextId) {
+    controllerProfileSelect.value = nextId;
+  }
+  if (persist) setStoredControllerProfileId(nextId);
+  refreshControllerProfileHelp();
+  updateControllerProfileDiagnosticsUi();
+  if (announce && activeControllerProfile) addLine(`Controller profile set: ${activeControllerProfile.label}`, 'sys');
+}
+
+function rebuildControllerProfileSelect() {
+  if (!controllerProfileSelect) return;
+  const entries = Object.entries(controllerProfilesById)
+    .filter(([profileId]) => profileId !== 'grbl-base')
+    .sort((a, b) => String(a[1].label || a[0]).localeCompare(String(b[1].label || b[0])));
+  controllerProfileSelect.innerHTML = '';
+  for (const [profileId, profile] of entries) {
+    const option = document.createElement('option');
+    option.value = profileId;
+    option.textContent = profile.label || profileId;
+    controllerProfileSelect.appendChild(option);
+  }
+}
+
+function rebuildStarterSelect() {
+  if (!gcomStarterSelect) return;
+  gcomStarterSelect.innerHTML = '';
+
+  const blank = document.createElement('option');
+  blank.value = 'blank';
+  blank.textContent = 'Blank GCOM';
+  gcomStarterSelect.appendChild(blank);
+
+  const entries = Object.entries(controllerProfilesById)
+    .filter(([profileId, profile]) => profileId !== 'grbl-base' && profile?.boilerplate?.gcom)
+    .sort((a, b) => String(a[1].label || a[0]).localeCompare(String(b[1].label || b[0])));
+  for (const [profileId, profile] of entries) {
+    const option = document.createElement('option');
+    option.value = `profile:${profileId}`;
+    option.textContent = `${profile.label || profileId} Starter`;
+    gcomStarterSelect.appendChild(option);
+  }
+}
+
+function applySelectedGcomStarter() {
+  if (!gcomStarterSelect) return;
+  const selected = String(gcomStarterSelect.value || 'blank');
+  if (selected === 'blank') {
+    basicScriptInput.value = '';
+    if (!basicTitleInput.value.trim()) basicTitleInput.value = 'Untitled GCOM Script';
+    if (!basicDescriptionInput.value.trim()) basicDescriptionInput.value = 'Fill in your script steps and variables.';
+    autoResizeBasicDescription();
+    markBasicScriptStructuralDirty();
+    if (basicSection) basicSection.open = true;
+    addLine('Loaded blank GCOM starter', 'sys');
+    return;
+  }
+
+  const profileId = selected.startsWith('profile:') ? selected.slice(8) : selected;
+  const profile = controllerProfilesById[profileId];
+  if (!profile) {
+    addLine(`Starter failed: unknown profile ${profileId}`, 'err');
+    return;
+  }
+
+  setActiveControllerProfile(profileId, { persist: true, announce: true });
+  if (profile.boilerplate && typeof profile.boilerplate.gcom === 'string') {
+    basicScriptInput.value = profile.boilerplate.gcom;
+  }
+  if (profile.boilerplate && typeof profile.boilerplate.title === 'string' && profile.boilerplate.title.trim()) {
+    basicTitleInput.value = profile.boilerplate.title;
+  }
+  if (profile.boilerplate && typeof profile.boilerplate.description === 'string' && profile.boilerplate.description.trim()) {
+    basicDescriptionInput.value = profile.boilerplate.description;
+  }
+  autoResizeBasicDescription();
+  markBasicScriptStructuralDirty();
+  if (basicSection) basicSection.open = true;
+  addLine(`Loaded ${profile.label || profileId} starter boilerplate`, 'sys');
+}
+
+async function loadControllerProfilesRegistry() {
+  let registry = null;
+  const queryParams = new URLSearchParams(window.location.search);
+  try {
+    const response = await fetch(CONTROLLER_PROFILES_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    registry = await response.json();
+  } catch (error) {
+    addLine(`Controller profile registry fetch failed, using fallback: ${error.message}`, 'sys');
+  }
+
+  if (!isValidControllerRegistryShape(registry)) {
+    if (registry) addLine('Controller profile registry is invalid; fallback profiles loaded', 'err');
+    registry = deepCloneJsonLike(BUILTIN_CONTROLLER_PROFILE_FALLBACK);
+  }
+
+  controllerProfileRegistry = registry;
+  controllerProfilesById = buildResolvedControllerProfiles(registry);
+  rebuildControllerProfileSelect();
+  rebuildStarterSelect();
+
+  const requestedProfile = queryParams.get('profile');
+  const storedProfile = getStoredControllerProfileId();
+  const preferred = requestedProfile || storedProfile || registry.default_profile_id || DEFAULT_CONTROLLER_PROFILE_ID;
+  setActiveControllerProfile(preferred, { persist: true, announce: false });
+
+  const requestedStarter = queryParams.get('starter');
+  if (requestedStarter && !startupScriptRequest && gcomStarterSelect) {
+    const requestedValue = requestedStarter.startsWith('profile:') || requestedStarter === 'blank'
+      ? requestedStarter
+      : `profile:${requestedStarter}`;
+    const optionExists = Array.from(gcomStarterSelect.options).some(option => option.value === requestedValue);
+    if (optionExists) {
+      gcomStarterSelect.value = requestedValue;
+      applySelectedGcomStarter();
+    }
+  }
+}
+
+function evaluateControllerProfileCompatibility(command) {
+  const profile = getActiveControllerProfile();
+  if (!profile) return { decision: 'allow' };
+  if (!command || command.kind === 'action') return { decision: 'allow' };
+  if (!command.waitForAck) return { decision: 'allow' };
+
+  const text = String(command.display || command.input || '').trim();
+  if (!text) return { decision: 'allow' };
+
+  const rules = Array.isArray(profile.compatibility_rules) ? profile.compatibility_rules : [];
+  for (const rule of rules) {
+    if (!rule || typeof rule.match !== 'string' || !rule.match.trim()) continue;
+    try {
+      const pattern = new RegExp(rule.match, 'i');
+      if (!pattern.test(text)) continue;
+      return {
+        decision: rule.decision || 'allow',
+        reason_code: rule.reason_code || 'COMPATIBILITY_RULE',
+        message: rule.message || 'Compatibility rule matched.'
+      };
+    } catch {}
+  }
+  return { decision: 'allow' };
+}
+
+function enforceControllerProfileCompatibility(command) {
+  const profile = getActiveControllerProfile();
+  const result = evaluateControllerProfileCompatibility(command);
+  if (!profile) return { ok: true, result };
+
+  if (result.decision === 'warn') {
+    addLine(`[${profile.id}] compatibility warning: ${result.message} (${result.reason_code})`, 'sys');
+    return { ok: true, result };
+  }
+
+  if (result.decision === 'block') {
+    const display = String(command?.display || command?.input || '(unknown command)');
+    const line = `[${profile.id}] blocked: ${display} - ${result.message} (${result.reason_code})`;
+    addLine(line, 'err');
+    return { ok: false, result, line };
+  }
+
+  return { ok: true, result };
+}
+
+function parseProfileRegex(regexSource, fallbackPattern) {
+  if (typeof regexSource === 'string' && regexSource.trim()) {
+    try {
+      return new RegExp(regexSource, 'i');
+    } catch {}
+  }
+  return fallbackPattern;
+}
+
+function getControllerAckRegexes() {
+  const profile = getActiveControllerProfile();
+  const ackPolicy = profile?.ack_policy || {};
+  return {
+    ok: parseProfileRegex(ackPolicy.ok_regex, /^ok$/i),
+    error: parseProfileRegex(ackPolicy.error_regex, /^error:\d+/i),
+    alarm: parseProfileRegex(ackPolicy.alarm_regex, /ALARM:\d+|^Alarm/i)
+  };
+}
+
+function classifyControllerResponseLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return 'other';
+  const regexes = getControllerAckRegexes();
+  if (regexes.ok.test(text)) return 'ok';
+  if (regexes.error.test(text)) return 'error';
+  if (regexes.alarm.test(text)) return 'alarm';
+  return 'other';
+}
+
+function getControllerAckMode() {
+  const profile = getActiveControllerProfile();
+  const mode = String(profile?.ack_policy?.mode || 'required').toLowerCase();
+  return ['required', 'optional', 'none'].includes(mode) ? mode : 'required';
+}
+
+function getControllerDefaultAckTimeoutMs(fallbackMs = 3500) {
+  const profile = getActiveControllerProfile();
+  const value = Number(profile?.ack_policy?.default_timeout_ms);
+  if (!Number.isFinite(value) || value <= 0) return fallbackMs;
+  return Math.round(value);
+}
+
+function shouldWaitForCommandAck(command, options = {}) {
+  if (!command || command.kind === 'action') return false;
+  if (options.requireAck) return true;
+  if (options.timeoutMs != null) return true;
+  if (!command.waitForAck) return false;
+  const mode = getControllerAckMode();
+  if (mode === 'none') return false;
+  if (mode === 'optional') return false;
+  return true;
+}
+
+function getControllerStartupBannerRegex() {
+  const profile = getActiveControllerProfile();
+  const pattern = profile?.response_patterns?.startup_banner_regex;
+  return parseProfileRegex(pattern, /^(?:grblhal\b|grbl\b)/i);
+}
+
+function getControllerStatusReportRegex() {
+  const profile = getActiveControllerProfile();
+  const pattern = profile?.response_patterns?.status_report_regex;
+  return parseProfileRegex(pattern, /^<[^>]+>$/i);
+}
+
+function deriveMachineStateFromControllerLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return null;
+
+  if (getControllerStartupBannerRegex().test(text)) return 'reset';
+
+  const responseClass = classifyControllerResponseLine(text);
+  if (responseClass === 'alarm') return 'alarm';
+
+  const statusRegex = getControllerStatusReportRegex();
+  if (statusRegex.test(text)) {
+    const stateMatch = text.match(/^<\s*([^|,>]+)[|,>]/i);
+    const token = String(stateMatch?.[1] || '').trim().toLowerCase();
+    if (token === 'idle') return 'idle';
+    if (token === 'alarm') return 'alarm';
+    if (token === 'unknown') return 'unknown';
+    if (token) return 'busy';
+  }
+
+  if (text.includes('<Idle')) return 'idle';
+  if (text.includes('<Alarm') || /\bALARM\b/i.test(text)) return 'alarm';
+  if (text.includes('<Run') || text.includes('<Hold') || text.includes('<Jog') || text.includes('<Home')) return 'busy';
+  return null;
 }
 
 function parseCommandEntries(commands, maxCommands = 10) {
@@ -8507,9 +9005,10 @@ function settlePendingSequenceResponse(result) {
 
 function handleSequenceResponseLine(line) {
   if (!pendingSequenceResponse) return;
-  if (/^ok$/i.test(line)) { settlePendingSequenceResponse({ status: 'ok', line }); return; }
-  if (/^error:\d+/i.test(line)) { settlePendingSequenceResponse({ status: 'error', line }); return; }
-  if (/ALARM:\d+/i.test(line) || /^Alarm/i.test(line)) { settlePendingSequenceResponse({ status: 'alarm', line }); }
+  const responseClass = classifyControllerResponseLine(line);
+  if (responseClass === 'ok') { settlePendingSequenceResponse({ status: 'ok', line }); return; }
+  if (responseClass === 'error') { settlePendingSequenceResponse({ status: 'error', line }); return; }
+  if (responseClass === 'alarm') { settlePendingSequenceResponse({ status: 'alarm', line }); }
 }
 
 function waitForSequenceCommandResult(command, requestId, timeoutMs = 3500) {
@@ -8535,6 +9034,11 @@ async function executeSequenceCommand(rawCommand, options = {}) {
     return { status: 'skipped', line: `Unknown action ${command.display}` };
   }
 
+  const compatibility = enforceControllerProfileCompatibility(command);
+  if (!compatibility.ok) {
+    return { status: 'error', line: compatibility.line || 'Command blocked by active profile', command };
+  }
+
   enableAutoscrollFollow();
   const requestId = `req-${++sequenceRequestCounter}`;
   const showRequestResponseCorrelation = Boolean(currentRun.showRequestResponseCorrelation);
@@ -8546,8 +9050,10 @@ async function executeSequenceCommand(rawCommand, options = {}) {
   if (basicRunning && command.send === '\x18') {
     requestBasicStop('Soft reset sent; aborting GCOM script...', '--- Script aborted by soft reset ---');
   }
-  const timeoutMs = options.timeoutMs == null ? 3500 : Math.max(1, Math.round(Number(options.timeoutMs) || 0));
-  const shouldWaitForAck = Boolean(options.requireAck) || options.timeoutMs != null || command.waitForAck;
+  const timeoutMs = options.timeoutMs == null
+    ? getControllerDefaultAckTimeoutMs(3500)
+    : Math.max(1, Math.round(Number(options.timeoutMs) || 0));
+  const shouldWaitForAck = shouldWaitForCommandAck(command, options);
   if (!shouldWaitForAck) {
     if (showRequestResponseCorrelation) addLine(`[${requestId}] completed without terminal acknowledgement wait`, 'sys');
     return { status: 'sent', line: `${taggedDisplay} sent without acknowledgement wait`, requestId, command };
@@ -8754,6 +9260,11 @@ clearBtn.addEventListener('click', () => {
   scrollTerminalToBottom(true);
 });
 copyDiagBtn.addEventListener('click', copyDiagnosticsLog);
+if (controllerProfileCopyBtn) {
+  controllerProfileCopyBtn.addEventListener('click', () => {
+    void copyControllerProfileDiagnostics();
+  });
+}
 copyLogPlainBtn.addEventListener('click', () => {
   if (!logLines.length) { addLine('No diagnostics log available yet', 'sys'); return; }
   void copyTextPayload(logLines.join('\n'), 'Diagnostics log copied to clipboard', 'gcomposer');
@@ -8819,7 +9330,7 @@ function addLine(text, type = 'rx') {
 
   if (basicBenchmarkUiQuiet) {
     if (type === 'tx') return;
-    if (type === 'rx' && /^ok$/i.test(trimmedText)) return;
+    if (type === 'rx' && classifyControllerResponseLine(trimmedText) === 'ok') return;
     if (type === 'basic' && /^(SEND:|WAIT_IDLE\b|WAIT_STATE\b)/.test(trimmedText)) return;
   }
 
@@ -8855,10 +9366,12 @@ function colorizeResponse(text) {
 
 function updateStatus(text) {
   if (!port) return;
-  if (/^grbl\s/i.test(text)) { setTransportState('connected'); setMachineState('reset'); return; }
-  if (text.includes('<Idle')) { setTransportState('connected'); setMachineState('idle'); }
-  else if (text.includes('ALARM') || text.includes('Alarm') || text.includes('<Alarm')) { setTransportState('connected'); setMachineState('alarm'); }
-  else if (text.includes('<Run') || text.includes('<Hold') || text.includes('<Jog') || text.includes('<Home')) { setTransportState('connected'); setMachineState('busy'); }
+  const derivedState = deriveMachineStateFromControllerLine(text);
+  if (derivedState) {
+    setTransportState('connected');
+    setMachineState(derivedState);
+    if (derivedState === 'reset') return;
+  }
   const bfMatch = text.match(/Bf:(\d+),(\d+)/i);
   if (bfMatch) {
     const plannerSlots = parseInt(bfMatch[1], 10);
@@ -9328,6 +9841,9 @@ loadAndCheckVersion();
 setBasicDescriptionTab('edit');
 autoResizeBasicDescription();
 initBenchmarkRuntimeWorker();
+queueMicrotask(() => {
+  void loadControllerProfilesRegistry();
+});
 
 // ─── AI Sidebar ───────────────────────────────────────────────────────────────
 const aiSidebarEl        = document.getElementById('ai-sidebar');

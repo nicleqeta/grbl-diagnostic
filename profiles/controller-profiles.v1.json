@@ -1,0 +1,514 @@
+{
+  "$schema": "./controller-profiles.schema.json",
+  "schema_version": "1.0.0",
+  "registry_id": "gcomposer-controller-profiles",
+  "default_profile_id": "grbl-vanilla",
+  "profiles": {
+    "grbl-base": {
+      "id": "grbl-base",
+      "label": "GRBL Base",
+      "controller_family": "grbl",
+      "status": "stable",
+      "inherits": null,
+      "transport": {
+        "primary": "serial-ascii",
+        "supports_usb_serial": true,
+        "supports_websocket": true
+      },
+      "ack_policy": {
+        "mode": "required",
+        "default_timeout_ms": 3500,
+        "ok_regex": "^ok$",
+        "error_regex": "^error:(\\d+)$",
+        "alarm_regex": "^ALARM:(\\d+)$"
+      },
+      "response_patterns": {
+        "startup_banner_regex": "^Grbl\\s+1\\.1",
+        "status_report_regex": "^<[^>]+>$",
+        "message_prefixes": [
+          "ok",
+          "error:",
+          "ALARM:",
+          "[MSG:",
+          "[GC:",
+          "[VER:",
+          "$"
+        ]
+      },
+      "realtime_commands": {
+        "status": "?",
+        "feed_hold": "!",
+        "cycle_start": "~",
+        "soft_reset": "^X"
+      },
+      "capabilities": {
+        "gcode_core": [
+          "G0",
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G10",
+          "G17",
+          "G18",
+          "G19",
+          "G20",
+          "G21",
+          "G28",
+          "G30",
+          "G38.2",
+          "G38.3",
+          "G38.4",
+          "G38.5",
+          "G40",
+          "G43.1",
+          "G49",
+          "G53",
+          "G54",
+          "G55",
+          "G56",
+          "G57",
+          "G58",
+          "G59",
+          "G61",
+          "G80",
+          "G90",
+          "G91",
+          "G91.1",
+          "G92",
+          "G92.1",
+          "G93",
+          "G94",
+          "M0",
+          "M1",
+          "M2",
+          "M3",
+          "M4",
+          "M5",
+          "M7",
+          "M8",
+          "M9",
+          "M30"
+        ],
+        "grbl_system": [
+          "$$",
+          "$#",
+          "$G",
+          "$I",
+          "$N",
+          "$X",
+          "$H",
+          "$C",
+          "$SLP",
+          "$RST=$",
+          "$RST=#",
+          "$RST=*",
+          "$J=..."
+        ],
+        "realtime": [
+          "?",
+          "!",
+          "~",
+          "^X",
+          "0x85",
+          "0x84",
+          "0x90",
+          "0x91",
+          "0x92",
+          "0x93",
+          "0x94",
+          "0x95",
+          "0x96",
+          "0x97",
+          "0x99",
+          "0x9A",
+          "0x9B",
+          "0x9C",
+          "0x9D",
+          "0x9E",
+          "0xA0",
+          "0xA1"
+        ],
+        "notes": [
+          "Core profile for GRBL-like serial protocol behavior.",
+          "Use compatibility rules for warning/block decisions rather than silent rewrites."
+        ]
+      },
+      "compatibility_rules": [
+        {
+          "match": "^G4\\b",
+          "decision": "allow",
+          "reason_code": "DWELL_SUPPORTED",
+          "message": "Dwell supported."
+        },
+        {
+          "match": "^G41|^G42",
+          "decision": "block",
+          "reason_code": "CUTTER_COMP_UNSUPPORTED",
+          "message": "GRBL family does not support G41/G42 cutter compensation."
+        },
+        {
+          "match": "^M6\\b",
+          "decision": "warn",
+          "reason_code": "TOOLCHANGE_MACHINE_DEPENDENT",
+          "message": "Toolchange behavior is machine/macro dependent."
+        }
+      ],
+      "boilerplate": {
+        "title": "GRBL Base Diagnostic",
+        "description": "Baseline serial checks and status query.",
+        "gcom": "10 PRINT \"GRBL base starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$$\" WAIT FOR OK\n40 SEND \"?\"\n50 END"
+      },
+      "ai_guidance": {
+        "summary": "Generate conservative GRBL-compatible GCode and preserve explicit operator intent.",
+        "preferred_style": [
+          "Prefer G90 and explicit feed rates for motion lines.",
+          "Prefer explicit spindle and coolant state transitions.",
+          "Use WAIT FOR OK around setup and state-changing commands."
+        ],
+        "avoid": [
+          "Do not emit cutter compensation G41/G42.",
+          "Do not assume automatic tool change support.",
+          "Do not rely on unsupported canned cycles."
+        ],
+        "compatibility_policy": "allow_warn_block"
+      }
+    },
+    "grbl-vanilla": {
+      "id": "grbl-vanilla",
+      "label": "Vanilla GRBL",
+      "controller_family": "grbl",
+      "status": "stable",
+      "inherits": "grbl-base",
+      "transport": {
+        "primary": "serial-ascii",
+        "supports_usb_serial": true,
+        "supports_websocket": true
+      },
+      "ack_policy": {
+        "mode": "required",
+        "default_timeout_ms": 3500,
+        "ok_regex": "^ok$",
+        "error_regex": "^error:(\\d+)$",
+        "alarm_regex": "^ALARM:(\\d+)$"
+      },
+      "response_patterns": {
+        "startup_banner_regex": "^Grbl\\s+1\\.1[h-gde]",
+        "status_report_regex": "^<[^>]+>$",
+        "message_prefixes": [
+          "ok",
+          "error:",
+          "ALARM:",
+          "[MSG:",
+          "[GC:",
+          "[VER:"
+        ]
+      },
+      "realtime_commands": {
+        "status": "?",
+        "feed_hold": "!",
+        "cycle_start": "~",
+        "soft_reset": "^X"
+      },
+      "capabilities": {
+        "gcode_core": [
+          "G0",
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G10",
+          "G17",
+          "G18",
+          "G19",
+          "G20",
+          "G21",
+          "G28",
+          "G30",
+          "G38.2",
+          "G38.3",
+          "G38.4",
+          "G38.5",
+          "G40",
+          "G43.1",
+          "G49",
+          "G53",
+          "G54",
+          "G55",
+          "G56",
+          "G57",
+          "G58",
+          "G59",
+          "G61",
+          "G80",
+          "G90",
+          "G91",
+          "G91.1",
+          "G92",
+          "G92.1",
+          "G93",
+          "G94",
+          "M0",
+          "M1",
+          "M2",
+          "M3",
+          "M4",
+          "M5",
+          "M7",
+          "M8",
+          "M9",
+          "M30"
+        ],
+        "grbl_system": [
+          "$$",
+          "$#",
+          "$G",
+          "$I",
+          "$N",
+          "$X",
+          "$H",
+          "$C",
+          "$SLP",
+          "$RST=$",
+          "$RST=#",
+          "$RST=*",
+          "$J=..."
+        ],
+        "realtime": [
+          "?",
+          "!",
+          "~",
+          "^X",
+          "0x85",
+          "0x84",
+          "0x90",
+          "0x91",
+          "0x92",
+          "0x93",
+          "0x94",
+          "0x95",
+          "0x96",
+          "0x97",
+          "0x99",
+          "0x9A",
+          "0x9B",
+          "0x9C",
+          "0x9D",
+          "0x9E",
+          "0xA0",
+          "0xA1"
+        ],
+        "notes": [
+          "Tuned for gnea/grbl 1.1 sender protocol.",
+          "Treat unknown system command extensions as warn, not block, unless safety-critical."
+        ]
+      },
+      "compatibility_rules": [
+        {
+          "match": "^\\$J=",
+          "decision": "allow",
+          "reason_code": "JOG_SUPPORTED",
+          "message": "Realtime jogging command is supported in GRBL 1.1."
+        },
+        {
+          "match": "^\\$Config/",
+          "decision": "block",
+          "reason_code": "FLUIDNC_ONLY_COMMAND",
+          "message": "FluidNC config command is not part of vanilla GRBL."
+        },
+        {
+          "match": "^M7\\b",
+          "decision": "warn",
+          "reason_code": "M7_BUILD_OPTIONAL",
+          "message": "M7 requires compile-time option ENABLE_M7 on many GRBL builds."
+        }
+      ],
+      "boilerplate": {
+        "title": "Vanilla GRBL Starter",
+        "description": "Minimal setup sequence for common GRBL 1.1 machines.",
+        "gcom": "10 PRINT \"Vanilla GRBL starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$G\" WAIT FOR OK\n40 SEND \"G90\" WAIT FOR OK\n50 SEND \"G21\" WAIT FOR OK\n60 SEND \"?\"\n70 END"
+      },
+      "ai_guidance": {
+        "summary": "Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.",
+        "preferred_style": [
+          "Initialize parser state explicitly with G90 and unit mode.",
+          "Use conservative modal transitions and explicit feed rates.",
+          "Wrap setup commands with WAIT FOR OK."
+        ],
+        "avoid": [
+          "Do not emit FluidNC-specific config commands.",
+          "Do not assume macro or canned cycle support.",
+          "Do not emit advanced M-codes unless explicitly requested."
+        ],
+        "compatibility_policy": "allow_warn_block"
+      }
+    },
+    "fluidnc": {
+      "id": "fluidnc",
+      "label": "FluidNC",
+      "controller_family": "grbl",
+      "status": "stable",
+      "inherits": "grbl-base",
+      "transport": {
+        "primary": "serial-ascii",
+        "supports_usb_serial": true,
+        "supports_websocket": true
+      },
+      "ack_policy": {
+        "mode": "required",
+        "default_timeout_ms": 4000,
+        "ok_regex": "^ok$",
+        "error_regex": "^error:(\\d+|.*)$",
+        "alarm_regex": "^ALARM:(\\d+|.*)$"
+      },
+      "response_patterns": {
+        "startup_banner_regex": "^(Grbl|FluidNC)",
+        "status_report_regex": "^<[^>]+>$",
+        "message_prefixes": [
+          "ok",
+          "error:",
+          "ALARM:",
+          "[MSG:",
+          "[GC:",
+          "[VER:",
+          "$"
+        ]
+      },
+      "realtime_commands": {
+        "status": "?",
+        "feed_hold": "!",
+        "cycle_start": "~",
+        "soft_reset": "^X"
+      },
+      "capabilities": {
+        "gcode_core": [
+          "G0",
+          "G1",
+          "G2",
+          "G3",
+          "G4",
+          "G10",
+          "G17",
+          "G18",
+          "G19",
+          "G20",
+          "G21",
+          "G28",
+          "G30",
+          "G38.2",
+          "G38.3",
+          "G38.4",
+          "G38.5",
+          "G40",
+          "G43.1",
+          "G49",
+          "G53",
+          "G54",
+          "G55",
+          "G56",
+          "G57",
+          "G58",
+          "G59",
+          "G61",
+          "G80",
+          "G90",
+          "G91",
+          "G91.1",
+          "G92",
+          "G92.1",
+          "G93",
+          "G94",
+          "M0",
+          "M1",
+          "M2",
+          "M3",
+          "M4",
+          "M5",
+          "M7",
+          "M8",
+          "M9",
+          "M30"
+        ],
+        "grbl_system": [
+          "$$",
+          "$#",
+          "$G",
+          "$I",
+          "$N",
+          "$X",
+          "$H",
+          "$C",
+          "$J=...",
+          "$Config/Filename=..."
+        ],
+        "realtime": [
+          "?",
+          "!",
+          "~",
+          "^X",
+          "0x85",
+          "0x84",
+          "0x90",
+          "0x91",
+          "0x92",
+          "0x93",
+          "0x94",
+          "0x95",
+          "0x96",
+          "0x97",
+          "0x99",
+          "0x9A",
+          "0x9B",
+          "0x9C",
+          "0x9D",
+          "0x9E",
+          "0xA0",
+          "0xA1"
+        ],
+        "notes": [
+          "FluidNC maintains broad GRBL sender compatibility.",
+          "Settings are often managed via config file semantics rather than only legacy $ settings."
+        ]
+      },
+      "compatibility_rules": [
+        {
+          "match": "^\\$Config/Filename=",
+          "decision": "allow",
+          "reason_code": "FLUIDNC_CONFIG_FILENAME",
+          "message": "FluidNC config filename command is supported."
+        },
+        {
+          "match": "^\\$SLP\\b",
+          "decision": "warn",
+          "reason_code": "SLEEP_BEHAVIOR_MAY_DIFFER",
+          "message": "Sleep behavior can differ by build and machine config."
+        },
+        {
+          "match": "^G41|^G42",
+          "decision": "block",
+          "reason_code": "CUTTER_COMP_UNSUPPORTED",
+          "message": "Cutter compensation G41/G42 should be treated as unsupported in this profile."
+        }
+      ],
+      "boilerplate": {
+        "title": "FluidNC Starter",
+        "description": "Fast sanity sequence for FluidNC with GRBL-compatible sender flow.",
+        "gcom": "10 PRINT \"FluidNC starter\"\n20 SEND \"$I\" WAIT FOR OK\n30 SEND \"$G\" WAIT FOR OK\n40 SEND \"?\"\n50 SEND \"$Config/Filename=config.yaml\" WAIT FOR OK\n60 END"
+      },
+      "ai_guidance": {
+        "summary": "Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.",
+        "preferred_style": [
+          "Start from GRBL-safe command forms.",
+          "Use FluidNC config commands only when profile-specific configuration is intended.",
+          "Annotate any profile-specific command in generated explanations."
+        ],
+        "avoid": [
+          "Do not assume every machine exposes identical FluidNC extensions.",
+          "Do not replace standard GRBL flow with config commands unless requested.",
+          "Do not silently downgrade blocked commands."
+        ],
+        "compatibility_policy": "allow_warn_block"
+      }
+    }
+  }
+}
