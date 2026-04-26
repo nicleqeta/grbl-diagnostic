@@ -1422,20 +1422,24 @@
   stmtA : stmtB               Execute multiple statements on one numbered line (outside quoted strings).
   SEND expr                   Send a GRBL command string over serial.
   SEND expr BUFFERED          Stream a GRBL command using host-side RX buffer accounting.
-  SEND expr WAIT FOR OK       Send and block until 'ok' response.
-  SEND expr WAIT FOR IDLE     Send and block until GRBL status is Idle.
-  SEND expr WAIT FOR GRBL     Send and block until a GRBL startup banner appears.
+  SEND expr REQUIRE_OK        Send and require an acknowledgement (ok/error/alarm).
+  SEND expr TIMEOUT ms        Send with a timeout expression.
+  SEND expr BUFFERED          Buffered intent; routed by SEND_MODE (BUFFERED/SENDACK/AUTO).
+  SENDBUFF expr               Shorthand for SEND expr BUFFERED.
+  SENDACK expr [timeoutMs]    Shorthand for SEND expr TIMEOUT timeoutMs REQUIRE_OK.
   WAIT ms                     Pause execution for N milliseconds.
-  WAIT FOR OK                 Block until an 'ok' response is received.
-  WAIT FOR IDLE               Block until GRBL status is Idle.
-  WAIT FOR GRBL               Block until a GRBL startup banner appears.
+  WAIT_IDLE [timeoutMs]       Block until GRBL status becomes Idle.
+  WAIT_STATE target [TIMEOUT timeoutMs]
+                              Block until machine state matches target.
   PRINT expr                  Print a message to the terminal log.
   INPUT var                   Prompt the user for a value, assign to var.
   LET var = INPUT(prompt)     Same as INPUT but inline with a prompt string.
   LET var = FORM(msgExpr, v1, v2, ...)  Show a button dialog. Message is any expression;
                               [Label] tokens become buttons returning the paired numeric values.
                               Numbers in the message auto-convert to text (STR optional).
-  READ var                    Read the next incoming serial line into var.
+  LET var = READ("$n")        Read GRBL setting $n (numeric).
+  READ("$n") INTO var         Same as above with explicit INTO form.
+  LET var = READ_LINE(...)    Read incoming serial text by pattern/timeout.
   IF cond THEN GOTO line      Conditional jump to a line number.
   GOTO line                   Unconditional jump to a line number.
   FOR var = start TO end      Begin a counting loop. Optional: STEP n.
@@ -1576,12 +1580,13 @@
   QUICK START EXAMPLE
   -------------------
   10 LET feedrate = 1000
-  20 SEND "G28" WAIT FOR IDLE
-  30 PRINT "Homing complete"
-  40 FOR i = 1 TO 5
-  50   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) WAIT FOR OK
-  60 NEXT i
-  70 END
+  20 SEND "G28" REQUIRE_OK
+  30 WAIT_IDLE 15000
+  40 PRINT "Homing complete"
+  50 FOR i = 1 TO 5
+  60   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) REQUIRE_OK
+  70 NEXT i
+  80 END
 -->
 
 <header>
@@ -3344,6 +3349,9 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
   normalized = normalized
     .replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '__string__')
     .replace(/\bPI\b/gi, '__pi__')
+    .replace(/\bSTATE\s*\(\s*\)/gi, '__state__()')
+    .replace(/\bINPUT\s*\(/gi, '__input__(')
+    .replace(/\bFORM\s*\(/gi, '__form__(')
     .replace(/\bSTR\s*\(/gi, '__str__(')
     .replace(/\bLEN\s*\(/gi, '__len__(')
     .replace(/\bTRIM\s*\(/gi, '__trim__(')
@@ -3397,7 +3405,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
     .replace(/\bFORMAT_MS\s*\(/gi, '__format_ms__(')
     .replace(/\bDEG\s*\(/gi, '__deg__(')
     .replace(/\bRND\s*\(/gi, '__rnd__(')
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__str__', '__len__', '__trim__', '__upper__', '__lower__', '__substr__', '__contains__', '__starts_with__', '__ends_with__', '__replace__', '__split_count__', '__split_part__', '__split_into__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bf_serial__', '__bf_planner__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, token => ['__pi__', '__state__', '__input__', '__form__', '__str__', '__len__', '__trim__', '__upper__', '__lower__', '__substr__', '__contains__', '__starts_with__', '__ends_with__', '__replace__', '__split_count__', '__split_part__', '__split_into__', '__abs__', '__int__', '__ceil__', '__floor__', '__sign__', '__trunc__', '__sin__', '__cos__', '__tan__', '__asin__', '__acos__', '__atan2__', '__atan__', '__sinh__', '__cosh__', '__tanh__', '__asinh__', '__acosh__', '__atanh__', '__sqrt__', '__exp__', '__ln__', '__log__', '__log10__', '__hypot__', '__round__', '__clamp__', '__min__', '__max__', '__mod__', '__gcode_param__', '__bf_serial__', '__bf_planner__', '__bench_last_ms__', '__clock__', '__elapsed__', '__format_ms__', '__rad__', '__deg__', '__rnd__'].includes(token) ? token : '__value__')
     .replace(/&/g, '+');
 
   if (/[^0-9A-Za-z_+\-*/%().,\s]/.test(normalized)) {
@@ -3407,7 +3415,7 @@ function basicValidateExpressionSyntax(expr, lineNum, contextLabel, definedParam
 
   try {
     // eslint-disable-next-line no-new-func
-    Function(`"use strict"; const __pi__ = Math.PI; const __str__ = value => String(value); const __len__ = value => String(value).length; const __trim__ = value => String(value).trim(); const __upper__ = value => String(value).toUpperCase(); const __lower__ = value => String(value).toLowerCase(); const __substr__ = (value, start, length) => { const src = String(value); const from = Math.max(0, Math.trunc(Number(start) || 1) - 1); if (length === undefined) return src.slice(from); const span = Math.max(0, Math.trunc(Number(length) || 0)); return src.slice(from, from + span); }; const __contains__ = (value, needle) => String(value).includes(String(needle)) ? 1 : 0; const __starts_with__ = (value, prefix) => String(value).startsWith(String(prefix)) ? 1 : 0; const __ends_with__ = (value, suffix) => String(value).endsWith(String(suffix)) ? 1 : 0; const __replace__ = (value, find, withValue, maxReplacements = -1) => { const src = String(value); const needle = String(find); const repl = String(withValue); if (!needle.length) return src; let limit = Math.trunc(Number(maxReplacements)); if (!Number.isFinite(limit) || limit < 0) limit = Number.MAX_SAFE_INTEGER; let out = ''; let i = 0; let count = 0; while (i < src.length) { if (count < limit && src.startsWith(needle, i)) { out += repl; i += needle.length; count += 1; } else { out += src[i++]; } } return out; }; const __split_count__ = (value, delim) => { const src = String(value); const d = String(delim); return d === '' ? src.length : src.split(d).length; }; const __split_part__ = (value, delim, index, fallback = '') => { const src = String(value); const d = String(delim); const idx = Math.trunc(Number(index)); if (!Number.isFinite(idx) || idx < 1) return String(fallback); const parts = d === '' ? src.split('') : src.split(d); return idx <= parts.length ? parts[idx - 1] : String(fallback); }; const __split_into__ = (value, delim, prefix) => 0; const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bf_serial__ = () => 0; const __bf_planner__ = () => -1; const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
+    Function(`"use strict"; const __pi__ = Math.PI; const __state__ = () => 'idle'; const __input__ = (...args) => 0; const __form__ = (...args) => 0; const __str__ = value => String(value); const __len__ = value => String(value).length; const __trim__ = value => String(value).trim(); const __upper__ = value => String(value).toUpperCase(); const __lower__ = value => String(value).toLowerCase(); const __substr__ = (value, start, length) => { const src = String(value); const from = Math.max(0, Math.trunc(Number(start) || 1) - 1); if (length === undefined) return src.slice(from); const span = Math.max(0, Math.trunc(Number(length) || 0)); return src.slice(from, from + span); }; const __contains__ = (value, needle) => String(value).includes(String(needle)) ? 1 : 0; const __starts_with__ = (value, prefix) => String(value).startsWith(String(prefix)) ? 1 : 0; const __ends_with__ = (value, suffix) => String(value).endsWith(String(suffix)) ? 1 : 0; const __replace__ = (value, find, withValue, maxReplacements = -1) => { const src = String(value); const needle = String(find); const repl = String(withValue); if (!needle.length) return src; let limit = Math.trunc(Number(maxReplacements)); if (!Number.isFinite(limit) || limit < 0) limit = Number.MAX_SAFE_INTEGER; let out = ''; let i = 0; let count = 0; while (i < src.length) { if (count < limit && src.startsWith(needle, i)) { out += repl; i += needle.length; count += 1; } else { out += src[i++]; } } return out; }; const __split_count__ = (value, delim) => { const src = String(value); const d = String(delim); return d === '' ? src.length : src.split(d).length; }; const __split_part__ = (value, delim, index, fallback = '') => { const src = String(value); const d = String(delim); const idx = Math.trunc(Number(index)); if (!Number.isFinite(idx) || idx < 1) return String(fallback); const parts = d === '' ? src.split('') : src.split(d); return idx <= parts.length ? parts[idx - 1] : String(fallback); }; const __split_into__ = (value, delim, prefix) => 0; const __abs__ = value => Math.abs(Number(value)); const __int__ = value => Math.trunc(Number(value)); const __ceil__ = value => Math.ceil(Number(value)); const __floor__ = value => Math.floor(Number(value)); const __sign__ = value => { const n = Number(value); return n > 0 ? 1 : n < 0 ? -1 : 0; }; const __trunc__ = value => Math.trunc(Number(value)); const __deg2rad__ = value => Number(value) * Math.PI / 180; const __rad2deg__ = value => Number(value) * 180 / Math.PI; const __sin__ = value => Math.sin(__deg2rad__(value)); const __cos__ = value => Math.cos(__deg2rad__(value)); const __tan__ = value => Math.tan(__deg2rad__(value)); const __asin__ = value => __rad2deg__(Math.asin(Number(value))); const __acos__ = value => __rad2deg__(Math.acos(Number(value))); const __atan2__ = (y, x) => __rad2deg__(Math.atan2(Number(y), Number(x))); const __atan__ = value => __rad2deg__(Math.atan(Number(value))); const __sinh__ = value => Math.sinh(Number(value)); const __cosh__ = value => Math.cosh(Number(value)); const __tanh__ = value => Math.tanh(Number(value)); const __asinh__ = value => Math.asinh(Number(value)); const __acosh__ = value => Math.acosh(Number(value)); const __atanh__ = value => Math.atanh(Number(value)); const __sqrt__ = value => Math.sqrt(Number(value)); const __exp__ = value => Math.exp(Number(value)); const __ln__ = value => Math.log(Number(value)); const __log__ = value => Math.log(Number(value)); const __log10__ = value => Math.log10(Number(value)); const __hypot__ = (x, y) => Math.hypot(Number(x), Number(y)); const __round__ = (value, digits = 0) => { const precision = Math.trunc(Number(digits) || 0); const factor = Math.pow(10, precision); return Math.round(Number(value) * factor) / factor; }; const __clamp__ = (value, min, max) => Math.min(Math.max(Number(value), Number(min)), Number(max)); const __min__ = (a, b) => Math.min(Number(a), Number(b)); const __max__ = (a, b) => Math.max(Number(a), Number(b)); const __mod__ = (a, b) => { const d = Number(b); if (d === 0) throw new Error('Modulo by zero'); return Number(a) % d; }; const __gcode_param__ = (key, fallback = 0) => Number(fallback); const __bf_serial__ = () => 0; const __bf_planner__ = () => -1; const __bench_last_ms__ = () => 0; const __clock__ = () => 0; const __elapsed__ = t0 => 0; const __format_ms__ = ms => { const n = Math.max(0, Number(ms)); return n >= 1000 ? String(Math.round(n / 10) / 100) + ' s' : String(Math.round(n)) + ' ms'; }; const __rad__ = value => Number(value) * Math.PI / 180; const __deg__ = value => Number(value) * 180 / Math.PI; const __rnd__ = max => { const upper = Math.max(1, Math.trunc(Number(max) || 0)); return Math.floor(Math.random() * upper) + 1; }; return (${normalized});`);
   } catch {
     errors.push(`Line ${lineNum}: ${contextLabel} has invalid expression syntax`);
   }
@@ -3632,9 +3640,66 @@ function basicValidateScript(source, paramNames = []) {
       return;
     }
 
+    // LET x = INPUT(FORM(...)) or LET x = FORM(...) — validate FORM args
+    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:INPUT\()?FORM\(/i);
+    if (match) {
+      const formStart = statement.toUpperCase().indexOf('FORM(') + 5;
+      let fDepth = 0;
+      let fClose = -1;
+      let fInStr = false;
+      for (let fi = formStart - 1; fi < statement.length; fi++) {
+        const fc = statement[fi];
+        if (fc === '"') { fInStr = !fInStr; continue; }
+        if (fInStr) continue;
+        if (fc === '(') fDepth += 1;
+        else if (fc === ')') { fDepth -= 1; if (fDepth === 0) { fClose = fi; break; } }
+      }
+      if (fClose === -1) {
+        errors.push(`Line ${lineNum}: Unclosed FORM() in INPUT expression`);
+        return;
+      }
+      const formInner = statement.slice(formStart, fClose);
+      const formArgs = basicSplitFormArgs(formInner);
+      if (formArgs.length < 2) {
+        errors.push(`Line ${lineNum}: FORM() requires a message and at least one button value`);
+        return;
+      }
+      // Message argument is a full expression (may be literal string or concatenation).
+      // Validate it as an expression; label/value count enforcement is deferred to runtime
+      // because the message text may be dynamic.
+      basicValidateExpressionSyntax(formArgs[0].trim(), lineNum, 'the FORM message expression', definedParams, errors);
+      // Validate each button value expression.
+      for (let vi = 1; vi < formArgs.length; vi++) {
+        basicValidateExpressionSyntax(formArgs[vi].trim(), lineNum, `FORM button ${vi} value`, definedParams, errors);
+      }
+      return;
+    }
+
     match = statement.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
     if (match) {
       basicValidateExpressionSyntax(match[2], lineNum, `the LET expression for ${match[1]}`, definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^SEND\s+(.+)\s+WAIT\s+FOR\s+(OK|IDLE|GRBL)\s*$/i);
+    if (match) {
+      const waitTarget = String(match[2] || '').toUpperCase();
+      if (waitTarget === 'OK') {
+        errors.push(`Line ${lineNum}: SEND ... WAIT FOR OK is deprecated; use SEND ... REQUIRE_OK`);
+      } else {
+        errors.push(`Line ${lineNum}: SEND ... WAIT FOR ${waitTarget} is deprecated; use SEND ... REQUIRE_OK followed by WAIT_${waitTarget}`);
+      }
+      return;
+    }
+
+    match = statement.match(/^WAIT\s+FOR\s+(OK|IDLE|GRBL)\s*$/i);
+    if (match) {
+      const waitTarget = String(match[1] || '').toUpperCase();
+      if (waitTarget === 'OK') {
+        errors.push(`Line ${lineNum}: WAIT FOR OK is deprecated; use SEND ... REQUIRE_OK for acknowledgement waits`);
+      } else {
+        errors.push(`Line ${lineNum}: WAIT FOR ${waitTarget} is deprecated; use WAIT_${waitTarget}`);
+      }
       return;
     }
 
@@ -3737,41 +3802,6 @@ function basicValidateScript(source, paramNames = []) {
 
     if (/^PAUSE$/i.test(statement)) return;
 
-    // LET x = INPUT(FORM(...)) or LET x = FORM(...) — validate FORM args
-    match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:INPUT\()?FORM\(/i);
-    if (match) {
-      const formStart = statement.toUpperCase().indexOf('FORM(') + 5;
-      let fDepth = 0;
-      let fClose = -1;
-      let fInStr = false;
-      for (let fi = formStart - 1; fi < statement.length; fi++) {
-        const fc = statement[fi];
-        if (fc === '"') { fInStr = !fInStr; continue; }
-        if (fInStr) continue;
-        if (fc === '(') fDepth += 1;
-        else if (fc === ')') { fDepth -= 1; if (fDepth === 0) { fClose = fi; break; } }
-      }
-      if (fClose === -1) {
-        errors.push(`Line ${lineNum}: Unclosed FORM() in INPUT expression`);
-        return;
-      }
-      const formInner = statement.slice(formStart, fClose);
-      const formArgs = basicSplitFormArgs(formInner);
-      if (formArgs.length < 2) {
-        errors.push(`Line ${lineNum}: FORM() requires a message and at least one button value`);
-        return;
-      }
-      // Message argument is a full expression (may be literal string or concatenation).
-      // Validate it as an expression; label/value count enforcement is deferred to runtime
-      // because the message text may be dynamic.
-      basicValidateExpressionSyntax(formArgs[0].trim(), lineNum, 'the FORM message expression', definedParams, errors);
-      // Validate each button value expression.
-      for (let vi = 1; vi < formArgs.length; vi++) {
-        basicValidateExpressionSyntax(formArgs[vi].trim(), lineNum, `FORM button ${vi} value`, definedParams, errors);
-      }
-      return;
-    }
-
     match = statement.match(/^(?:LET\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*INPUT\("([^"]*)"\)$/i);
     if (match) return;
 
@@ -3850,8 +3880,26 @@ function basicValidateScript(source, paramNames = []) {
     if (/^DISCONNECT$/i.test(statement)) return;
     if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?WAIT_FOR_LINE\s*\(/i.test(statement)) return;
     if (/^(?:LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?READ_LINE\s*\(/i.test(statement)) return;
-    if (/^SENDBUFF\s+/i.test(statement)) return;
-    if (/^SENDACK\s+/i.test(statement)) return;
+    match = statement.match(/^SENDBUFF\s+(.+)$/i);
+    if (match) {
+      basicValidateExpressionSyntax(match[1], lineNum, 'the SENDBUFF expression', definedParams, errors);
+      return;
+    }
+
+    match = statement.match(/^SENDACK\s+(.+)$/i);
+    if (match) {
+      const rest = String(match[1] || '').trim();
+      const sendAckParts = rest.match(/^(.+?)(?:\s+(\S+))?$/);
+      if (!sendAckParts || !sendAckParts[1]) {
+        errors.push(`Line ${lineNum}: SENDACK syntax error`);
+        return;
+      }
+      basicValidateExpressionSyntax(sendAckParts[1], lineNum, 'the SENDACK expression', definedParams, errors);
+      if (sendAckParts[2]) {
+        basicValidateExpressionSyntax(sendAckParts[2], lineNum, 'the SENDACK timeout expression', definedParams, errors);
+      }
+      return;
+    }
 
     errors.push(`Line ${lineNum}: unknown or unsupported statement`);
   });
@@ -4239,7 +4287,7 @@ function classifyClipboardProgramText(text) {
   let basicScore = 0;
   let gcodeScore = 0;
 
-  const basicKeywordRe = /^(LET|SEND|WAIT|WAIT_IDLE|WAIT_STATE|PRINT|INPUT|IF|GOTO|FOR|NEXT|END|RESULT|REPORT|CONFIRM|PAUSE|GOSUB|RETURN|READ|HOLD|RESUME|STATUS|SOFT_RESET)\b/i;
+  const basicKeywordRe = /^(LET|SEND|SENDBUFF|SENDACK|WAIT|WAIT_IDLE|WAIT_STATE|PRINT|INPUT|IF|GOTO|FOR|NEXT|END|RESULT|REPORT|CONFIRM|PAUSE|GOSUB|RETURN|READ|SETTING|HOLD|RESUME|STATUS|SOFT_RESET|SET|RESET_SETTINGS|CONNECT|DISCONNECT|REM)\b/i;
   const gcodeLineRe = /^[GMT]\d+(?:\.\d+)?(?:\s|$)/i;
   const gcodeMacroRe = /^O\d+\s+(SUB|ENDSUB|CALL|DO|WHILE|ENDWHILE|IF|ENDIF|REPEAT|RETURN)\b/i;
   const gcodeParamRe = /^#(?:\d+|<[_a-zA-Z]\w*>)(?:\s*=|\s|$)/;
