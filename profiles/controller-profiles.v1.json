@@ -510,5 +510,189 @@
         "compatibility_policy": "allow_warn_block"
       }
     }
+  },
+  "v2_preview": {
+    "schema_version": "2.0.0",
+    "default_base_profile_id": "grbl-vanilla",
+    "base_profiles": {
+      "grbl-vanilla": {
+        "id": "grbl-vanilla",
+        "label": "Vanilla GRBL",
+        "family": "grbl",
+        "status": "stable",
+        "inherits": "grbl-base",
+        "runtime": {
+          "ack_policy": {
+            "mode": "required",
+            "default_timeout_ms": 3500,
+            "ok_regex": "^ok$",
+            "error_regex": "^error:(\\d+)$",
+            "alarm_regex": "^ALARM:(\\d+)$"
+          },
+          "startup_banner_regex": "^Grbl\\s+1\\.1[h-gde]",
+          "status_report_regex": "^<[^>]+>$"
+        },
+        "compile": {
+          "modal_reset": {
+            "units": "G21",
+            "distance": "G90",
+            "feed_mode": "G94",
+            "plane": "G17",
+            "motion": "G0",
+            "wcs": "G54"
+          },
+          "abstract_ops": {
+            "HOME": {
+              "kind": "command",
+              "emit": [
+                "$H"
+              ],
+              "wait": "grbl_then_idle"
+            },
+            "MOVE": {
+              "kind": "gcode",
+              "wait": "ok"
+            },
+            "PROBE": {
+              "kind": "gcode",
+              "wait": "ok"
+            },
+            "TOOL_CHANGE": {
+              "kind": "unsupported"
+            },
+            "RESET": {
+              "kind": "realtime",
+              "emit": [
+                "^X"
+              ],
+              "wait": "grbl"
+            }
+          },
+          "machine_model": {
+            "supports_homing": true,
+            "supports_machine_coordinates": true,
+            "supports_tool_table": false,
+            "supports_macro_call": false,
+            "supports_canned_cycles": false,
+            "supports_multiple_spindles": false
+          },
+          "state_map": {
+            "idle": [
+              "Idle"
+            ],
+            "run": [
+              "Run",
+              "Jog"
+            ],
+            "hold": [
+              "Hold"
+            ],
+            "alarm": [
+              "Alarm"
+            ]
+          }
+        },
+        "guidance": {
+          "summary": "Conservative GRBL profile for deterministic compile targets.",
+          "preferred_style": [
+            "Keep setup explicit and modal state predictable.",
+            "Use waits for setup and state-changing commands."
+          ],
+          "avoid": [
+            "Do not emit unsupported canned cycles.",
+            "Do not assume automatic tool change behavior."
+          ]
+        }
+      },
+      "fluidnc": {
+        "id": "fluidnc",
+        "label": "FluidNC",
+        "family": "grbl",
+        "status": "stable",
+        "inherits": "grbl-base",
+        "runtime": {
+          "ack_policy": {
+            "mode": "required",
+            "default_timeout_ms": 4000,
+            "ok_regex": "^ok$",
+            "error_regex": "^error:(\\d+|.*)$",
+            "alarm_regex": "^ALARM:(\\d+|.*)$"
+          },
+          "startup_banner_regex": "^(Grbl|FluidNC)",
+          "status_report_regex": "^<[^>]+>$"
+        },
+        "compile": {
+          "modal_reset": {
+            "units": "G21",
+            "distance": "G90",
+            "feed_mode": "G94",
+            "plane": "G17",
+            "motion": "G0",
+            "wcs": "G54"
+          },
+          "abstract_ops": {
+            "HOME": {
+              "kind": "command",
+              "emit": [
+                "$H"
+              ],
+              "wait": "ok_then_idle"
+            },
+            "MOVE": {
+              "kind": "gcode",
+              "wait": "ok"
+            },
+            "PROBE": {
+              "kind": "gcode",
+              "wait": "ok"
+            },
+            "TOOL_CHANGE": {
+              "kind": "unsupported"
+            },
+            "RESET": {
+              "kind": "realtime",
+              "emit": [
+                "^X"
+              ],
+              "wait": "banner"
+            }
+          },
+          "machine_model": {
+            "supports_homing": true,
+            "supports_machine_coordinates": true,
+            "supports_tool_table": false,
+            "supports_macro_call": false,
+            "supports_canned_cycles": false,
+            "supports_multiple_spindles": true
+          },
+          "state_map": {
+            "idle": [
+              "Idle"
+            ],
+            "run": [
+              "Run",
+              "Jog"
+            ],
+            "hold": [
+              "Hold"
+            ],
+            "alarm": [
+              "Alarm"
+            ]
+          }
+        },
+        "guidance": {
+          "summary": "FluidNC profile with GRBL-compatible core and optional extensions.",
+          "preferred_style": [
+            "Prefer GRBL-compatible commands first.",
+            "Use FluidNC-specific commands only when explicitly needed."
+          ],
+          "avoid": [
+            "Do not rely on extensions unless profile-selected.",
+            "Do not silently downgrade unsupported operations."
+          ]
+        }
+      }
+    }
   }
 }

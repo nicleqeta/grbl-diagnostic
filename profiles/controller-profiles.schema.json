@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gcomposer.app/schemas/controller-profiles.schema.json",
   "title": "GCOM Controller Profile Registry",
-  "description": "Strict profile registry for controller flavor aware GCOM/GCode generation.",
+  "description": "Strict profile registry for controller flavor aware GCOM/GCode generation with an optional v2 preview block for higher-level compiler planning.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -46,6 +46,9 @@
           "$ref": "#/$defs/fluidNcProfile"
         }
       }
+    },
+    "v2_preview": {
+      "$ref": "#/$defs/v2Preview"
     }
   },
   "$defs": {
@@ -438,6 +441,290 @@
           }
         }
       ]
+    },
+    "v2Preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "default_base_profile_id",
+        "base_profiles"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "2.0.0"
+        },
+        "default_base_profile_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_profiles": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/baseProfileV2"
+          }
+        }
+      }
+    },
+    "baseProfileV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "family",
+        "status",
+        "inherits",
+        "runtime",
+        "compile",
+        "guidance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stable",
+            "experimental",
+            "planned"
+          ]
+        },
+        "inherits": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ack_policy",
+            "startup_banner_regex",
+            "status_report_regex"
+          ],
+          "properties": {
+            "ack_policy": {
+              "$ref": "#/$defs/ackPolicy"
+            },
+            "startup_banner_regex": {
+              "$ref": "#/$defs/regexPattern"
+            },
+            "status_report_regex": {
+              "$ref": "#/$defs/regexPattern"
+            }
+          }
+        },
+        "compile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "modal_reset",
+            "abstract_ops",
+            "machine_model",
+            "state_map"
+          ],
+          "properties": {
+            "modal_reset": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "units",
+                "distance",
+                "feed_mode",
+                "plane",
+                "motion",
+                "wcs"
+              ],
+              "properties": {
+                "units": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "distance": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "feed_mode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "plane": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "motion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "wcs": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "abstract_ops": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "command",
+                      "gcode",
+                      "sequence",
+                      "realtime",
+                      "unsupported"
+                    ]
+                  },
+                  "emit": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "wait": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "machine_model": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "supports_homing",
+                "supports_machine_coordinates",
+                "supports_tool_table",
+                "supports_macro_call",
+                "supports_canned_cycles",
+                "supports_multiple_spindles"
+              ],
+              "properties": {
+                "supports_homing": {
+                  "type": "boolean"
+                },
+                "supports_machine_coordinates": {
+                  "type": "boolean"
+                },
+                "supports_tool_table": {
+                  "type": "boolean"
+                },
+                "supports_macro_call": {
+                  "type": "boolean"
+                },
+                "supports_canned_cycles": {
+                  "type": "boolean"
+                },
+                "supports_multiple_spindles": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "state_map": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "idle",
+                "run",
+                "hold",
+                "alarm"
+              ],
+              "properties": {
+                "idle": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "run": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "hold": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "alarm": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "home": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "guidance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary",
+            "preferred_style",
+            "avoid"
+          ],
+          "properties": {
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "preferred_style": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "avoid": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
