@@ -1584,6 +1584,9 @@
   SENDBUFF expr               Legacy alias for SEND expr BUFFERED.
   SENDACK expr [timeoutMs]    Legacy alias for SEND expr TIMEOUT timeoutMs REQUIRE_OK.
   SET SEND_MODE expr          Global send routing: BUFFERED | REQUIRE_OK | AUTO.
+  SET key valueExpr           Runtime settings: SEND_DELAY, ACK_TIMEOUT, RX_BUFFER,
+                              SEND_MODE, BANNER_TIMEOUT, READY_SETTLE, SEQUENCE_DELAY, STATUS_DELAY.
+  RESET_SETTINGS              Restore runtime settings to defaults.
   WAIT ms                     Pause execution for N milliseconds.
   WAIT_IDLE [timeoutMs]       Block until GRBL status becomes Idle.
   WAIT_STATE target [TIMEOUT timeoutMs]
@@ -1596,13 +1599,20 @@
                               Numbers in the message auto-convert to text (STR optional).
   LET var = READ("$n")        Read GRBL setting $n (numeric).
   READ("$n") INTO var         Same as above with explicit INTO form.
-  LET var = READ_LINE(...)    Read incoming serial text by pattern/timeout.
+  LET var = WAIT_FOR_LINE(pattern[, timeoutMs]) Wait for an incoming line matching a regex/text pattern.
+  WAIT_FOR_LINE(pattern[, timeoutMs]) INTO var  INTO form for the same operation.
+  LET var = READ_LINE([timeoutMs])              Read the next incoming serial line.
+  READ_LINE([timeoutMs]) INTO var               INTO form for next-line read.
+  RESULT key, expr            Record a named output value.
+  REPORT                      Print all recorded RESULT pairs.
+  CONNECT ...                 Connect serial with optional BAUD/DTR/WAIT/OBSERVE options.
+  CONNECT WS host [PORT n]    Connect WebSocket transport.
+  DISCONNECT                  Disconnect the active transport.
   IF cond THEN GOTO line      Conditional jump to a line number.
   GOTO line                   Unconditional jump to a line number.
   FOR var = start TO end      Begin a counting loop. Optional: STEP n.
   NEXT var                    End of FOR loop body, increment and continue.
   END                         Terminate the script.
-  RESULT expr                 Return a final value from the script.
 
   BUILT-IN FUNCTIONS (used inside expressions)
   ---------------------------------------------
@@ -1614,7 +1624,6 @@
   BF_SERIAL()      Estimated serial RX capacity in bytes (from observed Bf serial field, fallback RX_BUFFER)
   BF_PLANNER()     Estimated planner capacity in slots (from observed Bf planner field, or -1 when unknown)
   STATE()          Current GRBL state string: Idle, Run, Alarm, Hold, etc.
-  BENCH_LAST_MS()  Latest measured BENCH batch duration in milliseconds.
   STR(n)           Convert number to string
   LEN(s)           String length
   TRIM(s)          Trim leading/trailing whitespace
@@ -1628,6 +1637,7 @@
   SPLIT_COUNT(s,d) Number of tokens when splitting s by delimiter d
   SPLIT_PART(s,d,i[,fallback]) 1-based token i from split result
   SPLIT_INTO(s,d,prefix) Populate prefix_COUNT and prefix_1..prefix_N variables
+  BENCH_LAST_MS()  Latest measured BENCH START/END elapsed time in milliseconds
   CLOCK()          Current timestamp in milliseconds (performance.now()). Use with ELAPSED().
   ELAPSED(t0)      Milliseconds elapsed since t0 (a value returned by CLOCK()).
   FORMAT_MS(ms)    Format a millisecond value as a readable string: "456 ms" or "1.23 s".
@@ -1665,6 +1675,12 @@
   DEG(rad)         Convert radians to degrees
   PI               The constant π (3.14159...)
 
+  BENCH MARKERS (emit via PRINT)
+  -------------------------------
+  BENCH META key=value ...   Configure benchmark chart metadata/axis mappings.
+  BENCH START key=value ...  Open a timed sample window.
+  BENCH END key=value ...    Close sample, capture elapsedMs, update BENCH_LAST_MS().
+
   EXPRESSIONS
   -----------
   Arithmetic: + - * / ^ (power)
@@ -1673,14 +1689,17 @@
   Parentheses for grouping
   Variables are case-insensitive. Identifiers normalised to uppercase at parse time.
 
-  VARIABLE TEMPLATE SYSTEM
-  ------------------------
-  Scripts can declare default parameter values at the top using {name} placeholders.
-  Example:  {feedrate=1000}  {passes=3}
-  These are substituted before execution. Users may override them:
+  VARIABLE HEADER SYSTEM
+  ----------------------
+  Full scripts should declare defaults with metadata headers:
+    ; VAR feedrate=1000
+    ; VAR passes=3
+  Program text can reference placeholders like {feedrate} and {passes}.
+  Description metadata may also use {{expression}} placeholders.
+  Variables are substituted before execution. Users may override them:
     - via URL: ?vars=feedrate=2000,passes=5
     - via the Variables panel in the UI before running
-  Special metadata fields: {title}, {author}, {version}, {description}
+  Script metadata headers include ; TITLE, ; VERSION, ; AUTHOR, and one or more ; DESCRIPTION lines.
 
   EXECUTION MODEL
   ---------------
