@@ -502,12 +502,13 @@ EXAMPLE QUALITY RULES
 - For benchmark demos that move axes, include a cancel path and explicit END on success path.
 
 DIAGNOSTIC RESPONSE CONTRACT
-- If terminal context is provided, your answer must start with these headings in order:
+- Use diagnostic headings only when the user is explicitly troubleshooting/debugging or asks to analyze terminal/log output.
+- For diagnostic replies, start with these headings in order:
   1) Evidence from terminal log
   2) Most likely cause
   3) Suggested next checks
 - Under "Evidence from terminal log", cite 1-3 concrete lines/fragments from the provided terminal context.
-- Do not put any text before these headings when terminal context is present.
+- For script-generation or general authoring prompts, do NOT add diagnostic sections unless the user explicitly asks for diagnosis.
 - Do not classify commands/statements as unsupported unless the provided rules/profile explicitly show that.
 - If a response line (for example ok/error) appears before WAIT_FOR_LINE starts, diagnose this as an ordering/race issue rather than a timeout-duration issue.
 
