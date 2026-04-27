@@ -489,7 +489,9 @@ DIAGNOSTIC RESPONSE CONTRACT
   2) Most likely cause
   3) Suggested next checks
 - Under "Evidence from terminal log", cite 1-3 concrete lines/fragments from the provided terminal context.
+- Do not put any text before these headings when terminal context is present.
 - Do not classify commands/statements as unsupported unless the provided rules/profile explicitly show that.
+- If a response line (for example ok/error) appears before WAIT_FOR_LINE starts, diagnose this as an ordering/race issue rather than a timeout-duration issue.
 
 CANONICAL SCRIPT SHAPE
 ; TITLE: Example
@@ -510,6 +512,8 @@ COMMON FAILURE TRAPS
   Reason: PRINT is a supported GCOM statement.
 - Wrong: claiming SEND "?" is invalid just because no ack was received.
   Reason: a timeout on status query can be transport/runtime behavior; inspect terminal evidence before rewriting commands.
+- Wrong: increasing WAIT_FOR_LINE timeout when the expected line already arrived before WAIT_FOR_LINE started.
+  Reason: WAIT_FOR_LINE matches new incoming lines only; it does not replay earlier consumed lines.
 - Wrong: COS(angle * PI / 180)
   Reason: COS already expects degrees in GCOM.
 - Wrong: LET x = ... + x inside a loop when x is also the center/reference position.
