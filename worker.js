@@ -352,26 +352,32 @@ GCOM is a line-numbered BASIC dialect. Line numbers must be positive integers (1
 Core statements:
   LET var = expr
   SEND "gcode" [TIMEOUT ms] [BUFFERED] [REQUIRE_OK]
-  SET SEND_MODE expr  (BUFFERED | REQUIRE_OK | AUTO)
+  SET key valueExpr  (SEND_DELAY | ACK_TIMEOUT | RX_BUFFER | SEND_MODE | BANNER_TIMEOUT | READY_SETTLE | SEQUENCE_DELAY | STATUS_DELAY)
+  RESET_SETTINGS
   STATUS (preferred realtime status query instead of SEND "?")
   WAIT ms | WAIT_IDLE [ms] | WAIT_STATE target [TIMEOUT ms]
-  PRINT expr | INPUT var [, "Prompt"]
+  WAIT_FOR_LINE(pattern [, timeoutMs]) | READ_LINE([timeoutMs])
+  PRINT expr | INPUT var [, "Prompt"] | LET var = FORM(msgExpr, v1, v2, ...)
   IF condition THEN GOTO line
   FOR var = start TO end [STEP n] ... NEXT [var]
   GOSUB line ... RETURN
-  LET var = SETTING("$N") | RESULT key, expr | END
+  LET var = SETTING("$N") | LET var = READ("$N")
+  RESULT key, expr | REPORT | END
+  CONNECT [BAUD expr] [DTR expr] [WAIT expr] [OBSERVE] | CONNECT WS host [PORT expr] | DISCONNECT
   HOLD | RESUME | STATUS | SOFT_RESET
-  BENCH START | BENCH END
+  BENCH META key=value ... | BENCH START key=value ... | BENCH END key=value ...
 
 Math: ABS INT ROUND(v,d) SQRT SIN COS TAN ASIN ACOS ATAN ATAN2(y,x) RAD DEG RND(max)
-  PI MOD(a,b) MIN(a,b) MAX(a,b) CLAMP(v,lo,hi) HYPOT(a,b) LN LOG LOG10 TRUNC SIGN
+  PI MOD(a,b) MIN(a,b) MAX(a,b) CLAMP(v,lo,hi) HYPOT(a,b) LN LOG LOG10 TRUNC SIGN CEIL FLOOR EXP
+  SINH COSH TANH ASINH ACOSH ATANH
 String: STR(expr) LEN(text) TRIM(text) UPPER(text) LOWER(text)
     SUBSTR(text,start[,length]) CONTAINS(text,needle) STARTS_WITH(text,prefix)
     ENDS_WITH(text,suffix) REPLACE(text,find,with[,max])
 Tokenization: SPLIT_COUNT(text,delim) SPLIT_PART(text,delim,index[,fallback])
      SPLIT_INTO(text,delim,prefix)
-State: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(key[,fallback])
-Template variables use {name=default} syntax substituted before execution.
+State/Runtime: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(key[,fallback]) FORMAT_MS(ms) BENCH_LAST_MS()
+Template variables come from ; VAR name=value headers and are referenced as {name} in program text.
+DESCRIPTION lines may also use {{expr}} placeholders for rendered metadata.
 
 CRITICAL SYNTAX RULES (must follow):
 - Do NOT use // comments anywhere.
@@ -482,6 +488,18 @@ AUTHORING RULES
 - Do not use // comments.
 - Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
 - Prefer STATUS for polling machine status in scripts; avoid SEND "?" unless the user explicitly asks for it.
+- SEND_DELAY defaults to 0; do not add redundant SET SEND_DELAY 0 lines unless the user asks for explicit pacing.
+
+BENCH MARKERS
+- BENCH protocol has three marker lines emitted via PRINT: BENCH META, BENCH START, BENCH END.
+- BENCH META sets chart metadata/axis mapping; send it before the first BENCH START.
+- BENCH_LAST_MS() returns the elapsed ms for the most recently completed BENCH START/END pair.
+
+EXAMPLE QUALITY RULES
+- Prefer complete script packages with ; TITLE, ; VERSION, ; AUTHOR, ; DESCRIPTION, and ; VAR headers.
+- Keep numbered lines left-aligned (no leading indentation before line numbers).
+- Use FORM() confirmation before machine motion in demos where accidental movement would be unsafe.
+- For benchmark demos that move axes, include a cancel path and explicit END on success path.
 
 DIAGNOSTIC RESPONSE CONTRACT
 - If terminal context is provided, your answer must start with these headings in order:
