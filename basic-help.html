@@ -697,16 +697,18 @@
 750 LET pos_field = SPLIT_PART(clean, "|", 2, "")
 760 LET pos_type = SPLIT_PART(pos_field, ":", 1, "")
 770 LET pos_values = SPLIT_PART(pos_field, ":", 2, "")
-780 LET pos_is_mpos = (pos_type = "MPos")
-790 LET pos_is_wpos = (pos_type = "WPos")
-800 LET pos_type_ok = pos_is_mpos + pos_is_wpos
-810 IF pos_type_ok &gt; 0 THEN GOTO 840
-820 LET fail_count = fail_count + 1
-830 PRINT "ASSERT FAIL pos_type expected=MPos|WPos actual=" & pos_type
-835 GOTO 860
-840 LET pass_count = pass_count + 1
-850 PRINT "ASSERT PASS pos_type expected=MPos|WPos actual=" & pos_type
-860 LET parsed_x = SPLIT_PART(pos_values, ",", 1, "")
+780 LET pos_is_mpos = 0
+790 LET pos_is_wpos = 0
+800 IF pos_type = "MPos" THEN LET pos_is_mpos = 1
+810 IF pos_type = "WPos" THEN LET pos_is_wpos = 1
+820 LET pos_type_ok = pos_is_mpos + pos_is_wpos
+830 IF pos_type_ok &gt; 0 THEN GOTO 860
+840 LET fail_count = fail_count + 1
+850 PRINT "ASSERT FAIL pos_type expected=MPos|WPos actual=" & pos_type
+855 GOTO 880
+860 LET pass_count = pass_count + 1
+870 PRINT "ASSERT PASS pos_type expected=MPos|WPos actual=" & pos_type
+880 LET parsed_x = SPLIT_PART(pos_values, ",", 1, "")
 870 LET parsed_y = SPLIT_PART(pos_values, ",", 2, "")
 880 LET parsed_z = SPLIT_PART(pos_values, ",", 3, "")
 890 IF parsed_x = "{expected_x}" THEN GOTO 920
