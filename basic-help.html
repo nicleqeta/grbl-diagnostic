@@ -434,19 +434,18 @@
       </ul>
       <p>All keyword arguments are optional and combinable in any order. If the user cancels the port picker the script stops gracefully.</p>
       <pre><code>10 REM USB/Serial connection test
-    20 REM Success means: banner or status arrives and connection is then closed cleanly.
-    30 SET SEND_DELAY 0
-    40 CONNECT BAUD 115200
-    50 STATUS
-    60 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
-    70 IF reply = "" THEN GOTO 9000
-    80 PRINT "Success check: connected and received: " &amp; reply
-    90 DISCONNECT
-    100 PRINT "Success check: serial connection closed."
-    110 END
-    9000 PRINT "No response from controller (check cable, baud, power)."
-    9010 DISCONNECT
-    9020 END</code></pre>
+20 REM Success means: banner or status arrives and connection is then closed cleanly.
+30 CONNECT BAUD 115200
+40 STATUS
+50 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
+60 IF reply = "" THEN GOTO 9000
+70 PRINT "Success check: connected and received: " &amp; reply
+80 DISCONNECT
+90 PRINT "Success check: serial connection closed."
+100 END
+9000 PRINT "No response from controller (check cable, baud, power)."
+9010 DISCONNECT
+9020 END</code></pre>
 
       <h3 style="margin:16px 0 8px; font-size:15px; color:var(--teal);">WebSocket (WiFi / FluidNC)</h3>
       <p>Use <code>CONNECT WS</code> to connect to a FluidNC or ESP32-based controller over WiFi. No browser port picker appears &mdash; the script connects directly to the address you supply.</p>
@@ -457,24 +456,23 @@
       </ul>
       <p><em>host</em> is an IP address or hostname, e.g. <code>"192.168.1.100"</code>. The script stops if the WebSocket connection fails (unreachable host, refused connection, etc.).</p>
       <pre><code>10 REM WebSocket connection test
-    20 REM Success means: handshake line arrives, firmware info is returned, then clean disconnect.
-    30 SET SEND_DELAY 0
-    40 CONNECT WS "192.168.1.100"
-    50 REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
-    60 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
-    70 IF reply = "" THEN GOTO 9000
-    80 PRINT "Success check: WS connected and received: " &amp; reply
-    90 SEND "$I" TIMEOUT 3000 REQUIRE_OK
-    100 LET info = WAIT_FOR_LINE("\[VER:", 3000)
-    110 IF info = "" THEN GOTO 9010
-    120 PRINT "Success check: firmware info line: " &amp; info
-    130 DISCONNECT
-    140 PRINT "Success check: WS connection closed."
-    150 END
-    9000 PRINT "No handshake line. Check WiFi address/port and controller state."
-    9010 PRINT "No [VER:] firmware line after $I."
-    9020 DISCONNECT
-    9030 END</code></pre>
+20 REM Success means: handshake line arrives, firmware info is returned, then clean disconnect.
+30 CONNECT WS "192.168.1.100"
+40 REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
+50 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
+60 IF reply = "" THEN GOTO 9000
+70 PRINT "Success check: WS connected and received: " &amp; reply
+80 SEND "$I" TIMEOUT 3000 REQUIRE_OK
+90 LET info = WAIT_FOR_LINE("\[VER:", 3000)
+100 IF info = "" THEN GOTO 9010
+110 PRINT "Success check: firmware info line: " &amp; info
+120 DISCONNECT
+130 PRINT "Success check: WS connection closed."
+140 END
+9000 PRINT "No handshake line. Check WiFi address/port and controller state."
+9010 PRINT "No [VER:] firmware line after $I."
+9020 DISCONNECT
+9030 END</code></pre>
     </section>
 
     <section class="card">
@@ -493,21 +491,20 @@
       </ul>
       <p><strong>Why <code>SEND_MODE AUTO</code> exists:</strong> controller families differ a lot in serial buffering and live queue pressure. <code>AUTO</code> keeps one script portable by dynamically choosing <code>BUFFERED</code> or <code>REQUIRE_OK</code> behavior from observed capacity and current in-flight load instead of forcing authors to hardcode per-firmware send strategy.</p>
       <pre><code>REM Zero all delays for a fast benchmark run
-10 SET SEND_DELAY 0
-20 SET ACK_TIMEOUT 30000
-30 STATUS
-40 LET serial_cap = BF_SERIAL()
-50 LET planner_cap = BF_PLANNER()
-60 PRINT "Serial buffer: " &amp; serial_cap &amp; " bytes"
-70 PRINT "Planner slots: " &amp; planner_cap
-80 SET SEND_MODE AUTO
-90 FOR i = 1 TO 100
-100 SEND "G0 X" &amp; i BUFFERED
-110 NEXT i
-120 WAIT_IDLE 30000
-130 RESET_SETTINGS
-140 PRINT "Done &mdash; settings restored to defaults"
-150 END</code></pre>
+10 SET ACK_TIMEOUT 30000
+20 STATUS
+30 LET serial_cap = BF_SERIAL()
+40 LET planner_cap = BF_PLANNER()
+50 PRINT "Serial buffer: " &amp; serial_cap &amp; " bytes"
+60 PRINT "Planner slots: " &amp; planner_cap
+70 SET SEND_MODE AUTO
+80 FOR i = 1 TO 100
+90 SEND "G0 X" &amp; i BUFFERED
+100 NEXT i
+110 WAIT_IDLE 30000
+120 RESET_SETTINGS
+130 PRINT "Done &mdash; settings restored to defaults"
+140 END</code></pre>
     </section>
 
     <section class="card">
@@ -1004,7 +1001,7 @@
     <section class="card">
       <h2>14. Example: FluidNC Startup Flowchart</h2>
       <p>This script implements the <a href="https://wiki.fluidnc.com/en/support/gcode_senders" target="_blank" rel="noopener">FluidNC sender startup flowchart</a>: open the port, send a status poll to wake the controller, wait for a banner (<code>Grbl&nbsp;&hellip;</code> or <code>FluidNC&nbsp;&hellip;</code>) or a live-state response (<code>&lt;Idle|&hellip;&gt;</code>), then read <code>$30</code> to confirm two-way comms. A graceful <code>DISCONNECT</code> handles the no-response case.</p>
-      <p><code>SEND_DELAY</code> defaults to <code>0</code>, so explicit <code>SET SEND_DELAY 0</code> is optional. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout when pacing is needed.</p>
+      <p><code>SEND_DELAY</code> defaults to <code>0</code>, and <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout when pacing is needed.</p>
       <pre><code>; TITLE: FluidNC Startup Flowchart
 ; AUTHOR: GitHub Copilot
 ; VERSION: 1
@@ -1016,28 +1013,25 @@
 ; VAR banner_timeout=3000
 ; VAR settle_ms=200
 
-10 REM SEND_DELAY defaults to 0; explicit set is kept for readability
-20 SET SEND_DELAY 0
+10 REM Open the browser serial port picker and connect
+20 CONNECT BAUD {baud}
 
-30 REM Open the browser serial port picker and connect
-40 CONNECT BAUD {baud}
+30 REM ? is a realtime status poll &mdash; safe on any firmware state, provokes a response
+40 STATUS
 
-50 REM ? is a realtime status poll &mdash; safe on any firmware state, provokes a response
-60 STATUS
+50 REM Wait for a startup banner (GrblHAL / Grbl / FluidNC) or a live-state report (&lt;Idle|...&gt;)
+60 LET first_line = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", {banner_timeout})
+70 IF first_line = "" THEN GOTO 9000
 
-70 REM Wait for a startup banner (GrblHAL / Grbl / FluidNC) or a live-state report (&lt;Idle|...&gt;)
-80 LET first_line = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", {banner_timeout})
-90 IF first_line = "" THEN GOTO 9000
+80 PRINT "Controller responded: " &amp; first_line
+90 WAIT {settle_ms}
 
-100 PRINT "Controller responded: " &amp; first_line
-110 WAIT {settle_ms}
-
-120 REM Read $30 to confirm full two-way (command + response) comms are working
-130 LET max_rpm = READ("$30")
-140 PRINT "Max spindle RPM ($30) = " &amp; max_rpm
-150 PRINT "Startup complete &mdash; add machine-specific steps below."
-160 STATUS
-170 END
+100 REM Read $30 to confirm full two-way (command + response) comms are working
+110 LET max_rpm = READ("$30")
+120 PRINT "Max spindle RPM ($30) = " &amp; max_rpm
+130 PRINT "Startup complete &mdash; add machine-specific steps below."
+140 STATUS
+150 END
 
 9000 PRINT "No response within " &amp; {banner_timeout} &amp; " ms."
 9010 PRINT "Check baud rate ({baud}) and USB cable, then retry."
@@ -1129,3 +1123,4 @@
   </script>
 </body>
 </html>
+
