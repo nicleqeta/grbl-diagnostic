@@ -779,6 +779,23 @@
     max-height: min(44vh, 360px);
     overflow-y: auto;
   }
+  .basic-confirm-more {
+    margin-top: 10px;
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+  }
+  .basic-confirm-more > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    user-select: none;
+  }
+  .basic-confirm-more-body {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
   .basic-confirm-vars {
     font-size: 11px;
     color: var(--text-muted);
@@ -5966,7 +5983,26 @@ function basicPromptInput(promptText) {
 // Show confirm modal and wait for user decision
 function basicShowConfirm(configText, vars) {
   return new Promise((resolve) => {
-    basicConfirmDescription.textContent = configText || 'Run this script?';
+    const fullText = String(configText || 'Run this script?');
+    const blocks = fullText.split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
+    const compileBlockIndex = blocks.findIndex(block => /^Compile target:/i.test(block));
+    const mainText = blocks
+      .filter((_, index) => index !== compileBlockIndex)
+      .join('\n\n') || 'Run this script?';
+    const compileText = compileBlockIndex >= 0 ? blocks[compileBlockIndex] : '';
+
+    const escapeHtml = (text) => String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const mainHtml = escapeHtml(mainText);
+    const moreInfoHtml = compileText
+      ? `<details class="basic-confirm-more"><summary>More info</summary><div class="basic-confirm-more-body">${escapeHtml(compileText)}</div></details>`
+      : '';
+    basicConfirmDescription.innerHTML = `${mainHtml}${moreInfoHtml}`;
 
     if (Object.keys(vars).length > 0) {
       const lines = Object.entries(vars).map(([k, v]) =>
