@@ -328,13 +328,30 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
         <li><code>LET name = WAIT_FOR_LINE(pattern, timeoutMs)</code> or <code>WAIT_FOR_LINE(pattern, timeoutMs) INTO name</code>: Block until an incoming serial line matches <em>pattern</em> (regex or plain substring). Returns the matched line, or <code>""</code> on timeout. Pass 0 for no timeout.</li>
         <li><code>LET name = READ_LINE(timeoutMs)</code> or <code>READ_LINE(timeoutMs) INTO name</code>: Return the very next incoming serial line regardless of content; <code>""</code> on timeout.</li>
       </ul>
-      <pre><code>10 SEND "G0 X0 Y0" TIMEOUT 1500 REQUIRE_OK
-20 WAIT_IDLE 20000
-30 WAIT_STATE "idle" TIMEOUT 5000
-40 REM Wait for controller to ack a specific setting change
-50 SEND "$30=1000"
-60 LET ack = WAIT_FOR_LINE("ok|error", 2000)
-70 PRINT "Got: " &amp; ack</code></pre>
+      <pre><code>10 REM WAIT expr
+    20 WAIT 250
+    30 REM WAIT_IDLE (no timeout) and WAIT_IDLE timeoutMs
+    40 WAIT_IDLE
+    50 WAIT_IDLE 20000
+    60 REM WAIT_STATE target and WAIT_STATE target TIMEOUT timeoutMs
+    70 WAIT_STATE "idle"
+    80 WAIT_STATE "idle" TIMEOUT 5000
+    90 REM For command acknowledgements, use REQUIRE_OK on SEND
+    100 SEND "$I" TIMEOUT 2000 REQUIRE_OK
+    110 REM LET name = WAIT_FOR_LINE(pattern, timeoutMs)
+    120 LET fw = WAIT_FOR_LINE("\[VER:", 3000)
+    130 PRINT "FW line: " &amp; fw
+    140 REM WAIT_FOR_LINE(pattern, timeoutMs) INTO name
+    150 STATUS
+    160 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
+    170 PRINT "Status: " &amp; status_line
+    180 REM LET name = READ_LINE(timeoutMs)
+    190 LET next_line = READ_LINE(1500)
+    200 PRINT "READ_LINE LET: " &amp; next_line
+    210 REM READ_LINE(timeoutMs) INTO name
+    220 READ_LINE(1500) INTO line2
+    230 PRINT "READ_LINE INTO: " &amp; line2
+    240 END</code></pre>
     </section>
 
     <section class="card">
