@@ -305,12 +305,12 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
         <li><code>SEND expr REQUIRE_OK</code>: Fail statement if no <code>ok/error/ALARM</code> acknowledgement arrives.</li>
         <li><code>SEND expr TIMEOUT expr REQUIRE_OK</code>: Use both options together.</li>
         <li><code>SEND expr BUFFERED</code>: Stream a normal line-based GRBL command using host-side RX buffer accounting. Buffered sends do not wait for machine idle after each line; use <code>WAIT_IDLE</code> after the final buffered command in a batch to flush all acknowledgements and then wait for motion to finish.</li>
-        <li><code>SENDBUFF expr</code>: Shorthand for <code>SEND expr BUFFERED</code> — stream a command without waiting for ack.</li>
-        <li><code>SENDACK expr</code> or <code>SENDACK expr timeoutMs</code>: Shorthand for <code>SEND expr TIMEOUT timeoutMs REQUIRE_OK</code> — send and wait for ack (default timeout 12 s).</li>
+        <li><code>SENDBUFF expr</code>: Legacy alias for <code>SEND expr BUFFERED</code>. Prefer <code>SEND ... BUFFERED</code> in new scripts.</li>
+        <li><code>SENDACK expr</code> or <code>SENDACK expr timeoutMs</code>: Legacy alias for <code>SEND expr TIMEOUT timeoutMs REQUIRE_OK</code>. Prefer <code>SEND ... REQUIRE_OK</code> in new scripts.</li>
         <li><code>HOLD</code>, <code>RESUME</code>, <code>STATUS</code>, <code>SOFT_RESET</code>: Realtime control commands.</li>
       </ul>
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
-      <p>Rule of thumb for sender mode selection: serial buffer below ~512 bytes usually benefits from buffered sends; serial buffer above ~512 bytes is often as fast or faster with ACK-gated sends (<code>SENDACK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
+      <p>Rule of thumb for sender mode selection: serial buffer below ~50% utilization usually benefits from buffered sends; higher pressure is often as fast or safer with strict ACK-gated sends (<code>REQUIRE_OK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
       <pre><code>10 LET speed = 900
 20 SEND "M3 S" & speed TIMEOUT 1200 REQUIRE_OK
 30 STATUS
@@ -391,14 +391,14 @@ REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
         <li><code>SET SEND_DELAY expr</code>: Pause in ms appended after each <code>SEND</code> (default&nbsp;100). Set to <code>0</code> to remove all inter-command delays — useful for benchmarks or when <code>WAIT_FOR_LINE</code> already manages pacing.</li>
         <li><code>SET ACK_TIMEOUT expr</code>: Default acknowledgement wait in ms (default&nbsp;12000). Affects bare <code>SEND</code> without an explicit <code>TIMEOUT</code>, and <code>WAIT_FOR_LINE</code>&nbsp;/&nbsp;<code>READ_LINE</code> without an explicit timeout argument.</li>
         <li><code>SET RX_BUFFER expr</code>: Fallback RX buffer byte limit when no <code>Bf:</code> report has been observed (default&nbsp;64). Controls the <code>SEND &hellip; BUFFERED</code> window. Once a real <code>Bf:</code> serial value is observed, runtime capacity estimates use observed values instead of this fallback.</li>
-        <li><code>SET SEND_MODE expr</code>: Select buffered-intent routing policy: <code>BUFFERED</code> (always buffered), <code>SENDACK</code> (route buffered-intent sends to ack-gated behavior), or <code>AUTO</code> (use ACK-gated when observed serial buffer is at least 512 bytes, otherwise buffered). If no serial <code>Bf:</code> has been observed yet, <code>AUTO</code> stays conservative and uses buffered mode.</li>
+        <li><code>SET SEND_MODE expr</code>: Select send routing policy: <code>BUFFERED</code> (prefer buffered streaming), <code>REQUIRE_OK</code> (strict ack-gated sending), or <code>AUTO</code> (buffered while host-side serial pressure is low, otherwise <code>REQUIRE_OK</code>). If no serial <code>Bf:</code> has been observed yet, <code>AUTO</code> uses the configured RX buffer fallback estimate.</li>
         <li><code>SET BANNER_TIMEOUT expr</code>: Milliseconds to wait for a startup banner after <code>CONNECT</code> (default&nbsp;3000).</li>
         <li><code>SET READY_SETTLE expr</code>: Post-connect idle settle time in ms (default&nbsp;150).</li>
         <li><code>SET SEQUENCE_DELAY expr</code>: Inter-command spacing in ms during startup sequences (default&nbsp;450).</li>
         <li><code>SET STATUS_DELAY expr</code>: Delay in ms between status polls (default&nbsp;600).</li>
         <li><code>RESET_SETTINGS</code>: Restore all runtime settings to their defaults mid-script.</li>
       </ul>
-      <p><strong>Why <code>SEND_MODE AUTO</code> exists:</strong> controller families differ a lot in serial buffering. Small-buffer controllers usually gain throughput from host-side buffered streaming, while large-buffer controllers often acknowledge so quickly that strict ACK-gated sends are equal or faster. <code>AUTO</code> keeps one script portable by choosing behavior from observed <code>Bf:</code> serial capacity instead of forcing authors to hardcode per-firmware send strategy.</p>
+      <p><strong>Why <code>SEND_MODE AUTO</code> exists:</strong> controller families differ a lot in serial buffering and live queue pressure. <code>AUTO</code> keeps one script portable by dynamically choosing <code>BUFFERED</code> or <code>REQUIRE_OK</code> behavior from observed capacity and current in-flight load instead of forcing authors to hardcode per-firmware send strategy.</p>
       <pre><code>REM Zero all delays for a fast benchmark run
 10 SET SEND_DELAY 0
 20 SET ACK_TIMEOUT 30000
