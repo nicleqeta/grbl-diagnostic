@@ -342,26 +342,30 @@
       <pre><code>; TITLE: Section 2 — Machine I/O Smoke Test
 ; VERSION: 1.0
 ; DESCRIPTION: Tests SEND/REQUIRE_OK, STATUS, HOLD, and RESUME.
-; DESCRIPTION: Set spindle_speed to whatever S-value is safe on your machine (0 = laser off / spindle off).
-; DESCRIPTION: Success: M3 acknowledged, STATUS returns a state frame, HOLD/RESUME cycle, M5 acknowledged.
+; DESCRIPTION: In laser mode G1+F is required to activate the output — M3 alone is not enough.
+; DESCRIPTION: Set spindle_speed to a safe S-value (0 = off). Set feed_rate to a safe feed.
+; DESCRIPTION: Success: M3 G1 acknowledged, STATUS returns a state frame, HOLD/RESUME cycle, M5 acknowledged.
 ; VAR spindle_speed=0
-10 REM spindle_speed controls the S value sent to M3
+; VAR feed_rate=100
+10 REM spindle_speed = S-value; feed_rate = F-value for laser mode
 20 LET speed = {spindle_speed}
-30 PRINT "Starting I/O test at S" &amp; speed &amp; "..."
-40 SEND "M3 S" &amp; speed TIMEOUT 1500 REQUIRE_OK
-50 PRINT "Success check: M3 acknowledged at S" &amp; speed
-60 STATUS
-70 LET st = WAIT_FOR_LINE("^&lt;", 2000)
-80 IF st = "" THEN GOTO 9000
-90 PRINT "Success check: STATUS returned: " &amp; st
-100 HOLD
-110 PRINT "Success check: controller should enter Hold state."
-120 WAIT 500
-130 RESUME
-140 PRINT "Success check: controller should leave Hold and continue."
-150 SEND "M5" TIMEOUT 1500 REQUIRE_OK
-160 PRINT "Test complete: M5 acknowledged."
-170 END
+30 LET feed = {feed_rate}
+40 PRINT "Starting I/O test at S" &amp; speed &amp; " F" &amp; feed &amp; "..."
+50 REM Laser mode requires G1 + F to actually enable output; safe for spindle too
+60 SEND "M3 G1 F" &amp; feed &amp; " S" &amp; speed TIMEOUT 1500 REQUIRE_OK
+70 PRINT "Success check: M3 G1 acknowledged at S" &amp; speed &amp; " F" &amp; feed
+80 STATUS
+90 LET st = WAIT_FOR_LINE("^&lt;", 2000)
+100 IF st = "" THEN GOTO 9000
+110 PRINT "Success check: STATUS returned: " &amp; st
+120 HOLD
+130 PRINT "Success check: controller should enter Hold state."
+140 WAIT 500
+150 RESUME
+160 PRINT "Success check: controller should leave Hold and continue."
+170 SEND "M5" TIMEOUT 1500 REQUIRE_OK
+180 PRINT "Test complete: M5 acknowledged."
+190 END
 9000 PRINT "No STATUS frame returned within 2000 ms."
 9010 SEND "M5" TIMEOUT 1500 REQUIRE_OK
 9020 END</code></pre>
