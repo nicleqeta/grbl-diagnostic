@@ -329,29 +329,29 @@ REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
         <li><code>LET name = READ_LINE(timeoutMs)</code> or <code>READ_LINE(timeoutMs) INTO name</code>: Return the very next incoming serial line regardless of content; <code>""</code> on timeout.</li>
       </ul>
       <pre><code>10 REM WAIT expr
-    20 WAIT 250
-    30 REM WAIT_IDLE (no timeout) and WAIT_IDLE timeoutMs
-    40 WAIT_IDLE
-    50 WAIT_IDLE 20000
-    60 REM WAIT_STATE target and WAIT_STATE target TIMEOUT timeoutMs
-    70 WAIT_STATE "idle"
-    80 WAIT_STATE "idle" TIMEOUT 5000
-    90 REM For command acknowledgements, use REQUIRE_OK on SEND
-    100 SEND "$I" TIMEOUT 2000 REQUIRE_OK
-    110 PRINT "$I acknowledged"
-    120 REM WAIT_FOR_LINE should watch lines that arrive after it starts
-    130 STATUS
-    140 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
-    150 PRINT "Status (INTO): " &amp; status_line
-    160 STATUS
-    170 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
-    180 PRINT "Status (LET): " &amp; status_line2
-    190 REM READ_LINE returns the next incoming line (or "" on timeout)
-    200 LET next_line = READ_LINE(1500)
-    210 PRINT "READ_LINE LET: " &amp; next_line
-    220 READ_LINE(1500) INTO line2
-    230 PRINT "READ_LINE INTO: " &amp; line2
-    240 END</code></pre>
+20 WAIT 250
+30 REM WAIT_IDLE (no timeout) and WAIT_IDLE timeoutMs
+40 WAIT_IDLE
+50 WAIT_IDLE 20000
+60 REM WAIT_STATE target and WAIT_STATE target TIMEOUT timeoutMs
+70 WAIT_STATE "idle"
+80 WAIT_STATE "idle" TIMEOUT 5000
+90 REM For command acknowledgements, use REQUIRE_OK on SEND
+100 SEND "$I" TIMEOUT 2000 REQUIRE_OK
+110 PRINT "$I acknowledged"
+120 REM WAIT_FOR_LINE should watch lines that arrive after it starts
+130 STATUS
+140 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
+150 PRINT "Status (INTO): " &amp; status_line
+160 STATUS
+170 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
+180 PRINT "Status (LET): " &amp; status_line2
+190 REM READ_LINE returns the next incoming line (or "" on timeout)
+200 LET next_line = READ_LINE(1500)
+210 PRINT "READ_LINE LET: " &amp; next_line
+220 READ_LINE(1500) INTO line2
+230 PRINT "READ_LINE INTO: " &amp; line2
+240 END</code></pre>
     </section>
 
     <section class="card">

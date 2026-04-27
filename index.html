@@ -2551,6 +2551,7 @@ let currentRun = {
 };
 
 // BASIC interpreter state
+let basicCurrentLineNum = null; // set to current GCOM line number during script execution
 let basicRunning = false;
 let basicStopRequested = false;
 let basicPaused = false;
@@ -7293,6 +7294,7 @@ async function runBasicScript(source) {
 
       const lineNum = sequence[pc].lineNum;
       activeLineNum = lineNum;
+      basicCurrentLineNum = lineNum;
       const stmt = sequence[pc].stmt;
 
        // REM (comment)
@@ -7926,6 +7928,7 @@ async function runBasicScript(source) {
       addLine(`Script error: ${message}`, 'err');
     }
   } finally {
+    basicCurrentLineNum = null;
     resetBasicScriptSettings();
     resetBasicBufferedStream();
     if (basicBenchmarkCapture) {
@@ -9816,6 +9819,7 @@ function addLine(text, type = 'rx') {
   const time = formatLogTimestamp(now);
   const arrows = { tx: '\u2192', rx: '\u2190', sys: '\u25CF', err: '\u2715', basic: '\u2B21' };
   const arrow = arrows[type] || '\u2190';
+  if (type === 'basic' && basicCurrentLineNum != null) text = `${basicCurrentLineNum}: ${text}`;
   const trimmedText = String(text || '').trim();
 
   if (benchmarkRuntimeWorkerReady && (type === 'tx' || type === 'rx')) {
