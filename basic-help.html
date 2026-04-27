@@ -333,12 +333,28 @@
       </ul>
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
       <p>Rule of thumb for sender mode selection: serial buffer below ~50% utilization usually benefits from buffered sends; higher pressure is often as fast or safer with strict ACK-gated sends (<code>REQUIRE_OK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
-      <pre><code>10 LET speed = 900
-20 SEND "M3 S" & speed TIMEOUT 1200 REQUIRE_OK
-30 STATUS
-40 HOLD
-50 WAIT 500
-60 RESUME</code></pre>
+      <pre><code>10 REM Section 2 machine I/O smoke test
+    20 REM Success means: SEND commands are acknowledged, STATUS returns a line,
+    30 REM and HOLD/RESUME transitions occur without error or ALARM.
+    40 LET speed = 900
+    50 PRINT "Starting I/O test..."
+    60 SEND "M3 S" & speed TIMEOUT 1500 REQUIRE_OK
+    70 PRINT "Success check: M3 was acknowledged at S" & speed
+    80 STATUS
+    90 LET st = WAIT_FOR_LINE("^&lt;", 2000)
+    100 IF st = "" THEN GOTO 9000
+    110 PRINT "Success check: STATUS returned a state frame: " & st
+    120 HOLD
+    130 PRINT "Success check: controller should enter Hold state."
+    140 WAIT 500
+    150 RESUME
+    160 PRINT "Success check: controller should leave Hold and continue."
+    170 SEND "M5" TIMEOUT 1500 REQUIRE_OK
+    180 PRINT "Test complete: M5 acknowledged."
+    190 END
+    9000 PRINT "No STATUS frame returned within 2000 ms."
+    9010 SEND "M5" TIMEOUT 1500 REQUIRE_OK
+    9020 END</code></pre>
     </section>
 
     <section class="card">
@@ -350,30 +366,40 @@
         <li><code>LET name = WAIT_FOR_LINE(pattern, timeoutMs)</code> or <code>WAIT_FOR_LINE(pattern, timeoutMs) INTO name</code>: Block until an incoming serial line matches <em>pattern</em> (regex or plain substring). Returns the matched line, or <code>""</code> on timeout. Pass 0 for no timeout.</li>
         <li><code>LET name = READ_LINE(timeoutMs)</code> or <code>READ_LINE(timeoutMs) INTO name</code>: Return the very next incoming serial line regardless of content; <code>""</code> on timeout.</li>
       </ul>
-      <pre><code>10 REM WAIT expr
-20 WAIT 250
-30 REM WAIT_IDLE (no timeout) and WAIT_IDLE timeoutMs
-40 WAIT_IDLE
-50 WAIT_IDLE 20000
-60 REM WAIT_STATE target and WAIT_STATE target TIMEOUT timeoutMs
-70 WAIT_STATE "idle"
-80 WAIT_STATE "idle" TIMEOUT 5000
-90 REM For command acknowledgements, use REQUIRE_OK on SEND
-100 SEND "$I" TIMEOUT 2000 REQUIRE_OK
-110 PRINT "$I acknowledged"
-120 REM WAIT_FOR_LINE should watch lines that arrive after it starts
-130 STATUS
-140 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
-150 PRINT "Status (INTO): " &amp; status_line
-160 STATUS
-170 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
-180 PRINT "Status (LET): " &amp; status_line2
-190 REM READ_LINE returns the next incoming line (or "" on timeout)
-200 LET next_line = READ_LINE(1500)
-210 PRINT "READ_LINE LET: " &amp; next_line
-220 READ_LINE(1500) INTO line2
-230 PRINT "READ_LINE INTO: " &amp; line2
-240 END</code></pre>
+      <pre><code>10 REM Section 3 timing/state/line-capture test
+    20 REM Success means: each wait returns in time and captured lines are non-empty.
+    30 WAIT 250
+    40 WAIT_IDLE 20000
+    50 WAIT_STATE "idle" TIMEOUT 5000
+    60 PRINT "Success check: WAIT + WAIT_IDLE + WAIT_STATE completed."
+    70 REM For command acknowledgements, use REQUIRE_OK on SEND
+    80 SEND "$I" TIMEOUT 2000 REQUIRE_OK
+    90 PRINT "Success check: $I acknowledged."
+    100 REM WAIT_FOR_LINE should only match lines arriving after STATUS is sent
+    110 STATUS
+    120 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
+    130 IF status_line = "" THEN GOTO 9000
+    140 PRINT "Success check: WAIT_FOR_LINE INTO captured: " &amp; status_line
+    150 STATUS
+    160 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
+    170 IF status_line2 = "" THEN GOTO 9010
+    180 PRINT "Success check: WAIT_FOR_LINE LET captured: " &amp; status_line2
+    190 REM READ_LINE returns the next incoming line (or "" on timeout)
+    200 STATUS
+    210 LET next_line = READ_LINE(1500)
+    220 IF next_line = "" THEN GOTO 9020
+    230 PRINT "Success check: READ_LINE LET captured: " &amp; next_line
+    240 STATUS
+    250 READ_LINE(1500) INTO line2
+    260 IF line2 = "" THEN GOTO 9030
+    270 PRINT "Success check: READ_LINE INTO captured: " &amp; line2
+    280 PRINT "Section 3 test complete."
+    290 END
+    9000 PRINT "WAIT_FOR_LINE INTO timed out."
+    9010 PRINT "WAIT_FOR_LINE LET timed out."
+    9020 PRINT "READ_LINE LET timed out."
+    9030 PRINT "READ_LINE INTO timed out."
+    9040 END</code></pre>
     </section>
 
     <section class="card">
@@ -389,16 +415,20 @@
         <li><code>CONNECT &hellip; OBSERVE</code>: Connect in observe-only mode; no commands are sent.</li>
       </ul>
       <p>All keyword arguments are optional and combinable in any order. If the user cancels the port picker the script stops gracefully.</p>
-      <pre><code>10 SET SEND_DELAY 0
-20 CONNECT BAUD 115200
-30 STATUS
-40 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
-50 IF reply = "" THEN GOTO 9000
-60 PRINT "Connected: " &amp; reply
-70 END
-9000 PRINT "No response — check cable."
-9010 DISCONNECT
-9020 END</code></pre>
+      <pre><code>10 REM USB/Serial connection smoke test
+    20 REM Success means: banner or status arrives and connection is then closed cleanly.
+    30 SET SEND_DELAY 0
+    40 CONNECT BAUD 115200
+    50 STATUS
+    60 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 3000)
+    70 IF reply = "" THEN GOTO 9000
+    80 PRINT "Success check: connected and received: " &amp; reply
+    90 DISCONNECT
+    100 PRINT "Success check: serial connection closed."
+    110 END
+    9000 PRINT "No response from controller (check cable, baud, power)."
+    9010 DISCONNECT
+    9020 END</code></pre>
 
       <h3 style="margin:16px 0 8px; font-size:15px; color:var(--teal);">WebSocket (WiFi / FluidNC)</h3>
       <p>Use <code>CONNECT WS</code> to connect to a FluidNC or ESP32-based controller over WiFi. No browser port picker appears &mdash; the script connects directly to the address you supply.</p>
@@ -408,19 +438,25 @@
         <li><code>DISCONNECT</code>: Close either a serial or WebSocket connection.</li>
       </ul>
       <p><em>host</em> is an IP address or hostname, e.g. <code>"192.168.1.100"</code>. The script stops if the WebSocket connection fails (unreachable host, refused connection, etc.).</p>
-      <pre><code>10 SET SEND_DELAY 0
-20 CONNECT WS "192.168.1.100"
-REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
-30 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
-40 IF reply = "" THEN GOTO 9000
-50 PRINT "Connected: " &amp; reply
-60 SEND "$I"
-70 LET info = WAIT_FOR_LINE("\[VER:", 3000)
-80 PRINT "Firmware: " &amp; info
-90 DISCONNECT
-100 END
-9000 PRINT "No response — check WiFi address and port."
-9010 END</code></pre>
+      <pre><code>10 REM WebSocket connection smoke test
+    20 REM Success means: handshake line arrives, firmware info is returned, then clean disconnect.
+    30 SET SEND_DELAY 0
+    40 CONNECT WS "192.168.1.100"
+    50 REM Use PORT 81 for older FluidNC: CONNECT WS "192.168.1.100" PORT 81
+    60 LET reply = WAIT_FOR_LINE("GrblHAL|Grbl|FluidNC|&lt;", 5000)
+    70 IF reply = "" THEN GOTO 9000
+    80 PRINT "Success check: WS connected and received: " &amp; reply
+    90 SEND "$I" TIMEOUT 3000 REQUIRE_OK
+    100 LET info = WAIT_FOR_LINE("\[VER:", 3000)
+    110 IF info = "" THEN GOTO 9010
+    120 PRINT "Success check: firmware info line: " &amp; info
+    130 DISCONNECT
+    140 PRINT "Success check: WS connection closed."
+    150 END
+    9000 PRINT "No handshake line. Check WiFi address/port and controller state."
+    9010 PRINT "No [VER:] firmware line after $I."
+    9020 DISCONNECT
+    9030 END</code></pre>
     </section>
 
     <section class="card">
