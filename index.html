@@ -1362,12 +1362,38 @@
 
   .ai-chat-input-bar {
     display: flex;
+    flex-direction: column;
     gap: 6px;
     padding: 10px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
-    align-items: flex-end;
+    align-items: stretch;
     background: var(--surface);
+  }
+  .ai-chat-options {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .ai-terminal-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    user-select: none;
+    cursor: pointer;
+  }
+  .ai-terminal-toggle input {
+    accent-color: var(--teal);
+    width: 13px;
+    height: 13px;
+    cursor: pointer;
+  }
+  .ai-chat-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
   }
   .ai-chat-input-bar textarea {
     flex: 1;
@@ -2035,8 +2061,16 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
       <div class="ai-proposals-list" id="ai-proposals-list"></div>
     </div>
     <div class="ai-chat-input-bar">
-      <textarea id="ai-prompt-input" placeholder="Ask me to write a GCOM script, explain G-code, or refine a selection&#x2026;" rows="2"></textarea>
-      <button class="ai-send-btn" id="ai-send-btn" title="Send (Enter)">&#9654;</button>
+      <div class="ai-chat-options">
+        <label class="ai-terminal-toggle" title="Attach recent terminal output to AI requests">
+          <input type="checkbox" id="ai-include-terminal-toggle">
+          <span>Include terminal logs</span>
+        </label>
+      </div>
+      <div class="ai-chat-input-row">
+        <textarea id="ai-prompt-input" placeholder="Ask me to write a GCOM script, explain G-code, or refine a selection&#x2026;" rows="2"></textarea>
+        <button class="ai-send-btn" id="ai-send-btn" title="Send (Enter)">&#9654;</button>
+      </div>
     </div>
   </div>
 </main>
@@ -10309,6 +10343,7 @@ const aiExportCloseBtnEl = document.getElementById('ai-export-close-btn');
 const aiChatContainerEl  = document.getElementById('ai-chat-container');
 const aiPromptInputEl    = document.getElementById('ai-prompt-input');
 const aiSendBtnEl        = document.getElementById('ai-send-btn');
+const aiIncludeTerminalToggleEl = document.getElementById('ai-include-terminal-toggle');
 const aiContextBarEl     = document.getElementById('ai-context-bar');
 const aiContextChipsEl   = document.getElementById('ai-context-chips');
 const aiContextClearBtnEl = document.getElementById('ai-context-clear-btn');
@@ -10321,6 +10356,7 @@ let aiSidebarOpen = true;
 let aiChatHistory = [];
 let aiExchangeLog = [];  // captures each completed exchange for export
 let aiSelectionContext = null;
+let aiTerminalToggleTouched = false;
 let aiThinking = false;
 let aiRepairInFlight = false;
 let aiLastBlockedContext = null;
@@ -10642,12 +10678,42 @@ function aiPromptRequestsTerminalContext(userText) {
   return /(terminal|console|log output|terminal output|terminal log|serial log|websocket log|error log|from the log)/.test(text);
 }
 
+function aiHasRecentTerminalError() {
+  if (!Array.isArray(logLines) || !logLines.length) return false;
+  const recent = logLines.slice(-220).join('\n');
+  return /(✕\s*script error|script error on line|no terminal acknowledgement|\balarm\b|\berror\b)/i.test(recent);
+}
+
+function aiSyncTerminalToggleState() {
+  if (!aiIncludeTerminalToggleEl || aiTerminalToggleTouched) return;
+  aiIncludeTerminalToggleEl.checked = aiHasRecentTerminalError();
+}
+
+function aiShouldIncludeTerminalContext(userText) {
+  const promptRequested = aiPromptRequestsTerminalContext(userText);
+  const recentError = aiHasRecentTerminalError();
+
+  // After runtime errors, default to attaching logs unless the user explicitly changed the toggle.
+  if (aiIncludeTerminalToggleEl && !aiTerminalToggleTouched && recentError) {
+    aiIncludeTerminalToggleEl.checked = true;
+  }
+
+  const toggleEnabled = aiIncludeTerminalToggleEl ? !!aiIncludeTerminalToggleEl.checked : false;
+  return promptRequested || toggleEnabled || recentError;
+}
+
 function aiGetTerminalContext(userText) {
-  if (!aiPromptRequestsTerminalContext(userText) || !Array.isArray(logLines) || !logLines.length) return null;
+  if (!Array.isArray(logLines) || !logLines.length) return null;
+  if (!aiShouldIncludeTerminalContext(userText)) return null;
   const recentLines = logLines.slice(-AI_TERMINAL_CONTEXT_LINE_LIMIT);
+  const promptRequested = aiPromptRequestsTerminalContext(userText);
+  const recentError = aiHasRecentTerminalError();
+  const toggleEnabled = aiIncludeTerminalToggleEl ? !!aiIncludeTerminalToggleEl.checked : false;
   return {
     source: 'terminal-output',
-    requestedByUser: true,
+    requestedByUser: promptRequested,
+    includedByToggle: toggleEnabled,
+    includedByRecentError: recentError,
     lineCount: recentLines.length,
     lines: recentLines
   };
@@ -10697,6 +10763,7 @@ function aiSetOpen(open) {
       aiSidebarEl.style.flexBasis = '340px';
     }
   }
+  if (open) aiSyncTerminalToggleState();
   if (open) setTimeout(() => aiPromptInputEl && aiPromptInputEl.focus(), 220);
 }
 
@@ -11041,6 +11108,7 @@ function aiExportCopySelected() {
 async function aiSend(userText) {
   userText = (userText || '').trim();
   if (!userText || aiThinking) return;
+  aiSyncTerminalToggleState();
   aiThinking = true;
   if (aiSendBtnEl) aiSendBtnEl.disabled = true;
   if (aiPromptInputEl) { aiPromptInputEl.value = ''; aiPromptInputEl.style.height = ''; }
@@ -11168,6 +11236,12 @@ if (aiExportOverlayEl)  aiExportOverlayEl.addEventListener('click',  e => { if (
 if (document.getElementById('ai-export-select-all'))  document.getElementById('ai-export-select-all').addEventListener('click',  () => aiExportSetAllChecked(true));
 if (document.getElementById('ai-export-select-none')) document.getElementById('ai-export-select-none').addEventListener('click', () => aiExportSetAllChecked(false));
 if (aiExportCopyBtnEl)  aiExportCopyBtnEl.addEventListener('click',  () => aiExportCopySelected());
+if (aiIncludeTerminalToggleEl) {
+  aiSyncTerminalToggleState();
+  aiIncludeTerminalToggleEl.addEventListener('change', () => {
+    aiTerminalToggleTouched = true;
+  });
+}
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
 aiSetOpen(true);
