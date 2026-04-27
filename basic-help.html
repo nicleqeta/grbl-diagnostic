@@ -784,14 +784,17 @@
         The Preview Benchmark chart auto-scales to all recorded points and renders each series in a distinct colour.
         The <strong>Copy JSON</strong> button in Preview exports the full record set with metadata in a self-describing format ready for downstream analysis or AI-assisted visualisation.
       </p>
+      <p><span class="warn">Note:</span> the example below sends real motion commands. The machine must be connected and in Idle state before running. A <code>FORM()</code> confirmation at line 5 gates the motion so the script stops cleanly if cancelled.</p>
       <pre><code>; TITLE: Benchmark Markers Demo
-; VERSION: 1
+; VERSION: 2
 ; AUTHOR: GitHub Copilot
 ; DESCRIPTION: Times one X back-and-forth move at {accel} mm/s² over {distance} mm and records the elapsed sample to the Preview Benchmark chart.
 ; VAR accel=400
 ; VAR distance=10
 ; VAR x_feed=5000
 ; VAR idle_timeout=8000
+5 LET go = FORM("Benchmark demo: X will move " &amp; {distance} &amp; " mm at F{x_feed}. Machine must be connected and idle. [Run] [Cancel]", 1, 0)
+8 IF go &lt;&gt; 1 THEN GOTO 9000
 10 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Duration (ms) title=Accel vs Speed"
 20 LET accel = {accel}
 30 LET distance = {distance}
@@ -801,7 +804,10 @@
 70 WAIT_IDLE {idle_timeout}
 80 PRINT "BENCH END accel=" &amp; accel &amp; " distance=" &amp; distance
 90 LET ms = BENCH_LAST_MS()
-100 PRINT "Took " &amp; ms &amp; " ms at accel=" &amp; accel &amp; " distance=" &amp; distance</code></pre>
+100 PRINT "Took " &amp; ms &amp; " ms at accel=" &amp; accel &amp; " distance=" &amp; distance
+110 END
+9000 PRINT "Benchmark cancelled."
+9010 END</code></pre>
     </section>
 
     <section class="card">
