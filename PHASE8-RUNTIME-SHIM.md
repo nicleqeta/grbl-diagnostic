@@ -42,7 +42,7 @@ This document outlines the strict policy for Phase 8 (Runtime shim budget) regar
   - Modes are chosen at compile time; runtime is unaware
 
 ✓ **Compile metadata visibility**
-  - Preview and run logs show `[grbl-vanilla, stage-1-passthrough]` or similar
+  - Preview and run logs show compile summary metadata such as `stage=stage-1-real-pipeline` (active pipeline path) or `stage=stage-1-passthrough` (fallback envelope), plus profile and diagnostics count
   - Confirm dialogs display compile target
   - No change to actual execution semantics
 
@@ -115,9 +115,9 @@ Before any runtime shim is implemented:
 1. All tests in test-compiler-snapshot.js pass
 2. Manual verification on at least 2 controllers (GRBL 1.1h, FluidNC)
 3. Verify existing saved scripts load and run unchanged
-4. Deploy behind feature flag: `enable_high_level_mode = false` (default)
-5. Public beta: Users opt-in to feature flag and report issues
-6. GA: Enable by default once threshold of acceptance tests pass
+4. Deploy with compile pipeline metadata visible in preview/run logs and keep passthrough fallback available for safety
+5. Public beta: gather field feedback across controllers and monitor compile diagnostics/regressions
+6. GA: keep current compile pipeline path as default once acceptance thresholds pass
 
 ## Summary
 
