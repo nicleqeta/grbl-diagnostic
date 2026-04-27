@@ -281,20 +281,42 @@
         <li><strong><code>LET x = FORM(...)</code></strong> &mdash; buttons only, no text field. The user must click a button. Use this for clear-cut choices where only the predefined values make sense.</li>
         <li><strong><code>LET x = INPUT(FORM(...))</code></strong> &mdash; same buttons <em>plus</em> a text field. Buttons act as shortcuts that immediately resolve the dialog; the user can also type a custom value and press Enter. Use this when a free-form value should be possible alongside the presets.</li>
       </ul>
-      <pre><code>REM FORM() &mdash; static message, buttons only
-10 LET choice = FORM("Select test mode [Quick] [Full] [Cancel]", 1, 2, 0)
-20 IF choice = 0 THEN GOTO 9000
-30 PRINT "Mode: " &amp; choice
+      <pre><code>10 REM --- LET: basic variable assignment ---
+20 LET greeting = "GCOM"
+30 LET revision = 1
+40 PRINT greeting &amp; " v" &amp; revision
 
-REM FORM() &mdash; dynamic message ( optional; numbers auto-convert)
-10 LET accel = SETTING("$120")
-20 LET answer = FORM("Current $120 = " &amp; accel &amp; " mm/s&#xB2;. [Keep] [Double]", accel, accel * 2)
-30 SEND "$120=" &amp; answer TIMEOUT 2000 REQUIRE_OK
+50 REM --- SETTING/READ: read a live controller value ---
+60 LET orig_accel = SETTING("$120")
+70 PRINT "Current $120 (X accel) = " &amp; orig_accel &amp; " mm/s^2"
 
-REM INPUT(FORM()) &mdash; text field shown; buttons are shortcuts
-10 PRINT "Current $120 = " &amp; SETTING("$120")
-20 LET new_accel = INPUT(FORM("Set $120? [Keep Current] [Double It] &mdash; or type a value:", SETTING("$120"), SETTING("$120") * 2))
-30 SEND "$120=" &amp; new_accel TIMEOUT 2000 REQUIRE_OK</code></pre>
+80 REM --- INPUT: free-text prompt ---
+90 INPUT run_label, "Enter a label for this run:"
+100 PRINT "Run label: " &amp; run_label
+
+110 REM --- FORM(): button-choice dialog, static message ---
+120 LET mode = FORM("Select test mode [Quick] [Full] [Abort]", 1, 2, 0)
+130 IF mode = 0 THEN GOTO 9000
+140 PRINT "Mode: " &amp; mode
+
+200 REM --- FORM() with dynamic message (current setting embedded) ---
+210 LET cur = SETTING("$120")
+220 LET accel_choice = FORM("$120 is " &amp; cur &amp; " mm/s^2.  [Keep] [Double] [Abort]", cur, cur * 2, 0)
+230 IF accel_choice = 0 THEN GOTO 9000
+
+300 REM --- INPUT(FORM()): buttons as shortcuts + free text entry ---
+310 LET new_val = INPUT(FORM("Apply $120=" &amp; accel_choice &amp; "? [Apply] [Keep] &mdash; or type value:", accel_choice, cur))
+320 IF new_val = cur THEN GOTO 400
+330 SEND "$120=" &amp; new_val TIMEOUT 2000 REQUIRE_OK
+340 PRINT "Updated $120. Restoring original..."
+350 SEND "$120=" &amp; orig_accel TIMEOUT 2000 REQUIRE_OK
+360 PRINT "Restored $120 = " &amp; orig_accel
+
+400 PRINT "Section 1 demo complete."
+410 END
+
+9000 PRINT "Demo aborted."
+9010 END</code></pre>
     </section>
 
     <section class="card">
