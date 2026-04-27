@@ -709,8 +709,8 @@
 860 LET pass_count = pass_count + 1
 870 PRINT "ASSERT PASS pos_type expected=MPos|WPos actual=" & pos_type
 880 LET parsed_x = SPLIT_PART(pos_values, ",", 1, "")
-870 LET parsed_y = SPLIT_PART(pos_values, ",", 2, "")
-880 LET parsed_z = SPLIT_PART(pos_values, ",", 3, "")
+882 LET parsed_y = SPLIT_PART(pos_values, ",", 2, "")
+884 LET parsed_z = SPLIT_PART(pos_values, ",", 3, "")
 890 IF parsed_x = "{expected_x}" THEN GOTO 920
 900 LET fail_count = fail_count + 1
 910 PRINT "ASSERT FAIL parsed_x expected={expected_x} actual=" & parsed_x
