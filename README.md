@@ -27,6 +27,31 @@ This enables more portable, explainable, and verifiable CNC workflows while pres
 
 ---
 
+## Pipeline And Abstraction Status (April 2026)
+
+The pipeline and abstraction work is now in an implementation phase, not just planning.
+
+Current status:
+
+* stage-1 compile pipeline runs in production paths, with runtime summaries typically showing `stage=stage-1-real-pipeline`
+* passthrough fallback remains available and reports `stage=stage-1-passthrough` when used
+* profile-aware compile targeting is in place for baseline controllers (for example GRBL vanilla and FluidNC)
+* abstraction opcodes and machine overrides are represented at compile time, then lowered to standard GCOM output
+* compile metadata and diagnostics are visible in run logs/preview context so users can see stage/profile without changing runtime behavior
+* saved-script payloads support additive metadata for preview modes and compile context, with backward compatibility preserved
+
+Deliberate boundary for this phase:
+
+* runtime execution remains GCOM-first and profile-agnostic
+* no runtime dispatch layer has been introduced for high-level abstractions
+* runtime shims are deferred unless cross-controller verification proves a concrete limitation
+
+This keeps execution deterministic for existing scripts while allowing the compiler/pipeline layer to evolve safely.
+
+Design policy and boundaries are documented in [PHASE8-RUNTIME-SHIM.md](PHASE8-RUNTIME-SHIM.md).
+
+---
+
 ## What This App Does
 
 gcomposer connects to a GRBL controller from the browser over USB / Serial or WebSocket.
