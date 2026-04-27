@@ -400,6 +400,10 @@ Emit showPreview:true when offering to open a motion preview.
 Safety rules:
 - Never recommend axis movement without REQUIRE_OK or confirmation logic.
 - Always handle possible ALARM states in scripts that move axes.
+- If terminal output is present in context, diagnose from those lines first before proposing script rewrites.
+- Do not claim a statement/command is unsupported unless that claim is grounded in the provided manifest/profile/context.
+- When terminal output context is present, include a short section titled "Evidence from terminal log" before diagnosis and quote at least one relevant line.
+- If evidence is insufficient or ambiguous, say so explicitly instead of asserting a definitive root cause.
 - Keep explanations concise; lead with the script.`;
 
     const REPAIR_SYSTEM = `
@@ -475,6 +479,14 @@ AUTHORING RULES
 - Do not use // comments.
 - Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
 
+DIAGNOSTIC RESPONSE CONTRACT
+- If terminal context is provided, your answer must start with these headings in order:
+  1) Evidence from terminal log
+  2) Most likely cause
+  3) Suggested next checks
+- Under "Evidence from terminal log", cite 1-3 concrete lines/fragments from the provided terminal context.
+- Do not classify commands/statements as unsupported unless the provided rules/profile explicitly show that.
+
 CANONICAL SCRIPT SHAPE
 ; TITLE: Example
 ; VERSION: 1
@@ -490,6 +502,10 @@ CANONICAL SCRIPT SHAPE
 COMMON FAILURE TRAPS
 - Wrong: 10 LET x = (square_size / 2)
   Reason: square_size is undefined unless declared as ; VAR square_size=...
+- Wrong: claiming PRINT is unsupported in GCOM.
+  Reason: PRINT is a supported GCOM statement.
+- Wrong: claiming SEND "?" is invalid just because no ack was received.
+  Reason: a timeout on status query can be transport/runtime behavior; inspect terminal evidence before rewriting commands.
 - Wrong: COS(angle * PI / 180)
   Reason: COS already expects degrees in GCOM.
 - Wrong: LET x = ... + x inside a loop when x is also the center/reference position.
@@ -581,6 +597,7 @@ Before emitting a script, verify:
         const composerParts = [];
         const meta = (composerCtx.meta && typeof composerCtx.meta === 'object') ? composerCtx.meta : {};
         const vars = (composerCtx.vars && typeof composerCtx.vars === 'object') ? composerCtx.vars : {};
+        const terminalCtx = (composerCtx.terminalContext && typeof composerCtx.terminalContext === 'object') ? composerCtx.terminalContext : null;
         const profile = (composerCtx.controllerProfile && typeof composerCtx.controllerProfile === 'object') ? composerCtx.controllerProfile : null;
         const varEntries = Object.entries(vars).slice(0, 80);
 
@@ -602,6 +619,21 @@ Before emitting a script, verify:
           composerParts.push('```gcom');
           composerParts.push(lines.join('\n'));
           composerParts.push('```');
+        }
+        if (terminalCtx && Array.isArray(terminalCtx.lines) && terminalCtx.lines.length) {
+          const source = String(terminalCtx.source || 'terminal-output');
+          const requestedByUser = terminalCtx.requestedByUser === true ? 'yes' : 'no';
+          const includedByToggle = terminalCtx.includedByToggle === true ? 'yes' : 'no';
+          const includedByRecentError = terminalCtx.includedByRecentError === true ? 'yes' : 'no';
+          const terminalLines = terminalCtx.lines.slice(-120).map(line => String(line || ''));
+
+          composerParts.push('Recent terminal output context:');
+          composerParts.push(`- source: ${source}`);
+          composerParts.push(`- requested by user: ${requestedByUser}`);
+          composerParts.push(`- included by toggle: ${includedByToggle}`);
+          composerParts.push(`- included by recent error: ${includedByRecentError}`);
+          composerParts.push(`Terminal log lines (${terminalLines.length}):`);
+          for (const line of terminalLines) composerParts.push(`- ${line}`);
         }
         if (profile) {
           const guidance = (profile.ai_guidance && typeof profile.ai_guidance === 'object') ? profile.ai_guidance : {};
