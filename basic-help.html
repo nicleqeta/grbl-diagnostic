@@ -784,16 +784,24 @@
         The Preview Benchmark chart auto-scales to all recorded points and renders each series in a distinct colour.
         The <strong>Copy JSON</strong> button in Preview exports the full record set with metadata in a self-describing format ready for downstream analysis or AI-assisted visualisation.
       </p>
-      <pre><code>REM Chart: accel on X, elapsed ms on Y, one line per distance
+      <pre><code>; TITLE: Benchmark Markers Demo
+; VERSION: 1
+; AUTHOR: GitHub Copilot
+; DESCRIPTION: Times one X back-and-forth move at {accel} mm/s² over {distance} mm and records the elapsed sample to the Preview Benchmark chart.
+; VAR accel=400
+; VAR distance=10
+; VAR x_feed=5000
+; VAR idle_timeout=8000
 10 PRINT "BENCH META x=accel series=distance xlabel=Acceleration (mm/s²) ylabel=Duration (ms) title=Accel vs Speed"
-20 LET accel = 400
-30 PRINT "BENCH START accel=" &amp; accel &amp; " distance=10"
-40 SEND "G1 X10 F5000" BUFFERED
-50 SEND "G1 X-10 F5000" BUFFERED
-60 WAIT_IDLE 8000
-70 PRINT "BENCH END accel=" &amp; accel &amp; " distance=10"
-80 LET ms = BENCH_LAST_MS()
-90 PRINT "Took " &amp; ms &amp; " ms"</code></pre>
+20 LET accel = {accel}
+30 LET distance = {distance}
+40 PRINT "BENCH START accel=" &amp; accel &amp; " distance=" &amp; distance
+50 SEND "G1 X" &amp; distance &amp; " F{x_feed}" BUFFERED
+60 SEND "G1 X-" &amp; distance &amp; " F{x_feed}" BUFFERED
+70 WAIT_IDLE {idle_timeout}
+80 PRINT "BENCH END accel=" &amp; accel &amp; " distance=" &amp; distance
+90 LET ms = BENCH_LAST_MS()
+100 PRINT "Took " &amp; ms &amp; " ms at accel=" &amp; accel &amp; " distance=" &amp; distance</code></pre>
     </section>
 
     <section class="card">
