@@ -339,7 +339,7 @@
       </ul>
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
       <p>Rule of thumb for sender mode selection: serial buffer below ~50% utilization usually benefits from buffered sends; higher pressure is often as fast or safer with strict ACK-gated sends (<code>REQUIRE_OK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
-      <pre><code>; TITLE: Section 2 — Machine I/O Smoke Test
+      <pre><code>; TITLE: Section 2 — Machine I/O Test
 ; VERSION: 1.0
 ; DESCRIPTION: Tests SEND/REQUIRE_OK, STATUS, HOLD, and RESUME.
 ; DESCRIPTION: In laser mode G1+F is required to activate the output — M3 alone is not enough.
@@ -433,7 +433,7 @@
         <li><code>CONNECT &hellip; OBSERVE</code>: Connect in observe-only mode; no commands are sent.</li>
       </ul>
       <p>All keyword arguments are optional and combinable in any order. If the user cancels the port picker the script stops gracefully.</p>
-      <pre><code>10 REM USB/Serial connection smoke test
+      <pre><code>10 REM USB/Serial connection test
     20 REM Success means: banner or status arrives and connection is then closed cleanly.
     30 SET SEND_DELAY 0
     40 CONNECT BAUD 115200
@@ -456,7 +456,7 @@
         <li><code>DISCONNECT</code>: Close either a serial or WebSocket connection.</li>
       </ul>
       <p><em>host</em> is an IP address or hostname, e.g. <code>"192.168.1.100"</code>. The script stops if the WebSocket connection fails (unreachable host, refused connection, etc.).</p>
-      <pre><code>10 REM WebSocket connection smoke test
+      <pre><code>10 REM WebSocket connection test
     20 REM Success means: handshake line arrives, firmware info is returned, then clean disconnect.
     30 SET SEND_DELAY 0
     40 CONNECT WS "192.168.1.100"
@@ -481,7 +481,7 @@
       <h2>5. Runtime Settings</h2>
       <p>Script-level settings tune timing and buffer parameters. All settings reset to their defaults at the end of every script run, so changes never leak into subsequent runs.</p>
       <ul>
-        <li><code>SET SEND_DELAY expr</code>: Pause in ms appended after each <code>SEND</code> (default&nbsp;100). Set to <code>0</code> to remove all inter-command delays — useful for benchmarks or when <code>WAIT_FOR_LINE</code> already manages pacing.</li>
+        <li><code>SET SEND_DELAY expr</code>: Pause in ms appended after each <code>SEND</code> (default&nbsp;0). Increase if your controller or transport benefits from extra spacing between commands.</li>
         <li><code>SET ACK_TIMEOUT expr</code>: Default acknowledgement wait in ms (default&nbsp;12000). Affects bare <code>SEND</code> without an explicit <code>TIMEOUT</code>, and <code>WAIT_FOR_LINE</code>&nbsp;/&nbsp;<code>READ_LINE</code> without an explicit timeout argument.</li>
         <li><code>SET RX_BUFFER expr</code>: Fallback RX buffer byte limit when no <code>Bf:</code> report has been observed (default&nbsp;64). Controls the <code>SEND &hellip; BUFFERED</code> window. Once a real <code>Bf:</code> serial value is observed, runtime capacity estimates use observed values instead of this fallback.</li>
         <li><code>SET SEND_MODE expr</code>: Select send routing policy: <code>BUFFERED</code> (prefer buffered streaming), <code>REQUIRE_OK</code> (strict ack-gated sending), or <code>AUTO</code> (buffered while host-side serial pressure is low, otherwise <code>REQUIRE_OK</code>). If no serial <code>Bf:</code> has been observed yet, <code>AUTO</code> uses the configured RX buffer fallback estimate.</li>
@@ -1004,7 +1004,7 @@
     <section class="card">
       <h2>14. Example: FluidNC Startup Flowchart</h2>
       <p>This script implements the <a href="https://wiki.fluidnc.com/en/support/gcode_senders" target="_blank" rel="noopener">FluidNC sender startup flowchart</a>: open the port, send a status poll to wake the controller, wait for a banner (<code>Grbl&nbsp;&hellip;</code> or <code>FluidNC&nbsp;&hellip;</code>) or a live-state response (<code>&lt;Idle|&hellip;&gt;</code>), then read <code>$30</code> to confirm two-way comms. A graceful <code>DISCONNECT</code> handles the no-response case.</p>
-      <p><code>SET SEND_DELAY 0</code> removes the default 100&nbsp;ms inter-command pause. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout, making the explicit delay redundant.</p>
+      <p><code>SEND_DELAY</code> defaults to <code>0</code>, so explicit <code>SET SEND_DELAY 0</code> is optional. <code>WAIT_FOR_LINE</code> provides the blocking wait with its own timeout when pacing is needed.</p>
       <pre><code>; TITLE: FluidNC Startup Flowchart
 ; AUTHOR: GitHub Copilot
 ; VERSION: 1
@@ -1016,7 +1016,7 @@
 ; VAR banner_timeout=3000
 ; VAR settle_ms=200
 
-10 REM Disable the default 100 ms inter-SEND pause; WAIT_FOR_LINE manages pacing
+10 REM SEND_DELAY defaults to 0; explicit set is kept for readability
 20 SET SEND_DELAY 0
 
 30 REM Open the browser serial port picker and connect

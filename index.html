@@ -2638,9 +2638,9 @@ let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf:
 let grblObservedPlannerSlots = 0; // largest planner-available slots seen in Bf: reports
 
 // Scriptable runtime settings — scripts can change these with SET; they reset after each run.
-// Defaults reproduce historical hardcoded values so existing scripts are unaffected.
+// Defaults are tuned for immediate command pacing while preserving historical ack and connect timings.
 const _BASIC_SCRIPT_SETTING_DEFAULTS = Object.freeze({
-  sendDelay:      100,                            // ms pause after each SEND  (SET SEND_DELAY)
+  sendDelay:      0,                              // ms pause after each SEND  (SET SEND_DELAY)
   ackTimeout:     BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS, // SET ACK_TIMEOUT
   rxBuffer:       BASIC_BUFFERED_RX_BYTES,        // SET RX_BUFFER
   sendMode:       'AUTO',                         // SET SEND_MODE (BUFFERED | REQUIRE_OK | AUTO)
