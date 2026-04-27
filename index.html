@@ -1563,9 +1563,10 @@
   SEND expr BUFFERED          Stream a GRBL command using host-side RX buffer accounting.
   SEND expr REQUIRE_OK        Send and require an acknowledgement (ok/error/alarm).
   SEND expr TIMEOUT ms        Send with a timeout expression.
-  SEND expr BUFFERED          Buffered intent; routed by SEND_MODE (BUFFERED/SENDACK/AUTO).
-  SENDBUFF expr               Shorthand for SEND expr BUFFERED.
-  SENDACK expr [timeoutMs]    Shorthand for SEND expr TIMEOUT timeoutMs REQUIRE_OK.
+  SEND expr BUFFERED          Per-line override: force buffered routing.
+  SENDBUFF expr               Legacy alias for SEND expr BUFFERED.
+  SENDACK expr [timeoutMs]    Legacy alias for SEND expr TIMEOUT timeoutMs REQUIRE_OK.
+  SET SEND_MODE expr          Global send routing: BUFFERED | REQUIRE_OK | AUTO.
   WAIT ms                     Pause execution for N milliseconds.
   WAIT_IDLE [timeoutMs]       Block until GRBL status becomes Idle.
   WAIT_STATE target [TIMEOUT timeoutMs]
@@ -1893,7 +1894,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
           <div id="basic-vars-list"></div>
         </div>
         <textarea id="basic-script-input" placeholder="10 RESET_SETTINGS
-20 SET SEND_MODE BUFFERED
+20 SET SEND_MODE = AUTO
 30 LET maxRPM = READ(&quot;$30&quot;)
 40 LET speed = {start}
 50 SEND &quot;M3 S&quot; &amp; STR(speed) TIMEOUT 2000 REQUIRE_OK
@@ -2614,7 +2615,7 @@ const BASIC_TIMEOUT_MS      = 36_000_000; // hard wall-clock limit per run (ms)
 const BASIC_YIELD_EVERY     = 100;       // yield to browser every N instructions
 const BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS = 12_000;
 const BASIC_BUFFERED_RX_BYTES = 64; // fallback when Bf: has not been observed
-const BASIC_SEND_MODE_AUTO_THRESHOLD = 512;
+const BASIC_SEND_MODE_AUTO_BUFFER_UTILIZATION_THRESHOLD = 0.5;
 let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf: reports
 let grblObservedPlannerSlots = 0; // largest planner-available slots seen in Bf: reports
 
@@ -2624,7 +2625,7 @@ const _BASIC_SCRIPT_SETTING_DEFAULTS = Object.freeze({
   sendDelay:      100,                            // ms pause after each SEND  (SET SEND_DELAY)
   ackTimeout:     BASIC_SEND_DEFAULT_ACK_TIMEOUT_MS, // SET ACK_TIMEOUT
   rxBuffer:       BASIC_BUFFERED_RX_BYTES,        // SET RX_BUFFER
-  sendMode:       'BUFFERED',                     // SET SEND_MODE (BUFFERED | SENDACK | AUTO)
+  sendMode:       'AUTO',                         // SET SEND_MODE (BUFFERED | REQUIRE_OK | AUTO)
   bannerTimeout:  3000,                           // SET BANNER_TIMEOUT — used by CONNECT
   readySettle:    150,                            // SET READY_SETTLE
   sequenceDelay:  450,                            // SET SEQUENCE_DELAY
@@ -2649,7 +2650,8 @@ function resetBasicBufferedStream() {
 
 function basicNormalizeSendMode(value) {
   const mode = String(value == null ? '' : value).trim().replace(/^['"]|['"]$/g, '').toUpperCase();
-  return ['BUFFERED', 'SENDACK', 'AUTO'].includes(mode) ? mode : null;
+  if (mode === 'SENDACK') return 'REQUIRE_OK'; // legacy alias
+  return ['BUFFERED', 'REQUIRE_OK', 'AUTO'].includes(mode) ? mode : null;
 }
 
 function basicGetSerialBufferCapacityEstimate() {
@@ -2660,12 +2662,16 @@ function basicGetPlannerBufferCapacityEstimate() {
   return grblObservedPlannerSlots > 0 ? Number(grblObservedPlannerSlots) : -1;
 }
 
-function basicResolveBufferedIntentMode() {
-  const selected = basicNormalizeSendMode(basicScriptSettings.sendMode) || 'BUFFERED';
+function basicResolveBufferedIntentMode(commandText = '') {
+  const selected = basicNormalizeSendMode(basicScriptSettings.sendMode) || 'AUTO';
   if (selected === 'AUTO') {
-    // AUTO uses observed Bf serial capacity only; if unavailable, keep conservative buffered behavior.
-    if (grblObservedRxBufBytes >= BASIC_SEND_MODE_AUTO_THRESHOLD) return 'SENDACK';
-    return 'BUFFERED';
+    // AUTO: use BUFFERED while host-side serial buffer pressure is low, otherwise REQUIRE_OK.
+    const capacity = Math.max(1, Math.round(Number(basicGetSerialBufferCapacityEstimate()) || 1));
+    const inFlightBytes = Math.max(0, Math.round(Number(basicBufferedStreamState.inFlightBytes || 0)));
+    const estimatedCommandBytes = Math.max(1, String(commandText || '').trim().length + 1);
+    const projectedUtilization = (inFlightBytes + estimatedCommandBytes) / capacity;
+    if (projectedUtilization <= BASIC_SEND_MODE_AUTO_BUFFER_UTILIZATION_THRESHOLD) return 'BUFFERED';
+    return 'REQUIRE_OK';
   }
   return selected;
 }
@@ -7349,8 +7355,8 @@ async function runBasicScript(source) {
       if (/^SENDBUFF\s+/i.test(stmt)) {
         const expr = stmt.replace(/^SENDBUFF\s+/i, '').trim();
         const cmdStr = String(await basicEvalExprRuntime(expr, basicVars)).trim();
-        const effectiveMode = basicResolveBufferedIntentMode();
-        addLine(`SEND: ${cmdStr}${effectiveMode === 'BUFFERED' ? ' [buffered]' : ' [sendack]'}`, 'basic');
+        const effectiveMode = basicResolveBufferedIntentMode(cmdStr);
+        addLine(`SEND: ${cmdStr}${effectiveMode === 'BUFFERED' ? ' [buffered]' : ' [require_ok]'}`, 'basic');
         if (effectiveMode === 'BUFFERED') {
           await basicSendBufferedCommand(cmdStr, {});
         } else {
@@ -7394,19 +7400,38 @@ async function runBasicScript(source) {
         const sendSpec = basicParseSendOptions(stmt.replace(/^SEND\s+/i, '').trim());
         const cmdStr = String(await basicEvalExprRuntime(sendSpec.expression, basicVars)).trim();
         const timeoutMs = sendSpec.timeoutExpr == null ? null : Math.round(Number(await basicEvalExprRuntime(sendSpec.timeoutExpr, basicVars)));
-        const effectiveMode = sendSpec.buffered ? basicResolveBufferedIntentMode() : 'SENDACK';
-        addLine(sendSpec.buffered ? `SEND: ${cmdStr}${effectiveMode === 'BUFFERED' ? ' [buffered]' : ' [sendack]'}` : `SEND: ${cmdStr}`, 'basic');
-        if (sendSpec.buffered) {
-          if (sendSpec.requireOk) throw new Error('BUFFERED SEND cannot be combined with REQUIRE_OK');
-          if (effectiveMode === 'BUFFERED') {
-            await basicSendBufferedCommand(cmdStr, { timeoutMs });
-          } else {
-            await basicWaitForBufferedDrain(timeoutMs);
-            await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: true });
-          }
+        if (sendSpec.buffered && sendSpec.requireOk) {
+          throw new Error('SEND cannot combine BUFFERED and REQUIRE_OK on the same line');
+        }
+
+        const normalizedCommand = normalizeCommandInput(cmdStr);
+        const isRealtimeCommand = !!(normalizedCommand && normalizedCommand.kind !== 'action' && normalizedCommand.waitForAck === false);
+
+        let effectiveMode = 'REQUIRE_OK';
+        if (isRealtimeCommand) {
+          effectiveMode = 'REALTIME';
+        } else if (sendSpec.requireOk) {
+          effectiveMode = 'REQUIRE_OK';
+        } else if (sendSpec.buffered) {
+          effectiveMode = 'BUFFERED';
+        } else {
+          effectiveMode = basicResolveBufferedIntentMode(cmdStr);
+        }
+
+        addLine(
+          effectiveMode === 'BUFFERED'
+            ? `SEND: ${cmdStr} [buffered]`
+            : effectiveMode === 'REALTIME'
+              ? `SEND: ${cmdStr} [realtime]`
+              : `SEND: ${cmdStr} [require_ok]`,
+          'basic'
+        );
+
+        if (effectiveMode === 'BUFFERED') {
+          await basicSendBufferedCommand(cmdStr, { timeoutMs });
         } else {
           await basicWaitForBufferedDrain(timeoutMs);
-          await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: sendSpec.requireOk });
+          await basicSendScriptCommand(cmdStr, { timeoutMs, requireOk: effectiveMode === 'REQUIRE_OK' });
         }
         if (basicScriptSettings.sendDelay > 0) {
           if (!(await basicDelayWithControl(basicScriptSettings.sendDelay))) {
@@ -7755,6 +7780,7 @@ async function runBasicScript(source) {
         if (setM) {
           const key = setM[1].toUpperCase();
           const rawExpr = setM[2].trim();
+          const normalizedExpr = rawExpr.replace(/^=\s*/, '').trim();
           const keyMap = {
             SEND_DELAY:     'sendDelay',
             ACK_TIMEOUT:    'ackTimeout',
@@ -7768,20 +7794,20 @@ async function runBasicScript(source) {
           const prop = keyMap[key];
           if (prop) {
             if (prop === 'sendMode') {
-              let sendMode = basicNormalizeSendMode(rawExpr);
+              let sendMode = basicNormalizeSendMode(normalizedExpr);
               if (!sendMode) {
-                const evaluated = await basicEvalExprRuntime(rawExpr, basicVars);
+                const evaluated = await basicEvalExprRuntime(normalizedExpr, basicVars);
                 sendMode = basicNormalizeSendMode(evaluated);
               }
               if (!sendMode) {
-                addLine(`Line ${lineNum}: SET SEND_MODE must be BUFFERED, SENDACK, or AUTO`, 'err');
+                addLine(`Line ${lineNum}: SET SEND_MODE must be BUFFERED, REQUIRE_OK, or AUTO`, 'err');
                 stopScript();
                 break;
               }
               basicScriptSettings.sendMode = sendMode;
               addLine(`SET SEND_MODE = ${basicScriptSettings.sendMode}`, 'basic');
             } else {
-              const val = Number(await basicEvalExprRuntime(rawExpr, basicVars));
+              const val = Number(await basicEvalExprRuntime(normalizedExpr, basicVars));
               basicScriptSettings[prop] = Math.max(0, Math.round(val));
               addLine(`SET ${key} = ${basicScriptSettings[prop]}`, 'basic');
             }
@@ -8803,9 +8829,9 @@ function getControllerDefaultAckTimeoutMs(fallbackMs = 3500) {
 
 function shouldWaitForCommandAck(command, options = {}) {
   if (!command || command.kind === 'action') return false;
+  if (!command.waitForAck) return false;
   if (options.requireAck) return true;
   if (options.timeoutMs != null) return true;
-  if (!command.waitForAck) return false;
   const mode = getControllerAckMode();
   if (mode === 'none') return false;
   if (mode === 'optional') return false;
