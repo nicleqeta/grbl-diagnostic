@@ -1398,6 +1398,119 @@
   .ai-send-btn:hover { background: #0d9488; }
   .ai-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* Export modal */
+  .ai-export-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ai-export-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: min(540px, 96vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .ai-export-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .ai-export-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .ai-export-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 8px 16px 4px;
+    line-height: 1.5;
+    flex-shrink: 0;
+  }
+  .ai-export-actions-top {
+    display: flex;
+    gap: 6px;
+    padding: 4px 16px 6px;
+    flex-shrink: 0;
+  }
+  .ai-export-sel-btn {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background 0.15s, color 0.15s;
+  }
+  .ai-export-sel-btn:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+  .ai-export-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 60px;
+  }
+  .ai-export-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 12px 0;
+    text-align: center;
+  }
+  .ai-export-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .ai-export-row:hover { background: rgba(255,255,255,0.05); }
+  .ai-export-cb { flex-shrink: 0; accent-color: var(--teal); width: 14px; height: 14px; cursor: pointer; }
+  .ai-export-row-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+  }
+  .ai-export-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .ai-export-count { font-size: 11px; color: var(--text-muted); }
+  .ai-export-copy-btn {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--teal);
+    background: var(--teal);
+    color: #fff;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background 0.15s;
+  }
+  .ai-export-copy-btn:hover:not(:disabled) { background: #0d9488; }
+  .ai-export-copy-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
   @media (max-width: 980px) {
     .ai-sidebar, .ai-sidebar-resizer { display: none; }
     #ai-sidebar-toggle-btn { display: none; }
@@ -1897,7 +2010,10 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
   <div class="ai-sidebar" id="ai-sidebar" aria-label="AI Agent panel">
     <div class="ai-sidebar-header">
       <span class="ai-sidebar-title">&#129302; AI Agent</span>
-      <button class="icon-btn" id="ai-sidebar-close-btn" title="Close AI panel" style="padding:3px 7px;">&#10005;</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="icon-btn" id="ai-export-btn" title="Export conversation to clipboard" style="padding:3px 7px;font-size:13px;">&#128203;</button>
+        <button class="icon-btn" id="ai-sidebar-close-btn" title="Close AI panel" style="padding:3px 7px;">&#10005;</button>
+      </div>
     </div>
     <div class="ai-context-bar" id="ai-context-bar" style="display:none;">
       <span class="ai-context-label">Context:</span>
@@ -1924,6 +2040,26 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
     </div>
   </div>
 </main>
+
+<!-- AI Conversation Export Modal -->
+<div class="ai-export-overlay" id="ai-export-overlay" style="display:none;">
+  <div class="ai-export-box">
+    <div class="ai-export-header">
+      <span class="ai-export-title">Export Conversation</span>
+      <button class="icon-btn" id="ai-export-close-btn" title="Close">&#10005;</button>
+    </div>
+    <div class="ai-export-desc">Select exchanges to copy. Paste into Copilot to help evaluate and improve AI responses.</div>
+    <div class="ai-export-actions-top">
+      <button class="ai-export-sel-btn" id="ai-export-select-all">Select All</button>
+      <button class="ai-export-sel-btn" id="ai-export-select-none">Select None</button>
+    </div>
+    <div class="ai-export-list" id="ai-export-list"></div>
+    <div class="ai-export-footer">
+      <span class="ai-export-count" id="ai-export-count">0 selected</span>
+      <button class="ai-export-copy-btn" id="ai-export-copy-btn" disabled>&#128203; Copy to Clipboard</button>
+    </div>
+  </div>
+</div>
 
 <!-- BASIC confirm/run modal -->
 <div class="basic-confirm-overlay" id="basic-confirm-overlay" style="display:none;">
@@ -10164,6 +10300,12 @@ const aiSidebarEl        = document.getElementById('ai-sidebar');
 const aiSidebarResizerEl = document.getElementById('ai-sidebar-resizer');
 const aiSidebarToggleBtn = document.getElementById('ai-sidebar-toggle-btn');
 const aiSidebarCloseBtn  = document.getElementById('ai-sidebar-close-btn');
+const aiExportBtnEl      = document.getElementById('ai-export-btn');
+const aiExportOverlayEl  = document.getElementById('ai-export-overlay');
+const aiExportListEl     = document.getElementById('ai-export-list');
+const aiExportCountEl    = document.getElementById('ai-export-count');
+const aiExportCopyBtnEl  = document.getElementById('ai-export-copy-btn');
+const aiExportCloseBtnEl = document.getElementById('ai-export-close-btn');
 const aiChatContainerEl  = document.getElementById('ai-chat-container');
 const aiPromptInputEl    = document.getElementById('ai-prompt-input');
 const aiSendBtnEl        = document.getElementById('ai-send-btn');
@@ -10177,6 +10319,7 @@ const AI_TERMINAL_CONTEXT_LINE_LIMIT = 80;
 
 let aiSidebarOpen = true;
 let aiChatHistory = [];
+let aiExchangeLog = [];  // captures each completed exchange for export
 let aiSelectionContext = null;
 let aiThinking = false;
 let aiRepairInFlight = false;
@@ -10781,6 +10924,120 @@ function aiHandleAction(action, msgEl) {
   }
 }
 
+// ─── AI Conversation Export ────────────────────────────────────────────────────
+function aiOpenExportModal() {
+  if (!aiExportOverlayEl || !aiExportListEl) return;
+  aiExportListEl.innerHTML = '';
+  if (!aiExchangeLog.length) {
+    aiExportListEl.innerHTML = '<div class="ai-export-empty">No exchanges yet. Send a message to get started.</div>';
+    if (aiExportCopyBtnEl) aiExportCopyBtnEl.disabled = true;
+    if (aiExportCountEl) aiExportCountEl.textContent = '0 selected';
+    aiExportOverlayEl.style.display = 'flex';
+    return;
+  }
+  aiExchangeLog.forEach((ex, i) => {
+    const row = document.createElement('div');
+    row.className = 'ai-export-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'ai-export-cb';
+    cb.dataset.idx = String(i);
+    cb.checked = true;
+    cb.addEventListener('change', aiExportUpdateCount);
+    const label = document.createElement('label');
+    label.className = 'ai-export-row-label';
+    const ts = new Date(ex.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const preview = ex.userPrompt.length > 60 ? ex.userPrompt.slice(0, 60) + '…' : ex.userPrompt;
+    label.textContent = '#' + (i + 1) + '  [' + ts + ']  ' + preview;
+    row.appendChild(cb);
+    row.appendChild(label);
+    aiExportListEl.appendChild(row);
+  });
+  aiExportUpdateCount();
+  aiExportOverlayEl.style.display = 'flex';
+}
+
+function aiCloseExportModal() {
+  if (aiExportOverlayEl) aiExportOverlayEl.style.display = 'none';
+}
+
+function aiExportUpdateCount() {
+  if (!aiExportListEl || !aiExportCountEl || !aiExportCopyBtnEl) return;
+  const checked = aiExportListEl.querySelectorAll('.ai-export-cb:checked').length;
+  aiExportCountEl.textContent = checked + ' selected';
+  aiExportCopyBtnEl.disabled = checked === 0;
+}
+
+function aiExportSetAllChecked(val) {
+  if (!aiExportListEl) return;
+  aiExportListEl.querySelectorAll('.ai-export-cb').forEach(cb => { cb.checked = val; });
+  aiExportUpdateCount();
+}
+
+function aiExportCopySelected() {
+  if (!aiExportListEl) return;
+  const selected = [];
+  aiExportListEl.querySelectorAll('.ai-export-cb:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx, 10);
+    if (!isNaN(idx) && aiExchangeLog[idx]) selected.push({ i: idx, ex: aiExchangeLog[idx] });
+  });
+  if (!selected.length) return;
+  const lines = [
+    '=== GCOM AI Conversation Export ===',
+    'Generated: ' + new Date().toLocaleString(),
+    'Exchanges selected: ' + selected.length,
+    ''
+  ];
+  selected.forEach(({ i, ex }) => {
+    lines.push('─'.repeat(60));
+    lines.push('Exchange #' + (i + 1) + '  [' + ex.timestamp + ']');
+    lines.push('');
+    lines.push('── CONTEXT PROVIDED TO AI ──');
+    lines.push(JSON.stringify(ex.composerContext, null, 2));
+    if (ex.gcomContext) {
+      lines.push('');
+      lines.push('── SELECTION CONTEXT ──');
+      lines.push(JSON.stringify(ex.gcomContext, null, 2));
+    }
+    lines.push('');
+    lines.push('── USER PROMPT ──');
+    lines.push(ex.userPrompt);
+    lines.push('');
+    lines.push('── AI RESPONSE ──');
+    lines.push(ex.aiResponse);
+    lines.push('');
+  });
+  lines.push('─'.repeat(60));
+  lines.push('=== END OF EXPORT ===');
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    if (aiExportCopyBtnEl) {
+      const orig = aiExportCopyBtnEl.textContent;
+      aiExportCopyBtnEl.textContent = '✓ Copied!';
+      aiExportCopyBtnEl.disabled = true;
+      setTimeout(() => {
+        aiExportCopyBtnEl.textContent = orig;
+        aiExportCopyBtnEl.disabled = false;
+      }, 2000);
+    }
+  }).catch(() => {
+    // Fallback for browsers without clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (aiExportCopyBtnEl) {
+      const orig = aiExportCopyBtnEl.textContent;
+      aiExportCopyBtnEl.textContent = '✓ Copied!';
+      setTimeout(() => { aiExportCopyBtnEl.textContent = orig; }, 2000);
+    }
+  });
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
 async function aiSend(userText) {
   userText = (userText || '').trim();
   if (!userText || aiThinking) return;
@@ -10821,6 +11078,13 @@ async function aiSend(userText) {
       const data = await res.json();
       const reply = String(data.reply || '');
       aiChatHistory.push({ role: 'assistant', content: reply });
+      aiExchangeLog.push({
+        timestamp: new Date().toISOString(),
+        userPrompt: userText,
+        aiResponse: reply,
+        composerContext,
+        gcomContext
+      });
       const actionsCommentRe = new RegExp('<!--\\s*ACTIONS:[^>]*-->', 'g');
       const cleanReply = reply.replace(actionsCommentRe, '').trim();
       const hasScript = reply.toLowerCase().includes('```gcom');
@@ -10898,6 +11162,12 @@ document.addEventListener('mouseup', () => {
 
 if (aiSidebarToggleBtn) aiSidebarToggleBtn.addEventListener('click', () => aiSetOpen(!aiSidebarOpen));
 if (aiSidebarCloseBtn)  aiSidebarCloseBtn.addEventListener('click',  () => aiSetOpen(false));
+if (aiExportBtnEl)      aiExportBtnEl.addEventListener('click',      () => aiOpenExportModal());
+if (aiExportCloseBtnEl) aiExportCloseBtnEl.addEventListener('click', () => aiCloseExportModal());
+if (aiExportOverlayEl)  aiExportOverlayEl.addEventListener('click',  e => { if (e.target === aiExportOverlayEl) aiCloseExportModal(); });
+if (document.getElementById('ai-export-select-all'))  document.getElementById('ai-export-select-all').addEventListener('click',  () => aiExportSetAllChecked(true));
+if (document.getElementById('ai-export-select-none')) document.getElementById('ai-export-select-none').addEventListener('click', () => aiExportSetAllChecked(false));
+if (aiExportCopyBtnEl)  aiExportCopyBtnEl.addEventListener('click',  () => aiExportCopySelected());
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
 aiSetOpen(true);
