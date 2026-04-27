@@ -10437,7 +10437,7 @@ const aiProposalsCountEl = document.getElementById('ai-proposals-count');
 const aiProposalsListEl  = document.getElementById('ai-proposals-list');
 const AI_TERMINAL_CONTEXT_LINE_LIMIT = 80;
 
-let aiSidebarOpen = true;
+let aiSidebarOpen = false;
 let aiChatHistory = [];
 let aiExchangeLog = [];  // captures each completed exchange for export
 let aiSelectionContext = null;
@@ -11329,7 +11329,7 @@ if (aiIncludeTerminalToggleEl) {
 }
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
-aiSetOpen(true);
+aiSetOpen(false);
 if (aiProposalsListEl) {
   aiProposalsListEl.addEventListener('click', e => {
     const target = e.target;
