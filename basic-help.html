@@ -281,14 +281,20 @@
         <li><strong><code>LET x = FORM(...)</code></strong> &mdash; buttons only, no text field. The user must click a button. Use this for clear-cut choices where only the predefined values make sense.</li>
         <li><strong><code>LET x = INPUT(FORM(...))</code></strong> &mdash; same buttons <em>plus</em> a text field. Buttons act as shortcuts that immediately resolve the dialog; the user can also type a custom value and press Enter. Use this when a free-form value should be possible alongside the presets.</li>
       </ul>
-      <pre><code>10 REM --- LET: basic variable assignment ---
+      <pre><code>; TITLE: Section 1 — Variables and Dialogs Demo
+; VERSION: 1.0
+; DESCRIPTION: Explores LET, SETTING/READ, INPUT, and FORM() dialogs.
+; DESCRIPTION: Uses the {accel_setting} var — change it to any $N number you want to inspect.
+; DESCRIPTION: Success: each dialog resolves, values are printed, original setting is restored.
+; VAR accel_setting=$120
+10 REM --- LET: basic variable assignment ---
 20 LET greeting = "GCOM"
 30 LET revision = 1
 40 PRINT greeting &amp; " v" &amp; revision
 
 50 REM --- SETTING/READ: read a live controller value ---
-60 LET orig_accel = SETTING("$120")
-70 PRINT "Current $120 (X accel) = " &amp; orig_accel &amp; " mm/s^2"
+60 LET orig_accel = SETTING("{accel_setting}")
+70 PRINT "Current {accel_setting} = " &amp; orig_accel &amp; " mm/s^2"
 
 80 REM --- INPUT: free-text prompt ---
 90 INPUT run_label, "Enter a label for this run:"
@@ -300,17 +306,17 @@
 140 PRINT "Mode: " &amp; mode
 
 200 REM --- FORM() with dynamic message (current setting embedded) ---
-210 LET cur = SETTING("$120")
-220 LET accel_choice = FORM("$120 is " &amp; cur &amp; " mm/s^2.  [Keep] [Double] [Abort]", cur, cur * 2, 0)
+210 LET cur = SETTING("{accel_setting}")
+220 LET accel_choice = FORM("{accel_setting} is " &amp; cur &amp; " mm/s^2. [Keep] [Double] [Abort]", cur, cur * 2, 0)
 230 IF accel_choice = 0 THEN GOTO 9000
 
 300 REM --- INPUT(FORM()): buttons as shortcuts + free text entry ---
-310 LET new_val = INPUT(FORM("Apply $120=" &amp; accel_choice &amp; "? [Apply] [Keep] &mdash; or type value:", accel_choice, cur))
+310 LET new_val = INPUT(FORM("Apply {accel_setting}=" &amp; accel_choice &amp; "? [Apply] [Keep] &mdash; or type value:", accel_choice, cur))
 320 IF new_val = cur THEN GOTO 400
-330 SEND "$120=" &amp; new_val TIMEOUT 2000 REQUIRE_OK
-340 PRINT "Updated $120. Restoring original..."
-350 SEND "$120=" &amp; orig_accel TIMEOUT 2000 REQUIRE_OK
-360 PRINT "Restored $120 = " &amp; orig_accel
+330 SEND "{accel_setting}=" &amp; new_val TIMEOUT 2000 REQUIRE_OK
+340 PRINT "Updated {accel_setting}. Restoring original..."
+350 SEND "{accel_setting}=" &amp; orig_accel TIMEOUT 2000 REQUIRE_OK
+360 PRINT "Restored {accel_setting} = " &amp; orig_accel
 
 400 PRINT "Section 1 demo complete."
 410 END
@@ -333,28 +339,32 @@
       </ul>
       <p><code>STATUS</code> is also how the runtime learns <code>Bf:</code> capacity fields (planner slots and serial RX bytes). Call <code>STATUS</code> early in scripts that use buffered streaming so capacity is learned before large batches begin.</p>
       <p>Rule of thumb for sender mode selection: serial buffer below ~50% utilization usually benefits from buffered sends; higher pressure is often as fast or safer with strict ACK-gated sends (<code>REQUIRE_OK</code> semantics). That larger-buffer pattern is common on modern ESP32-class firmware (for example FluidNC and many grblHAL targets).</p>
-      <pre><code>10 REM Section 2 machine I/O smoke test
-    20 REM Success means: SEND commands are acknowledged, STATUS returns a line,
-    30 REM and HOLD/RESUME transitions occur without error or ALARM.
-    40 LET speed = 900
-    50 PRINT "Starting I/O test..."
-    60 SEND "M3 S" & speed TIMEOUT 1500 REQUIRE_OK
-    70 PRINT "Success check: M3 was acknowledged at S" & speed
-    80 STATUS
-    90 LET st = WAIT_FOR_LINE("^&lt;", 2000)
-    100 IF st = "" THEN GOTO 9000
-    110 PRINT "Success check: STATUS returned a state frame: " & st
-    120 HOLD
-    130 PRINT "Success check: controller should enter Hold state."
-    140 WAIT 500
-    150 RESUME
-    160 PRINT "Success check: controller should leave Hold and continue."
-    170 SEND "M5" TIMEOUT 1500 REQUIRE_OK
-    180 PRINT "Test complete: M5 acknowledged."
-    190 END
-    9000 PRINT "No STATUS frame returned within 2000 ms."
-    9010 SEND "M5" TIMEOUT 1500 REQUIRE_OK
-    9020 END</code></pre>
+      <pre><code>; TITLE: Section 2 — Machine I/O Smoke Test
+; VERSION: 1.0
+; DESCRIPTION: Tests SEND/REQUIRE_OK, STATUS, HOLD, and RESUME.
+; DESCRIPTION: Set spindle_speed to whatever S-value is safe on your machine (0 = laser off / spindle off).
+; DESCRIPTION: Success: M3 acknowledged, STATUS returns a state frame, HOLD/RESUME cycle, M5 acknowledged.
+; VAR spindle_speed=0
+10 REM spindle_speed controls the S value sent to M3
+20 LET speed = {spindle_speed}
+30 PRINT "Starting I/O test at S" &amp; speed &amp; "..."
+40 SEND "M3 S" &amp; speed TIMEOUT 1500 REQUIRE_OK
+50 PRINT "Success check: M3 acknowledged at S" &amp; speed
+60 STATUS
+70 LET st = WAIT_FOR_LINE("^&lt;", 2000)
+80 IF st = "" THEN GOTO 9000
+90 PRINT "Success check: STATUS returned: " &amp; st
+100 HOLD
+110 PRINT "Success check: controller should enter Hold state."
+120 WAIT 500
+130 RESUME
+140 PRINT "Success check: controller should leave Hold and continue."
+150 SEND "M5" TIMEOUT 1500 REQUIRE_OK
+160 PRINT "Test complete: M5 acknowledged."
+170 END
+9000 PRINT "No STATUS frame returned within 2000 ms."
+9010 SEND "M5" TIMEOUT 1500 REQUIRE_OK
+9020 END</code></pre>
     </section>
 
     <section class="card">
@@ -366,40 +376,44 @@
         <li><code>LET name = WAIT_FOR_LINE(pattern, timeoutMs)</code> or <code>WAIT_FOR_LINE(pattern, timeoutMs) INTO name</code>: Block until an incoming serial line matches <em>pattern</em> (regex or plain substring). Returns the matched line, or <code>""</code> on timeout. Pass 0 for no timeout.</li>
         <li><code>LET name = READ_LINE(timeoutMs)</code> or <code>READ_LINE(timeoutMs) INTO name</code>: Return the very next incoming serial line regardless of content; <code>""</code> on timeout.</li>
       </ul>
-      <pre><code>10 REM Section 3 timing/state/line-capture test
-    20 REM Success means: each wait returns in time and captured lines are non-empty.
-    30 WAIT 250
-    40 WAIT_IDLE 20000
-    50 WAIT_STATE "idle" TIMEOUT 5000
-    60 PRINT "Success check: WAIT + WAIT_IDLE + WAIT_STATE completed."
-    70 REM For command acknowledgements, use REQUIRE_OK on SEND
-    80 SEND "$I" TIMEOUT 2000 REQUIRE_OK
-    90 PRINT "Success check: $I acknowledged."
-    100 REM WAIT_FOR_LINE should only match lines arriving after STATUS is sent
-    110 STATUS
-    120 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
-    130 IF status_line = "" THEN GOTO 9000
-    140 PRINT "Success check: WAIT_FOR_LINE INTO captured: " &amp; status_line
-    150 STATUS
-    160 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
-    170 IF status_line2 = "" THEN GOTO 9010
-    180 PRINT "Success check: WAIT_FOR_LINE LET captured: " &amp; status_line2
-    190 REM READ_LINE returns the next incoming line (or "" on timeout)
-    200 STATUS
-    210 LET next_line = READ_LINE(1500)
-    220 IF next_line = "" THEN GOTO 9020
-    230 PRINT "Success check: READ_LINE LET captured: " &amp; next_line
-    240 STATUS
-    250 READ_LINE(1500) INTO line2
-    260 IF line2 = "" THEN GOTO 9030
-    270 PRINT "Success check: READ_LINE INTO captured: " &amp; line2
-    280 PRINT "Section 3 test complete."
-    290 END
-    9000 PRINT "WAIT_FOR_LINE INTO timed out."
-    9010 PRINT "WAIT_FOR_LINE LET timed out."
-    9020 PRINT "READ_LINE LET timed out."
-    9030 PRINT "READ_LINE INTO timed out."
-    9040 END</code></pre>
+      <pre><code>; TITLE: Section 3 — Timing, State and Line-Capture Test
+; VERSION: 1.0
+; DESCRIPTION: Exercises WAIT, WAIT_IDLE, WAIT_STATE, WAIT_FOR_LINE, and READ_LINE.
+; DESCRIPTION: Set wait_ms to a short pause before the idle checks — 0 is fine if machine is already idle.
+; DESCRIPTION: Success: each timing gate passes and every WAIT_FOR_LINE / READ_LINE returns a non-empty line.
+; VAR wait_ms=250
+10 WAIT {wait_ms}
+20 WAIT_IDLE 20000
+30 WAIT_STATE "idle" TIMEOUT 5000
+40 PRINT "Success check: WAIT + WAIT_IDLE + WAIT_STATE completed."
+50 REM For command acknowledgements use REQUIRE_OK
+60 SEND "$I" TIMEOUT 2000 REQUIRE_OK
+70 PRINT "Success check: $I acknowledged."
+80 REM WAIT_FOR_LINE only catches lines arriving after STATUS is sent
+90 STATUS
+100 WAIT_FOR_LINE("^&lt;", 2000) INTO status_line
+110 IF status_line = "" THEN GOTO 9000
+120 PRINT "Success check: WAIT_FOR_LINE INTO: " &amp; status_line
+130 STATUS
+140 LET status_line2 = WAIT_FOR_LINE("^&lt;", 2000)
+150 IF status_line2 = "" THEN GOTO 9010
+160 PRINT "Success check: WAIT_FOR_LINE LET: " &amp; status_line2
+170 REM READ_LINE returns the very next incoming line
+180 STATUS
+190 LET next_line = READ_LINE(1500)
+200 IF next_line = "" THEN GOTO 9020
+210 PRINT "Success check: READ_LINE LET: " &amp; next_line
+220 STATUS
+230 READ_LINE(1500) INTO line2
+240 IF line2 = "" THEN GOTO 9030
+250 PRINT "Success check: READ_LINE INTO: " &amp; line2
+260 PRINT "Section 3 test complete."
+270 END
+9000 PRINT "WAIT_FOR_LINE INTO timed out."
+9010 PRINT "WAIT_FOR_LINE LET timed out."
+9020 PRINT "READ_LINE LET timed out."
+9030 PRINT "READ_LINE INTO timed out."
+9040 END</code></pre>
     </section>
 
     <section class="card">
