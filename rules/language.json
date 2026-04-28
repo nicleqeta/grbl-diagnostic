@@ -1,0 +1,19 @@
+{
+  "id": "gcom-language-v1",
+  "label": "GCOM Core Language",
+  "description": "Defines the core syntax and semantics for GCOM scripts.",
+  "version": "1.0.0",
+  "rules": {
+    "line_numbering": "Required. Each program line must start with a positive integer.",
+    "statements": [
+      "LET", "SEND", "SET", "RESET_SETTINGS", "STATUS", "WAIT", "WAIT_IDLE", "WAIT_STATE", "WAIT_FOR_LINE", "READ_LINE", "PRINT", "INPUT", "FORM", "IF", "FOR", "NEXT", "GOSUB", "RETURN", "RESULT", "REPORT", "END", "CONNECT", "DISCONNECT", "HOLD", "RESUME", "SOFT_RESET", "BENCH META", "BENCH START", "BENCH END"
+    ],
+    "comment_style": "REM for inline comments; ';' for metadata headers.",
+    "required_headers": ["TITLE", "DESCRIPTION", "VAR"],
+    "math_functions": ["ABS", "INT", "ROUND", "SQRT", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2", "PI", "MOD", "MIN", "MAX", "CLAMP", "HYPOT", "LN", "LOG", "LOG10", "TRUNC", "SIGN", "CEIL", "FLOOR", "EXP", "SINH", "COSH", "TANH", "ASINH", "ACOSH", "ATANH"]
+  },
+  "provenance": {
+    "created": "2026-04-28",
+    "author": "GitHub Copilot"
+  }
+}

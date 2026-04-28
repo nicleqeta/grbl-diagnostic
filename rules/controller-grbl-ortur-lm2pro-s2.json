@@ -1,0 +1,32 @@
+{
+  "id": "controller-grbl-ortur-lm2pro-s2",
+  "label": "Ortur Laser Master 2 Pro S2 (GRBL)",
+  "description": "Controller rules for Ortur LM2 Pro S2 running GRBL.",
+  "parent": "gcom-language-v1",
+  "controller_family": "grbl",
+  "version": "1.1f",
+  "rules": {
+    "max_feed_rate": 10000,
+    "min_feed_rate": 10,
+    "max_laser_power": 1000,
+    "min_laser_power": 0,
+    "supported_gcodes": ["G0", "G1", "G2", "G3", "M3", "M4", "M5", "S"],
+    "laser_mode": true,
+    "arc_support": true,
+    "safety": {
+      "require_ok_on_motion": true,
+      "default_safe_z": 5,
+      "alarm_on_limit": true
+    },
+    "quirks": [
+      "Needs S parameter for laser power",
+      "G2/G3 arcs supported in G17 (XY) plane only",
+      "No Z axis motion for laser jobs"
+    ]
+  },
+  "provenance": {
+    "created": "2026-04-28",
+    "author": "GitHub Copilot",
+    "source": "Ortur LM2 Pro S2 manual, GRBL 1.1f docs"
+  }
+}
