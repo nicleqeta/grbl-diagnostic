@@ -1073,22 +1073,90 @@ Before emitting a script, verify:
           return '';
         };
 
+        const analyzeGcomBlock = (text) => {
+          const block = extractFirstGcomBlock(text);
+          if (!block) {
+            return {
+              hasBlock: false,
+              lineCount: 0,
+              hasEndLine: false,
+              suspiciousTail: true,
+              sendCount: 0,
+              letCount: 0,
+              uniqueLineRatio: 1,
+              dominantLetVarRatio: 0,
+              looksLikeArithmeticChurn: false,
+              block,
+            };
+          }
+
+          const allLines = block.split('\n').map(line => String(line || '').trim()).filter(Boolean);
+          const numberedLines = allLines.filter(line => /^\d+\s+/.test(line));
+          const executable = numberedLines.map(line => line.replace(/^\d+\s+/, '').trim());
+          const nonCommentExec = executable.filter(line => !/^REM\b/i.test(line));
+          const hasEndLine = nonCommentExec.some(line => /^END\b/i.test(line));
+          const lastLine = nonCommentExec.length ? nonCommentExec[nonCommentExec.length - 1] : '';
+          const suspiciousTail = /(?:=\s*$|&\s*$|\+\s*$|-\s*$|\*\s*$|\/\s*$|THEN\s*$|GOTO\s*$|LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*$)/i.test(lastLine);
+
+          const sendCount = nonCommentExec.filter(line => /^SEND\b/i.test(line)).length;
+          const letLines = nonCommentExec.filter(line => /^LET\b/i.test(line));
+          const letCount = letLines.length;
+
+          const normalizedSet = new Set(nonCommentExec.map(line => line.replace(/\s+/g, ' ').toUpperCase()));
+          const uniqueLineRatio = nonCommentExec.length ? (normalizedSet.size / nonCommentExec.length) : 1;
+
+          const letVarCounts = new Map();
+          let arithmeticChurnCount = 0;
+          for (const line of letLines) {
+            const m = line.match(/^LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i);
+            if (!m) continue;
+            const lhs = String(m[1]).toUpperCase();
+            const rhs = String(m[2]).trim();
+            letVarCounts.set(lhs, (letVarCounts.get(lhs) || 0) + 1);
+            if (new RegExp(`^${lhs}\\s*[+\\-*/]\\s*[-+]?\\d+(?:\\.\\d+)?$`, 'i').test(rhs)) {
+              arithmeticChurnCount += 1;
+            }
+          }
+          let topVarCount = 0;
+          for (const count of letVarCounts.values()) {
+            if (count > topVarCount) topVarCount = count;
+          }
+          const dominantLetVarRatio = letCount ? (topVarCount / letCount) : 0;
+
+          const looksLikeArithmeticChurn =
+            nonCommentExec.length >= 60 &&
+            letCount >= 40 &&
+            dominantLetVarRatio >= 0.7 &&
+            uniqueLineRatio <= 0.35 &&
+            arithmeticChurnCount >= 20 &&
+            sendCount <= 6;
+
+          return {
+            hasBlock: true,
+            lineCount: nonCommentExec.length,
+            hasEndLine,
+            suspiciousTail,
+            sendCount,
+            letCount,
+            uniqueLineRatio,
+            dominantLetVarRatio,
+            looksLikeArithmeticChurn,
+            block,
+          };
+        };
+
         const isLikelyTruncatedGcomReply = (text) => {
           const raw = String(text || '');
           if (!/```gcom\s*\n/i.test(raw)) return false;
-          const block = extractFirstGcomBlock(raw);
-          if (!block) return true;
-
-          const lines = block.split('\n').map(line => String(line || '').trim());
-          const nonEmpty = lines.filter(Boolean);
-          if (!nonEmpty.length) return true;
-
-          const hasEndLine = nonEmpty.some(line => /^\d+\s+END\b/i.test(line));
-          const lastLine = nonEmpty[nonEmpty.length - 1];
-          const suspiciousTail = /(?:=\s*$|&\s*$|\+\s*$|-\s*$|\*\s*$|\/\s*$|THEN\s*$|GOTO\s*$|LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*$)/i.test(lastLine);
-
-          return !hasEndLine || suspiciousTail;
+          const analysis = analyzeGcomBlock(raw);
+          return !analysis.hasEndLine || analysis.suspiciousTail;
         };
+
+        const asksForTextEngraving = (() => {
+          const lastUser = [...messages].reverse().find(m => m && m.role === 'user');
+          const text = String(lastUser && lastUser.content ? lastUser.content : '').toLowerCase();
+          return /(laser|engrave|burn).*(text|word|letter|font)|\btext\b|\bfont\b|\bhello world\b/.test(text);
+        })();
 
         const baseSystemPrompt = GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum + intentInstruction;
 
@@ -1102,9 +1170,12 @@ Before emitting a script, verify:
         });
         let reply = String(aiResponse.response || '');
 
+        const initialAnalysis = analyzeGcomBlock(reply);
+        const lowQualityTextScript = asksForTextEngraving && initialAnalysis.looksLikeArithmeticChurn;
+
         // One-shot recovery for truncated script responses.
-        if (isLikelyTruncatedGcomReply(reply)) {
-          const recoveryPrompt = `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft appears truncated or incomplete. Regenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment). Keep it concise (<= 120 numbered lines), avoid repetitive unrolled lines, and ensure the script contains a final END line.`;
+        if (isLikelyTruncatedGcomReply(reply) || lowQualityTextScript) {
+          const recoveryPrompt = `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft is invalid for output quality (truncated and/or repetitive line spam). Regenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment). Keep it concise (<= 120 numbered lines), avoid repetitive unrolled lines, and ensure the script contains a final END line. If the request is text/font engraving, characters must be built from multiple geometric segments with explicit stroke moves; do not emit arithmetic churn loops with LET local_value.`;
           const retryResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
             messages: [
               { role: 'system', content: baseSystemPrompt + recoveryPrompt },
