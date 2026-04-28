@@ -3966,6 +3966,46 @@ function basicParseResultOptions(resultBody) {
   return { key, valueExpr, error: null };
 }
 
+function basicFindRepeatedStatementIssue(parsedEntries) {
+  const MIN_REPEAT_COUNT = 12;
+  const MIN_REPEAT_RATIO = 0.5;
+  const buckets = new Map();
+  let totalCount = 0;
+
+  parsedEntries.forEach(({ lineNum, statement }) => {
+    const text = String(statement || '').trim();
+    if (!text) return;
+    if (/^(REM\b|END\b)$/i.test(text)) return;
+    totalCount += 1;
+    const key = text.replace(/\s+/g, ' ').toUpperCase();
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.lines.push(lineNum);
+    } else {
+      buckets.set(key, { count: 1, lines: [lineNum], sample: text });
+    }
+  });
+
+  if (totalCount < MIN_REPEAT_COUNT) return null;
+
+  let top = null;
+  buckets.forEach(bucket => {
+    if (!top || bucket.count > top.count) top = bucket;
+  });
+  if (!top) return null;
+
+  const ratio = totalCount > 0 ? (top.count / totalCount) : 0;
+  if (top.count < MIN_REPEAT_COUNT || ratio < MIN_REPEAT_RATIO) return null;
+
+  return {
+    count: top.count,
+    ratio,
+    lines: top.lines.slice(0, 8),
+    sample: top.sample
+  };
+}
+
 function basicValidateScript(source, paramNames = []) {
   const errors = [];
   const warnings = [];
@@ -4003,6 +4043,15 @@ function basicValidateScript(source, paramNames = []) {
   });
 
   order.sort((a, b) => a - b);
+
+  const repeatIssue = basicFindRepeatedStatementIssue(parsedEntries);
+  if (repeatIssue) {
+    errors.push(
+      `Repeated line-content detected: the same statement appears ${repeatIssue.count} times ` +
+      `(${Math.round(repeatIssue.ratio * 100)}% of executable lines). ` +
+      `Sample: "${repeatIssue.sample}". First lines: ${repeatIssue.lines.join(', ')}`
+    );
+  }
 
   parsedEntries.forEach(({ lineNum, statement }) => {
     let match;

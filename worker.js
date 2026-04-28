@@ -175,6 +175,8 @@ function validateGcomSource(source, vars = {}, state = null) {
   if (!state) state = initializeValidationState();
   const lines = {}, order = [], definedVars = new Set(Object.keys(vars || {}));
   const addErr = (ln, msg, code) => addValidationDiagnostic(state, createValidationDiagnostic(ln, code, VALIDATION_SEVERITY.ERROR, msg));
+  const statementBuckets = new Map();
+  let executableCount = 0;
   
   source.split('\n').forEach((rawLine, idx) => {
     const trimmed = String(rawLine || '').trim();
@@ -183,8 +185,38 @@ function validateGcomSource(source, vars = {}, state = null) {
     if (!match) { addErr(idx + 1, `expected "<line-number> <statement>"`, VALIDATION_DIAGNOSTIC_CODES.E003_INVALID_LINE_NUM); return; }
     const lineNum = parseInt(match[1], 10);
     if (lines[lineNum]) { addErr(lineNum, `duplicate line number`, VALIDATION_DIAGNOSTIC_CODES.E004_DUPLICATE_LINE_NUM); return; }
-    lines[lineNum] = match[2]; order.push(lineNum);
+    const statement = String(match[2] || '').trim();
+    lines[lineNum] = statement; order.push(lineNum);
+
+    if (!/^(REM\b|END\b)$/i.test(statement)) {
+      executableCount += 1;
+      const key = statement.replace(/\s+/g, ' ').toUpperCase();
+      const bucket = statementBuckets.get(key);
+      if (bucket) {
+        bucket.count += 1;
+        bucket.lines.push(lineNum);
+      } else {
+        statementBuckets.set(key, { count: 1, lines: [lineNum], sample: statement });
+      }
+    }
   });
+
+  if (executableCount >= 12) {
+    let top = null;
+    statementBuckets.forEach(bucket => {
+      if (!top || bucket.count > top.count) top = bucket;
+    });
+    if (top) {
+      const ratio = top.count / executableCount;
+      if (top.count >= 12 && ratio >= 0.5) {
+        addErr(
+          top.lines[0] || null,
+          `repeated line-content detected: the same statement appears ${top.count} times (${Math.round(ratio * 100)}% of executable lines). Sample: "${top.sample}"`,
+          VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT
+        );
+      }
+    }
+  }
   
   if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
     addErr(order[order.length - 1], `program must end with END`, VALIDATION_DIAGNOSTIC_CODES.E010_MISSING_END);
@@ -1023,15 +1055,59 @@ Before emitting a script, verify:
           return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is NEUTRAL. Respond naturally to their question. If terminal output is provided and diagnosis seems relevant, use the diagnostic structure (Evidence/Cause/Checks). Otherwise respond directly.`;
         })();
 
+        const extractFirstGcomBlock = (text) => {
+          const raw = String(text || '');
+          const fenced = raw.match(/```gcom\s*\n([\s\S]*?)```/i);
+          if (fenced) return String(fenced[1] || '').trim();
+          const openOnly = raw.match(/```gcom\s*\n([\s\S]*)$/i);
+          if (openOnly) return String(openOnly[1] || '').trim();
+          return '';
+        };
+
+        const isLikelyTruncatedGcomReply = (text) => {
+          const raw = String(text || '');
+          if (!/```gcom\s*\n/i.test(raw)) return false;
+          const block = extractFirstGcomBlock(raw);
+          if (!block) return true;
+
+          const lines = block.split('\n').map(line => String(line || '').trim());
+          const nonEmpty = lines.filter(Boolean);
+          if (!nonEmpty.length) return true;
+
+          const hasEndLine = nonEmpty.some(line => /^\d+\s+END\b/i.test(line));
+          const lastLine = nonEmpty[nonEmpty.length - 1];
+          const suspiciousTail = /(?:=\s*$|&\s*$|\+\s*$|-\s*$|\*\s*$|\/\s*$|THEN\s*$|GOTO\s*$|LET\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*$)/i.test(lastLine);
+
+          return !hasEndLine || suspiciousTail;
+        };
+
+        const baseSystemPrompt = GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum + intentInstruction;
+
         const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
           messages: [
-            { role: 'system', content: GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum + intentInstruction },
+            { role: 'system', content: baseSystemPrompt },
             ...messages,
           ],
-          max_tokens: 1200,
+          max_tokens: 1800,
           temperature: 0.4,
         });
         let reply = String(aiResponse.response || '');
+
+        // One-shot recovery for truncated script responses.
+        if (isLikelyTruncatedGcomReply(reply)) {
+          const recoveryPrompt = `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft appears truncated or incomplete. Regenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment). Keep it concise (<= 120 numbered lines), avoid repetitive unrolled lines, and ensure the script contains a final END line.`;
+          const retryResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+            messages: [
+              { role: 'system', content: baseSystemPrompt + recoveryPrompt },
+              ...messages,
+            ],
+            max_tokens: 1800,
+            temperature: 0.2,
+          });
+          const retried = String(retryResponse.response || '').trim();
+          if (retried) reply = retried;
+        }
+
         // Guardrail: if model opened a fenced block but missed the closing fence, close it.
         if (/```gcom\s*\n/i.test(reply)) {
           const fenceCount = (reply.match(/```/g) || []).length;
