@@ -171,6 +171,36 @@ function basicNormalizeRuntimeVarName(name) {
   return trimmed ? trimmed.replace(/[^A-Za-z0-9_]/g, '_').toUpperCase() : '';
 }
 
+const ALLOWED_SET_KEYS = new Set([
+  'SEND_DELAY', 'ACK_TIMEOUT', 'RX_BUFFER', 'SEND_MODE',
+  'BANNER_TIMEOUT', 'READY_SETTLE', 'SEQUENCE_DELAY', 'STATUS_DELAY'
+]);
+
+function extractStaticSendText(sendExpr) {
+  const match = String(sendExpr || '').trim().match(/^"((?:[^"\\]|\\.)*)"$/);
+  if (!match) return null;
+  return match[1]
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
+function validateArcSendPayload(sendText, lineNum, addErr) {
+  const command = String(sendText || '').trim();
+  if (!/^G0?[23]\b/i.test(command)) return;
+
+  const hasRadius = /\bR[-+]?(?:\d|\.\d)/i.test(command);
+  const hasCenterOffsets = /\b[IJK][-+]?(?:\d|\.\d)/i.test(command);
+
+  if (hasRadius && hasCenterOffsets) {
+    addErr(lineNum, 'G2/G3 cannot mix R with I/J/K in the same arc command', VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+    return;
+  }
+
+  if (!hasRadius && !hasCenterOffsets) {
+    addErr(lineNum, 'G2/G3 requires either R or I/J/K arc parameters', VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+  }
+}
+
 function validateGcomSource(source, vars = {}, state = null) {
   if (!state) state = initializeValidationState();
   const lines = {}, order = [], definedVars = new Set(Object.keys(vars || {}));
@@ -186,6 +216,35 @@ function validateGcomSource(source, vars = {}, state = null) {
     const lineNum = parseInt(match[1], 10);
     if (lines[lineNum]) { addErr(lineNum, `duplicate line number`, VALIDATION_DIAGNOSTIC_CODES.E004_DUPLICATE_LINE_NUM); return; }
     const statement = String(match[2] || '').trim();
+
+    const setMatch = statement.match(/^SET\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.+))?$/i);
+    if (setMatch) {
+      const rawKey = String(setMatch[1] || '').trim();
+      const key = rawKey.toUpperCase();
+      const valueExpr = String(setMatch[2] || '').trim();
+
+      if (!ALLOWED_SET_KEYS.has(key)) {
+        if (/^[GM]\d+(?:\.\d+)?$/i.test(rawKey)) {
+          addErr(lineNum, `SET ${rawKey} is invalid; use SEND \"${rawKey}\" for modal gcode`, VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+        } else {
+          addErr(lineNum, `unsupported SET key \"${rawKey}\"`, VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+        }
+      } else if (!valueExpr) {
+        addErr(lineNum, `SET ${rawKey} requires a value expression`, VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+      }
+    }
+
+    const sendMatch = statement.match(/^SEND\s+(.+)$/i);
+    if (sendMatch) {
+      const sendBody = String(sendMatch[1] || '').trim();
+      const timeoutIndex = sendBody.toUpperCase().lastIndexOf(' TIMEOUT ');
+      const sendExpr = timeoutIndex === -1 ? sendBody : sendBody.slice(0, timeoutIndex).trim();
+      const staticSendText = extractStaticSendText(sendExpr);
+      if (staticSendText != null) {
+        validateArcSendPayload(staticSendText, lineNum, addErr);
+      }
+    }
+
     lines[lineNum] = statement; order.push(lineNum);
 
     if (!/^(REM\b|END\b)$/i.test(statement)) {
@@ -663,12 +722,16 @@ STRING AND TOKEN HELPERS
 
 ARC / CIRCLE RULES (G2/G3)
 - Prefer center-format arcs (I/J) over radius-format (R) when possible; center format is more stable.
-- Always set the arc plane before arcs. Use G17 for XY-plane arcs in this app.
+- For FluidNC, reset modal state early in files/macros (for example: G0 G54 G17 G21 G90 G94).
+- Always set the arc plane before arcs. Use G17 for XY-plane arcs in this app unless the user explicitly requests G18/G19.
 - For arcs in G17, include X and/or Y endpoint and include I and/or J center offsets.
 - I/J are center offsets from the arc start point (incremental arc center style).
+- Do not emit SET G17 or other SET G/M statements; modal gcode belongs in SEND "...".
 - Keep feed explicit before arc motion (set F in a prior move or on the arc command).
+- FluidNC requires feed rate > 0 before G1/G2/G3 motion.
 - Helical arcs in G17 may include Z while X/Y follow the circular path.
 - If using R format: R>0 means sweep under 180 deg, R<0 means sweep over 180 deg.
+- Never mix R with I/J/K in a single G2/G3 command.
 - Avoid near-semicircle and near-full-circle R arcs (numerically fragile). Prefer I/J.
 - Keep arc endpoints and center consistent so radius(start->center) ~= radius(end->center).
 - Do not emit unsupported planes for preview in this app; avoid G18/G19 arcs unless user explicitly asks.
