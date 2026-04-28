@@ -529,6 +529,9 @@ CRITICAL SYNTAX RULES (must follow):
 - Use REM comments inside numbered program lines, or metadata headers prefixed with ';'.
 - Do NOT use WHILE/WEND (unsupported).
 - Looping must use FOR/NEXT or IF ... THEN GOTO.
+- IF statements must be single-line and complete: IF <condition> THEN <action>. Never emit a bare THEN with no action.
+- Every FOR must have a matching NEXT, and every generated script must include a final END line.
+- Never emit bare identifiers in expressions unless they were defined by LET earlier or are declared placeholders {name}.
 - Emit only supported statements listed above.
 - Prefer SEND + REQUIRE_OK/BUFFERED modifiers over legacy SENDACK/SENDBUFF spellings.
 
@@ -546,6 +549,10 @@ Prefer 2-5 high-impact placeholders in DESCRIPTION. Do not list every variable.
 Preserve and reuse existing variable names and metadata provided in context when possible.
 
 When outputting a GCOM script always wrap it in a fenced block tagged \`\`\`gcom ... \`\`\`.
+For script-generation requests (for example: make/create/write/generate), output ONLY:
+1) One \`\`\`gcom fenced block
+2) Optional ACTIONS HTML comment
+Do not prepend explanatory prose before the fenced block.
 After your reply emit an actions comment when applicable:
 <!-- ACTIONS: {"insertScript":true,"showPreview":true} -->
 Emit insertScript:true when you produce a new or modified script.
@@ -1000,7 +1007,7 @@ Before emitting a script, verify:
             if (hasDiagErrors) {
               return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE but validation found ERRORS. First show a concise "Before I can help" explanation citing the 1-2 most critical errors from the Structured Diagnostics section above, then suggest a focused repair. After errors are fixed, help generate the new script.`;
             }
-            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE. You are helping write new GCOM scripts or explaining language concepts. Do NOT include diagnostic sections (Evidence from terminal log, Most likely cause, Suggested next checks) unless the user explicitly asks for diagnosis. Focus on script quality, correctness, and clarity.`;
+            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE. If the user is asking for a script, return ONLY one \`\`\`gcom fenced block (plus optional ACTIONS comment), with no leading prose. Do NOT include diagnostic sections (Evidence from terminal log, Most likely cause, Suggested next checks) unless explicitly requested. Focus on script quality, correctness, and concise output.`;
           }
           if (intent === 'diagnostic') {
             const hasDiags = diagnosticsCtx && diagnosticsCtx.summary && diagnosticsCtx.summary.totalCount > 0;
@@ -1024,7 +1031,12 @@ Before emitting a script, verify:
           max_tokens: 1200,
           temperature: 0.4,
         });
-        const reply = String(aiResponse.response || '');
+        let reply = String(aiResponse.response || '');
+        // Guardrail: if model opened a fenced block but missed the closing fence, close it.
+        if (/```gcom\s*\n/i.test(reply)) {
+          const fenceCount = (reply.match(/```/g) || []).length;
+          if (fenceCount % 2 === 1) reply += '\n```';
+        }
         return new Response(JSON.stringify({ reply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
           headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
         });
