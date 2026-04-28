@@ -104,6 +104,95 @@ function injectScriptMetadata(html, requestUrl, script) {
   return nextHtml;
 }
 
+/* ─── SERVERSIDE VALIDATION SERVICE ───────────────────────────────────────
+   Structured diagnostic model and validation logic owned by worker.
+   Provides /api/validation endpoint for client and third-party access.
+*/
+
+// Diagnostic codes and severity levels
+const VALIDATION_DIAGNOSTIC_CODES = {
+  E001_SYNTAX: 'E001', E002_UNDEFINED_VAR: 'E002', E003_INVALID_LINE_NUM: 'E003',
+  E004_DUPLICATE_LINE_NUM: 'E004', E005_INVALID_STATEMENT: 'E005', E006_INVALID_EXPRESSION: 'E006',
+  E007_INVALID_FUNCTION: 'E007', E008_MALFORMED_BRACKETS: 'E008', E009_INVALID_PLACEHOLDER: 'E009',
+  E010_MISSING_END: 'E010', E101_UNDEFINED_JUMP_TARGET: 'E101', E102_UNDEFINED_GOSUB_TARGET: 'E102',
+  E103_VARIABLE_USED_UNDEFINED: 'E103', E104_INVALID_FOR_STEP: 'E104', E105_NEXT_MISMATCH: 'E105',
+  E106_ORPHANED_NEXT: 'E106', E107_ORPHANED_RETURN: 'E107',
+  W001_BACKWARD_GOTO: 'W001', W002_DIV_BY_ZERO_RISK: 'W002', W003_INVALID_STEP_ZERO: 'W003',
+  W004_BUFFER_OVERFLOW_RISK: 'W004', W005_ORPHANED_GOSUB: 'W005', W006_UNUSED_VARIABLE: 'W006',
+  W007_UNINITIALIZED_VARIABLE: 'W007', C001_COMPILE_ERROR: 'C001', C002_MACRO_EXPANSION_ERROR: 'C002',
+  C003_INVALID_INTERPOLATION: 'C003'
+};
+
+const VALIDATION_SEVERITY = { ERROR: 'error', WARNING: 'warning', INFO: 'info' };
+
+function createValidationDiagnostic(lineNum, code, severity, message, context = {}) {
+  return {
+    lineNum: Number(lineNum) || null, code: String(code), severity: String(severity).toLowerCase(),
+    message: String(message), context: {
+      variableName: context.variableName ? String(context.variableName) : null,
+      suggestion: context.suggestion ? String(context.suggestion) : null,
+      relatedLines: Array.isArray(context.relatedLines) ? context.relatedLines.filter(n => Number.isFinite(n)) : [],
+      sourceText: context.sourceText ? String(context.sourceText).slice(0, 200) : null
+    }, timestamp: new Date().toISOString()
+  };
+}
+
+function initializeValidationState() {
+  return {
+    all: [], byLine: {}, byCode: {}, bySeverity: { error: [], warning: [], info: [] },
+    summary: { totalCount: 0, errorCount: 0, warningCount: 0, infoCount: 0, firstError: null, lastUpdated: null }
+  };
+}
+
+function addValidationDiagnostic(state, diagnostic) {
+  state.all.push(diagnostic);
+  const ln = diagnostic.lineNum;
+  if (ln != null) { if (!state.byLine[ln]) state.byLine[ln] = []; state.byLine[ln].push(diagnostic); }
+  const code = diagnostic.code;
+  if (!state.byCode[code]) state.byCode[code] = []; state.byCode[code].push(diagnostic);
+  state.bySeverity[diagnostic.severity].push(diagnostic);
+  state.summary.totalCount = state.all.length;
+  state.summary.errorCount = state.bySeverity.error.length;
+  state.summary.warningCount = state.bySeverity.warning.length;
+  state.summary.infoCount = state.bySeverity.info.length;
+  if (state.summary.errorCount > 0 && !state.summary.firstError) state.summary.firstError = state.bySeverity.error[0];
+  state.summary.lastUpdated = new Date().toISOString();
+}
+
+// Helper validators
+function basicSplitStatementChain(line) {
+  const tokens = String(line || '').split(/\s+/);
+  const statement = tokens[0]?.toUpperCase();
+  return tokens.length > 0 ? [{ statement, args: tokens.slice(1) }] : [];
+}
+
+function basicNormalizeRuntimeVarName(name) {
+  const trimmed = String(name || '').trim();
+  return trimmed ? trimmed.replace(/[^A-Za-z0-9_]/g, '_').toUpperCase() : '';
+}
+
+function validateGcomSource(source, vars = {}, state = null) {
+  if (!state) state = initializeValidationState();
+  const lines = {}, order = [], definedVars = new Set(Object.keys(vars || {}));
+  const addErr = (ln, msg, code) => addValidationDiagnostic(state, createValidationDiagnostic(ln, code, VALIDATION_SEVERITY.ERROR, msg));
+  
+  source.split('\n').forEach((rawLine, idx) => {
+    const trimmed = String(rawLine || '').trim();
+    if (!trimmed || trimmed.startsWith('REM')) return;
+    const match = trimmed.match(/^(\d+)\s+(.*)$/);
+    if (!match) { addErr(idx + 1, `expected "<line-number> <statement>"`, VALIDATION_DIAGNOSTIC_CODES.E003_INVALID_LINE_NUM); return; }
+    const lineNum = parseInt(match[1], 10);
+    if (lines[lineNum]) { addErr(lineNum, `duplicate line number`, VALIDATION_DIAGNOSTIC_CODES.E004_DUPLICATE_LINE_NUM); return; }
+    lines[lineNum] = match[2]; order.push(lineNum);
+  });
+  
+  if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
+    addErr(order[order.length - 1], `program must end with END`, VALIDATION_DIAGNOSTIC_CODES.E010_MISSING_END);
+  }
+  
+  return { diagnostics: state, lines, order, definedVars };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -220,6 +309,61 @@ export default {
         status: 405,
         headers: SCRIPT_CORS_HEADERS,
       });
+    }
+
+    // Validation API endpoint
+    if (url.pathname === '/api/validation') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: SCRIPT_CORS_HEADERS });
+      }
+      
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      
+      let body;
+      try {
+        body = await request.json();
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Invalid JSON', details: e.message }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      
+      const source = String(body.source || '').trim();
+      const vars = body.vars && typeof body.vars === 'object' ? body.vars : {};
+      const profile = String(body.profile || 'grbl').toLowerCase();
+      
+      if (!source) {
+        return new Response(JSON.stringify({ error: 'Missing source code' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      
+      try {
+        const result = validateGcomSource(source, vars);
+        return new Response(JSON.stringify({
+          success: true,
+          diagnostics: result.diagnostics.all,
+          summary: result.diagnostics.summary,
+          byLine: result.diagnostics.byLine,
+          bySeverity: result.diagnostics.bySeverity,
+          profile,
+          timestamp: new Date().toISOString()
+        }), {
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Validation failed', details: error.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
     }
 
     if (request.method === 'GET' && url.pathname === '/' && url.searchParams.has('gcom') && env.GCOM_SCRIPTS) {
@@ -568,6 +712,71 @@ Before emitting a script, verify:
 - arc endpoints and center produce consistent radius (avoid impossible arcs)
 `;
 
+      // ─── PHASE 5: STRUCTURED DIAGNOSTICS RENDERER ───────────────────────────
+      // Converts structured validation diagnostics into AI-friendly context blocks
+      const diagnosticsCtx = (body.diagnosticsContext && typeof body.diagnosticsContext === 'object') ? body.diagnosticsContext : null;
+      let diagnosticsContextBlock = '';
+      
+      if (diagnosticsCtx && diagnosticsCtx.summary && diagnosticsCtx.summary.totalCount > 0) {
+        const summary = diagnosticsCtx.summary;
+        const allDiags = Array.isArray(diagnosticsCtx.all) ? diagnosticsCtx.all : [];
+        const byLine = (diagnosticsCtx.byLine && typeof diagnosticsCtx.byLine === 'object') ? diagnosticsCtx.byLine : {};
+        const bySeverity = (diagnosticsCtx.bySeverity && typeof diagnosticsCtx.bySeverity === 'object') ? diagnosticsCtx.bySeverity : {};
+        
+        // Build diagnostics summary organized by severity and code
+        const diagParts = [];
+        diagParts.push(`\n\n=== STRUCTURED VALIDATION DIAGNOSTICS ===`);
+        diagParts.push(`Summary: ${summary.errorCount || 0} error(s), ${summary.warningCount || 0} warning(s), ${summary.infoCount || 0} info(s).`);
+        
+        // Group diagnostics by severity
+        if (Array.isArray(bySeverity.error) && bySeverity.error.length) {
+          diagParts.push(`\nERRORS (${bySeverity.error.length}):`);
+          const errorsByCode = {};
+          for (const diag of bySeverity.error) {
+            if (!errorsByCode[diag.code]) errorsByCode[diag.code] = [];
+            errorsByCode[diag.code].push(diag);
+          }
+          for (const [code, diags] of Object.entries(errorsByCode)) {
+            diagParts.push(`  [${code}] ${diags[0].message}${diags.length > 1 ? ` (${diags.length} instances)` : ''}`);
+            for (const d of diags.slice(0, 3)) {
+              if (d.lineNum != null) diagParts.push(`    Line ${d.lineNum}: ${d.message}`);
+            }
+          }
+        }
+        
+        if (Array.isArray(bySeverity.warning) && bySeverity.warning.length) {
+          diagParts.push(`\nWARNINGS (${bySeverity.warning.length}):`);
+          const warnsByCode = {};
+          for (const diag of bySeverity.warning) {
+            if (!warnsByCode[diag.code]) warnsByCode[diag.code] = [];
+            warnsByCode[diag.code].push(diag);
+          }
+          for (const [code, diags] of Object.entries(warnsByCode)) {
+            diagParts.push(`  [${code}] ${diags[0].message}${diags.length > 1 ? ` (${diags.length} instances)` : ''}`);
+            for (const d of diags.slice(0, 2)) {
+              if (d.lineNum != null) diagParts.push(`    Line ${d.lineNum}: ${d.message}`);
+            }
+          }
+        }
+        
+        // For AI diagnostic mode, include full detail breakdown by line
+        if (intent === 'diagnostic') {
+          const linesSorted = Object.keys(byLine).map(Number).sort((a, b) => a - b);
+          if (linesSorted.length > 0) {
+            diagParts.push(`\nDiagnostics by line number:`);
+            for (const lineNum of linesSorted.slice(0, 30)) {
+              const lineDiags = byLine[lineNum] || [];
+              for (const d of lineDiags) {
+                diagParts.push(`  L${lineNum}: [${d.code}] ${d.message}`);
+              }
+            }
+          }
+        }
+        
+        diagParts.push(`=== END DIAGNOSTICS ===`);
+        diagnosticsContextBlock = diagParts.join('\n');
+      }
+
       let contextAddendum = '';
       const ctx = (body.gcomContext && typeof body.gcomContext === 'object') ? body.gcomContext : null;
       if (ctx) {
@@ -730,6 +939,9 @@ Before emitting a script, verify:
         contextAddendum += composerParts.join('\n');
       }
 
+      // Add structured diagnostics context to overall AI context
+      contextAddendum += diagnosticsContextBlock;
+
       const blockReason = (body.blockReason && typeof body.blockReason === 'object') ? body.blockReason : null;
       if (blockReason) {
         const blockParts = [];
@@ -784,10 +996,22 @@ Before emitting a script, verify:
       try {
         const intentInstruction = (() => {
           if (intent === 'creative') {
-            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE. You are helping write new GCOM scripts or explaining language concepts. DO NOT include diagnostic sections (Evidence from terminal log, Most likely cause, Suggested next checks) unless the user explicitly asks for diagnosis. Focus on script quality, correctness, and clarity.`;
+            const hasDiagErrors = diagnosticsCtx && diagnosticsCtx.summary && diagnosticsCtx.summary.errorCount > 0;
+            if (hasDiagErrors) {
+              return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE but validation found ERRORS. First show a concise "Before I can help" explanation citing the 1-2 most critical errors from the Structured Diagnostics section above, then suggest a focused repair. After errors are fixed, help generate the new script.`;
+            }
+            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE. You are helping write new GCOM scripts or explaining language concepts. Do NOT include diagnostic sections (Evidence from terminal log, Most likely cause, Suggested next checks) unless the user explicitly asks for diagnosis. Focus on script quality, correctness, and clarity.`;
           }
           if (intent === 'diagnostic') {
+            const hasDiags = diagnosticsCtx && diagnosticsCtx.summary && diagnosticsCtx.summary.totalCount > 0;
+            if (hasDiags) {
+              return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is DIAGNOSTIC/TROUBLESHOOTING. Validation diagnostics are included above. Structure your reply: 1) Root cause identified from the diagnostic codes (e.g. [E002_UNDEFINED_VAR] means undefined variable), 2) Evidence from terminal log (if present), 3) Suggested next checks and repair steps. Use the line numbers and error codes as anchors.`;
+            }
             return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is DIAGNOSTIC/TROUBLESHOOTING. If terminal output is provided in context, structure your reply: 1) Evidence from terminal log (quote 1-3 relevant lines), 2) Most likely cause, 3) Suggested next checks. Be concise but thorough.`;
+          }
+          const hasDiags = diagnosticsCtx && diagnosticsCtx.summary && diagnosticsCtx.summary.totalCount > 0;
+          if (hasDiags) {
+            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is NEUTRAL. Structured validation diagnostics are available above. If there are errors or warnings, mention them briefly and offer to help fix. Otherwise respond directly to their question.`;
           }
           return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is NEUTRAL. Respond naturally to their question. If terminal output is provided and diagnosis seems relevant, use the diagnostic structure (Evidence/Cause/Checks). Otherwise respond directly.`;
         })();
