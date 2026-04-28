@@ -572,13 +572,16 @@ Before emitting a script, verify:
       if (ctx) {
         const cmds = Array.isArray(ctx.commands) ? ctx.commands : [];
         const segs = Array.isArray(ctx.segments) ? ctx.segments : [];
+        const tape = Array.isArray(ctx.commandTape) ? ctx.commandTape : [];
         const srcCtx = Array.isArray(ctx.sourceContext) ? ctx.sourceContext : [];
         const geo = (ctx.geometric && typeof ctx.geometric === 'object') ? ctx.geometric : {};
-        if (cmds.length > 0) {
+        const selectionSummary = (ctx.selectionSummary && typeof ctx.selectionSummary === 'object') ? ctx.selectionSummary : null;
+        if (cmds.length > 0 || tape.length > 0) {
           const parts = [];
           parts.push(`\n\n=== COMMAND TAPE SELECTION CONTEXT ===`);
           parts.push(`The user selected ${cmds.length} command(s) and ${segs.length} motion segment(s) from the preview of script: "${ctx.scriptTitle || 'Untitled'}".`);
           parts.push(`Script totals: ${ctx.totalCommandsInScript || '?'} commands, ${ctx.totalSegmentsInScript || '?'} segments.`);
+          if (selectionSummary && selectionSummary.note) parts.push(`Focus rule: ${selectionSummary.note}`);
 
           // Geometric summary
           if (geo.totalDistanceMm != null) parts.push(`Selected toolpath: ${geo.totalDistanceMm}mm total travel.`);
@@ -597,11 +600,21 @@ Before emitting a script, verify:
           }
           if (cmds.length > 40) parts.push(`  ... (${cmds.length - 40} more)`);
 
+          if (tape.length > 0) {
+            const selectedIds = new Set(Array.isArray(selectionSummary?.selectedCommandIds) ? selectionSummary.selectedCommandIds : cmds.map(c => c.commandId));
+            parts.push(`\nFull command tape (all commands; * marks selected focus):`);
+            for (const c of tape) {
+              const marker = selectedIds.has(c.commandId) ? '*' : ' ';
+              parts.push(` ${marker} [${Number(c.commandId) + 1}] L${c.sourceLine ?? '?'} | ${c.raw || c.display || ''}`);
+            }
+          }
+
           // GCOM source lines that generated the selection — this is the genesis context
           if (srcCtx.length > 0) {
             parts.push(`\nGCOM source lines that generated the selection (with surrounding context):`);
-            for (const { lineNumber, text } of srcCtx.slice(0, 60)) {
-              parts.push(`  ${String(lineNumber).padStart(4, ' ')}: ${text}`);
+            for (const entry of srcCtx.slice(0, 120)) {
+              const lineNumber = entry.lineNumber != null ? entry.lineNumber : entry.physicalLineNumber;
+              parts.push(`  ${String(lineNumber).padStart(4, ' ')}: ${entry.text}`);
             }
           }
 
@@ -623,7 +636,9 @@ Before emitting a script, verify:
       if (composerCtx) {
         const composerParts = [];
         const meta = (composerCtx.meta && typeof composerCtx.meta === 'object') ? composerCtx.meta : {};
+        const uiFields = (composerCtx.uiFields && typeof composerCtx.uiFields === 'object') ? composerCtx.uiFields : {};
         const vars = (composerCtx.vars && typeof composerCtx.vars === 'object') ? composerCtx.vars : {};
+        const validation = (composerCtx.validation && typeof composerCtx.validation === 'object') ? composerCtx.validation : null;
         const terminalCtx = (composerCtx.terminalContext && typeof composerCtx.terminalContext === 'object') ? composerCtx.terminalContext : null;
         const profile = (composerCtx.controllerProfile && typeof composerCtx.controllerProfile === 'object') ? composerCtx.controllerProfile : null;
         const varEntries = Object.entries(vars).slice(0, 80);
@@ -636,12 +651,32 @@ Before emitting a script, verify:
           if (meta.author) composerParts.push(`- author: ${meta.author}`);
           if (meta.description) composerParts.push(`- description: ${meta.description}`);
         }
+        if (uiFields && Object.keys(uiFields).length) {
+          composerParts.push(`Composer UI fields:`);
+          if (uiFields.descriptionRendered) composerParts.push(`- rendered description: ${uiFields.descriptionRendered}`);
+          if (uiFields.sourceId) composerParts.push(`- source id: ${uiFields.sourceId}`);
+          if (uiFields.descriptionTab) composerParts.push(`- description tab: ${uiFields.descriptionTab}`);
+        }
         if (varEntries.length) {
           composerParts.push(`Current variable defaults:`);
           for (const [k, v] of varEntries) composerParts.push(`- ${k}=${v}`);
         }
+        if (validation) {
+          composerParts.push(`Latest syntax check:`);
+          composerParts.push(`- has errors: ${validation.hasErrors ? 'yes' : 'no'}`);
+          composerParts.push(`- has warnings: ${validation.hasWarnings ? 'yes' : 'no'}`);
+          if (validation.summaryText) composerParts.push(`- summary: ${validation.summaryText}`);
+          if (Array.isArray(validation.errors) && validation.errors.length) {
+            composerParts.push('Validation errors:');
+            for (const err of validation.errors.slice(0, 40)) composerParts.push(`- ${String(err)}`);
+          }
+          if (Array.isArray(validation.warnings) && validation.warnings.length) {
+            composerParts.push('Validation warnings:');
+            for (const warn of validation.warnings.slice(0, 40)) composerParts.push(`- ${String(warn)}`);
+          }
+        }
         if (composerCtx.scriptSource && String(composerCtx.scriptSource).trim()) {
-          const lines = String(composerCtx.scriptSource).split('\n').slice(0, 120);
+          const lines = String(composerCtx.scriptSource).split('\n');
           composerParts.push(`Current script source (first ${lines.length} line(s)):`);
           composerParts.push('```gcom');
           composerParts.push(lines.join('\n'));
