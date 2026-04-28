@@ -190,9 +190,21 @@ function validateArcSendPayload(sendText, lineNum, addErr) {
 
   const hasRadius = /\bR[-+]?(?:\d|\.\d)/i.test(command);
   const hasCenterOffsets = /\b[IJK][-+]?(?:\d|\.\d)/i.test(command);
+  const hasTurns = /\bP[-+]?(?:\d|\.\d)/i.test(command);
+  const hasEndpointXY = /\b[XY][-+]?(?:\d|\.\d)/i.test(command);
 
   if (hasRadius && hasCenterOffsets) {
     addErr(lineNum, 'G2/G3 cannot mix R with I/J/K in the same arc command', VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+    return;
+  }
+
+  if (hasRadius && !hasEndpointXY) {
+    addErr(lineNum, 'R-format G2/G3 requires an X and/or Y endpoint in G17', VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
+    return;
+  }
+
+  if (hasRadius && hasTurns) {
+    addErr(lineNum, 'Multi-turn/full-circle arcs should use center format (I/J[/K]) with P, not R', VALIDATION_DIAGNOSTIC_CODES.E005_INVALID_STATEMENT);
     return;
   }
 
@@ -730,6 +742,8 @@ ARC / CIRCLE RULES (G2/G3)
 - Keep feed explicit before arc motion (set F in a prior move or on the arc command).
 - FluidNC requires feed rate > 0 before G1/G2/G3 motion.
 - Helical arcs in G17 may include Z while X/Y follow the circular path.
+- For helical arcs, keep center format explicit (I/J with optional Z endpoint), not ambiguous R-only arcs.
+- For full circles or multi-turn arcs, prefer center format with P turns; avoid R-format full-circle construction.
 - If using R format: R>0 means sweep under 180 deg, R<0 means sweep over 180 deg.
 - Never mix R with I/J/K in a single G2/G3 command.
 - Avoid near-semicircle and near-full-circle R arcs (numerically fragile). Prefer I/J.
@@ -797,6 +811,10 @@ COMMON FAILURE TRAPS
   Reason: small endpoint rounding can cause large path errors; use I/J center format.
 - Wrong: SEND "G2/G3 ..." without plane and center semantics being clear.
   Reason: arcs depend on active plane and center interpretation; emit explicit G17 and I/J.
+- Wrong: SEND "G2 ... R... P2" for full-circle or multi-turn behavior.
+  Reason: FluidNC arc validation for full rotations is center-format sensitive; use I/J (+P) instead of R.
+- Wrong: SEND "G3 Z... R..." for helical interpolation in XY workflows.
+  Reason: helical intent is clearer and safer with explicit I/J center offsets and Z endpoint.
 
 VAR DEFAULT VALUES
 When declaring ; VAR headers, use realistic defaults so preview produces meaningful motion output:
