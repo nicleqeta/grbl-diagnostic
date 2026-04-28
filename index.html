@@ -4337,9 +4337,15 @@ function basicValidateDraft() {
 // Calls /api/validation endpoint on worker and populates local diagnostic state
 async function basicValidateDraftAsync() {
   clearDiagnostics();
+
+  const source = String((basicScriptInput && basicScriptInput.value) || '').trim();
+  if (!source) {
+    // Empty composer is a neutral state; do not call the validation API.
+    return basicBuildValidationState();
+  }
   
   const payload = {
-    source: basicScriptInput.value,
+    source,
     vars: basicLoadedVars || {},
     profile: 'grbl'
   };
@@ -10765,8 +10771,23 @@ function aiBuildFailureSignature(blockReason) {
 }
 
 function aiExtractFirstGcomBlock(text) {
-  const match = String(text || '').match(/```gcom\s*\n([\s\S]*?)```/i);
-  return match ? String(match[1] || '').trim() : '';
+  const raw = String(text || '');
+
+  const fenced = raw.match(/```gcom\s*\n([\s\S]*?)```/i);
+  if (fenced) return String(fenced[1] || '').trim();
+
+  const openOnly = raw.match(/```gcom\s*\n([\s\S]*)$/i);
+  if (openOnly) return String(openOnly[1] || '').trim();
+
+  const headerStart = raw.search(/^\s*(?:REM\s+|;\s*)(?:TITLE|DESCRIPTION)\s*:/im);
+  if (headerStart >= 0) {
+    return raw
+      .slice(headerStart)
+      .replace(/<!--\s*ACTIONS:[\s\S]*$/i, '')
+      .trim();
+  }
+
+  return '';
 }
 
 function aiFingerprintScript(scriptText) {
@@ -11000,7 +11021,7 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature, optio
       insertScript: hasScript || !!(parsedActions && parsedActions.insertScript),
       showPreview: !!(parsedActions && parsedActions.showPreview)
     } : null;
-    const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions);
+    const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions, reply);
     if (msgEl) {
       msgEl.querySelectorAll('.ai-action-btn').forEach(btn => {
         btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, msgEl));
@@ -11191,12 +11212,13 @@ function aiScrollBottom() {
   if (aiChatContainerEl) aiChatContainerEl.scrollTop = aiChatContainerEl.scrollHeight;
 }
 
-function aiRenderMsg(role, html, actions) {
+function aiRenderMsg(role, html, actions, rawText = '') {
   if (!aiChatContainerEl) return null;
   const welcome = aiChatContainerEl.querySelector('.ai-welcome');
   if (welcome) welcome.remove();
   const el = document.createElement('div');
   el.className = 'ai-msg ai-msg-' + role;
+  if (rawText) el._aiRaw = String(rawText);
   const bubble = document.createElement('div');
   bubble.className = 'ai-msg-bubble';
   bubble.innerHTML = html;
@@ -11250,7 +11272,10 @@ function aiShowThinking(show) {
 }
 
 function aiMarkdown(text) {
-  const parts = text.split(/(```[\w]*\n[\s\S]*?```)/g);
+  let normalized = String(text || '');
+  const fenceCount = (normalized.match(/```/g) || []).length;
+  if (fenceCount % 2 === 1) normalized += '\n```';
+  const parts = normalized.split(/(```[\w]*\n[\s\S]*?```)/g);
   return parts.map((part, i) => {
     if (i % 2 === 1) {
       const isGcom = /^```gcom\n/i.test(part);
@@ -11283,8 +11308,11 @@ function aiHandleAction(action, msgEl) {
 
   if (action === 'insert') {
     const pre = msgEl.querySelector('.ai-code-block[data-type="gcom"]') || msgEl.querySelector('.ai-code-block');
-    if (!pre) { aiRenderMsg('assistant', 'No script block found to insert.', null); return; }
-    const script = pre.textContent.trim();
+    let script = pre ? pre.textContent.trim() : '';
+    if (!script) {
+      script = aiExtractFirstGcomBlock(msgEl && msgEl._aiRaw ? msgEl._aiRaw : '');
+    }
+    if (!script) { aiRenderMsg('assistant', 'No insertable GCOM block found. Ask the AI to return a full ```gcom``` package.', null); return; }
     if (!script) { aiRenderMsg('assistant', 'Script block is empty.', null); return; }
 
     // Normalize common LLM mistakes before parse/validation.
@@ -11589,7 +11617,7 @@ async function aiSend(userText) {
         insertScript: hasScript || !!(parsedActions && parsedActions.insertScript),
         showPreview: !!(parsedActions && parsedActions.showPreview)
       } : null;
-      const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions);
+      const msgEl = aiRenderMsg('assistant', aiMarkdown(cleanReply), actions, reply);
       if (msgEl) {
         msgEl.querySelectorAll('.ai-action-btn').forEach(btn => {
           btn.addEventListener('click', () => aiHandleAction(btn.dataset.action, msgEl));
