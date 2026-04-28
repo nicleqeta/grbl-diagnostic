@@ -567,6 +567,14 @@ CRITICAL SYNTAX RULES (must follow):
 - Emit only supported statements listed above.
 - Prefer SEND + REQUIRE_OK/BUFFERED modifiers over legacy SENDACK/SENDBUFF spellings.
 
+TEXT / FONT ENGRAVING RULES (must follow when user asks for words/letters/text/font):
+- Treat each character as a geometric stroke shape made of multiple line/arc segments; never represent a letter with one single straight segment.
+- Build text using pen-up / pen-down behavior (or laser-off / laser-on equivalent) between disconnected strokes.
+- For each glyph, emit a short sequence of segment moves that visibly forms that character (for example vertical + horizontal segments for H, loop-like segments for O).
+- Use consistent baseline, x-advance, and spacing variables so words are readable and characters do not overlap.
+- Prefer concise reusable logic (for example per-glyph dispatch with shared stroke primitives) over giant repetitive unrolled line spam.
+- If the requested text is long, generate a representative subset plus clear variables for scale/spacing instead of thousands of repeated lines.
+
 SCRIPT PACKAGE FORMAT (required when generating a full script):
 ; TITLE: <title>
 ; VERSION: <version>
@@ -684,6 +692,7 @@ EXAMPLE QUALITY RULES
 - Keep numbered lines left-aligned (no leading indentation before line numbers).
 - Use FORM() confirmation before machine motion in demos where accidental movement would be unsafe.
 - For benchmark demos that move axes, include a cancel path and explicit END on success path.
+- For text/letter engraving examples, include at least one character that uses 3+ segments so stroke-font intent is explicit.
 
 DIAGNOSTIC RESPONSE CONTRACT
 - Use diagnostic headings only when the user is explicitly troubleshooting/debugging or asks to analyze terminal/log output.
