@@ -3895,9 +3895,21 @@ function basicValidateArcSendCommand(sendText, lineNum, errors) {
 
   const hasRadius = /\bR[-+]?(?:\d|\.\d)/i.test(command);
   const hasCenterOffsets = /\b[IJK][-+]?(?:\d|\.\d)/i.test(command);
+  const hasTurns = /\bP[-+]?(?:\d|\.\d)/i.test(command);
+  const hasEndpointXY = /\b[XY][-+]?(?:\d|\.\d)/i.test(command);
 
   if (hasRadius && hasCenterOffsets) {
     errors.push(`Line ${lineNum}: G2/G3 cannot mix R with I/J/K in the same arc command`);
+    return;
+  }
+
+  if (hasRadius && !hasEndpointXY) {
+    errors.push(`Line ${lineNum}: R-format G2/G3 requires an X and/or Y endpoint in G17`);
+    return;
+  }
+
+  if (hasRadius && hasTurns) {
+    errors.push(`Line ${lineNum}: Multi-turn/full-circle arcs should use center format (I/J[/K]) with P, not R`);
     return;
   }
 
