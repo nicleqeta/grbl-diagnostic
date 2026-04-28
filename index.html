@@ -2074,6 +2074,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
     <div class="ai-sidebar-header">
       <span class="ai-sidebar-title">&#129302; AI Agent</span>
       <div style="display:flex;gap:4px;align-items:center;">
+        <button class="icon-btn" id="ai-reboot-btn" title="Clear session and start fresh (reboot)" style="padding:3px 7px;font-size:13px;">&#128257;</button>
         <button class="icon-btn" id="ai-export-btn" title="Export conversation to clipboard" style="padding:3px 7px;font-size:13px;">&#128203;</button>
         <button class="icon-btn" id="ai-sidebar-close-btn" title="Close AI panel" style="padding:3px 7px;">&#10005;</button>
       </div>
@@ -10484,6 +10485,52 @@ function aiLoadSessionMemory() {
   } catch {}
 }
 
+function aiRebootSession() {
+  // Clear chat and context
+  aiChatHistory = [];
+  aiExchangeLog = [];
+  aiSelectionContext = null;
+  aiThinking = false;
+  aiRepairInFlight = false;
+  aiLastBlockedContext = null;
+
+  // Reset session memory
+  aiSessionMemory = {
+    recentFailures: [],
+    successfulRepairs: [],
+    signatureCounts: {},
+    pendingBrainPrs: [],
+    approvedBrainRules: [],
+    autoRepairAttemptsBySignature: {},
+    lastAutoRepairAt: 0,
+    lastRepairFingerprintBySignature: {}
+  };
+  aiSaveSessionMemory();
+
+  // Clear chat display and show welcome screen
+  if (aiChatContainerEl) {
+    aiChatContainerEl.innerHTML = `
+      <div class="ai-welcome">
+        <div class="ai-welcome-icon">&#129302;</div>
+        <div class="ai-welcome-title">GCOM AI Agent</div>
+        <div class="ai-welcome-text">Session rebooted. Ready for fresh start. Write and refine GCOM scripts with AI. Select commands in the Preview window to use as context for targeted edits.</div>
+      </div>
+    `;
+  }
+
+  // Clear context chips display
+  const contextChips = document.getElementById('ai-context-chips');
+  if (contextChips) contextChips.innerHTML = '';
+  const contextBar = document.getElementById('ai-context-bar');
+  if (contextBar) contextBar.style.display = 'none';
+
+  // Clear proposals
+  const proposalsList = document.getElementById('ai-proposals-list');
+  if (proposalsList) proposalsList.innerHTML = '';
+  const proposalsCount = document.getElementById('ai-proposals-count');
+  if (proposalsCount) proposalsCount.textContent = '0';
+}
+
 function aiEscapeHtml(text) {
   return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -11352,6 +11399,7 @@ if (aiIncludeTerminalToggleEl) {
   });
 }
 if (aiContextClearBtnEl) aiContextClearBtnEl.addEventListener('click', () => aiSetContext(null));
+if (document.getElementById('ai-reboot-btn')) document.getElementById('ai-reboot-btn').addEventListener('click', () => aiRebootSession());
 if (aiSendBtnEl) aiSendBtnEl.addEventListener('click', () => aiSend(aiPromptInputEl ? aiPromptInputEl.value : ''));
 aiSetOpen(false);
 if (aiProposalsListEl) {
