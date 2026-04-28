@@ -232,5 +232,4 @@ export default {
     // All other routes: 404
     return new Response('Not found', { status: 404 });
   }
-}
-;
+};
