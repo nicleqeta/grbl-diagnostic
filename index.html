@@ -10446,6 +10446,7 @@ let aiTerminalToggleTouched = false;
 let aiThinking = false;
 let aiRepairInFlight = false;
 let aiLastBlockedContext = null;
+let aiCurrentUserIntent = 'neutral';  // 'creative' | 'diagnostic' | 'neutral'
 const MAX_AUTO_REPAIRS_PER_SIGNATURE = 1;
 const AUTO_REPAIR_COOLDOWN_MS = 20000;
 const AI_SESSION_KEY = 'gcomposer_ai_session_memory_v1';
@@ -10462,6 +10463,20 @@ let aiSessionMemory = {
 
 function aiSaveSessionMemory() {
   try { sessionStorage.setItem(AI_SESSION_KEY, JSON.stringify(aiSessionMemory)); } catch {}
+}
+
+function aiDetectIntent(userText) {
+  const text = String(userText || '').toLowerCase().trim();
+  if (!text) return 'neutral';
+  const creativeKeywords = /\b(write|generate|create|make|how to|explain|what is|describe|show|teach|why should|when to)\b/i;
+  const diagnosticKeywords = /\b(fix|debug|why|error|not working|failed|troubleshoot|problem|issue|wrong|broken|stuck)\b/i;
+  if (creativeKeywords.test(text) && !diagnosticKeywords.test(text)) {
+    return 'creative';
+  }
+  if (diagnosticKeywords.test(text)) {
+    return 'diagnostic';
+  }
+  return 'neutral';
 }
 
 function aiLoadSessionMemory() {
@@ -10529,6 +10544,9 @@ function aiRebootSession() {
   if (proposalsList) proposalsList.innerHTML = '';
   const proposalsCount = document.getElementById('ai-proposals-count');
   if (proposalsCount) proposalsCount.textContent = '0';
+
+  // Reset intent
+  aiCurrentUserIntent = 'neutral';
 }
 
 function aiEscapeHtml(text) {
@@ -11271,6 +11289,12 @@ async function aiSend(userText) {
   userText = (userText || '').trim();
   if (!userText || aiThinking) return;
   aiSyncTerminalToggleState();
+  
+  // Detect intent on first message only
+  if (aiChatHistory.length === 0) {
+    aiCurrentUserIntent = aiDetectIntent(userText);
+  }
+  
   aiThinking = true;
   if (aiSendBtnEl) aiSendBtnEl.disabled = true;
   if (aiPromptInputEl) { aiPromptInputEl.value = ''; aiPromptInputEl.style.height = ''; }
@@ -11290,6 +11314,7 @@ async function aiSend(userText) {
         gcomContext,
         composerContext,
         mode: 'chat',
+        intent: aiCurrentUserIntent,
         sessionLearning: aiBuildSessionLearningSummary()
       })
     });
