@@ -344,6 +344,7 @@ export default {
       }
 
       const mode = String(body.mode || 'chat').toLowerCase();
+      const intent = String(body.intent || 'neutral').toLowerCase();
 
       const GCOM_SYSTEM = `You are a GCOM AI Agent embedded in gcomposer, a browser-based GRBL CNC controller.
 Your primary role: write, explain, and refine GCOM scripts.
@@ -781,9 +782,19 @@ Before emitting a script, verify:
       }
 
       try {
+        const intentInstruction = (() => {
+          if (intent === 'creative') {
+            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is CREATIVE/GENERATIVE. You are helping write new GCOM scripts or explaining language concepts. DO NOT include diagnostic sections (Evidence from terminal log, Most likely cause, Suggested next checks) unless the user explicitly asks for diagnosis. Focus on script quality, correctness, and clarity.`;
+          }
+          if (intent === 'diagnostic') {
+            return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is DIAGNOSTIC/TROUBLESHOOTING. If terminal output is provided in context, structure your reply: 1) Evidence from terminal log (quote 1-3 relevant lines), 2) Most likely cause, 3) Suggested next checks. Be concise but thorough.`;
+          }
+          return `\n=== RESPONSE FORMAT DIRECTIVE ===\nUser intent is NEUTRAL. Respond naturally to their question. If terminal output is provided and diagnosis seems relevant, use the diagnostic structure (Evidence/Cause/Checks). Otherwise respond directly.`;
+        })();
+
         const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
           messages: [
-            { role: 'system', content: GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum },
+            { role: 'system', content: GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum + intentInstruction },
             ...messages,
           ],
           max_tokens: 1200,
