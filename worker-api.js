@@ -1,0 +1,110 @@
+// Minimal API-only Worker for api.gcom.dev
+// Only exposes /api/validation endpoint, no static assets, no GCOM_SCRIPTS or AI bindings
+
+const SCRIPT_CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function initializeValidationState() {
+  return {
+    all: [], byLine: {}, byCode: {}, bySeverity: { error: [], warning: [], info: [] },
+    summary: { totalCount: 0, errorCount: 0, warningCount: 0, infoCount: 0, firstError: null, lastUpdated: null }
+  };
+}
+
+function addValidationDiagnostic(state, diagnostic) {
+  state.all.push(diagnostic);
+  const ln = diagnostic.lineNum;
+  if (ln != null) { if (!state.byLine[ln]) state.byLine[ln] = []; state.byLine[ln].push(diagnostic); }
+  const code = diagnostic.code;
+  if (!state.byCode[code]) state.byCode[code] = []; state.byCode[code].push(diagnostic);
+  state.bySeverity[diagnostic.severity].push(diagnostic);
+  state.summary.totalCount = state.all.length;
+  state.summary.errorCount = state.bySeverity.error.length;
+  state.summary.warningCount = state.bySeverity.warning.length;
+  state.summary.infoCount = state.bySeverity.info.length;
+  if (state.summary.errorCount > 0 && !state.summary.firstError) state.summary.firstError = state.bySeverity.error[0];
+  state.summary.lastUpdated = new Date().toISOString();
+}
+
+function createValidationDiagnostic(lineNum, code, severity, message) {
+  return {
+    lineNum: Number(lineNum) || null, code: String(code), severity: String(severity).toLowerCase(),
+    message: String(message), timestamp: new Date().toISOString()
+  };
+}
+
+function validateGcomSource(source, vars = {}, state = null) {
+  if (!state) state = initializeValidationState();
+  const lines = {}, order = [];
+  const addErr = (ln, msg, code) => addValidationDiagnostic(state, createValidationDiagnostic(ln, code, 'error', msg));
+  source.split('\n').forEach((rawLine, idx) => {
+    const trimmed = String(rawLine || '').trim();
+    if (!trimmed || trimmed.startsWith('REM')) return;
+    const match = trimmed.match(/^(\d+)\s+(.*)$/);
+    if (!match) { addErr(idx + 1, `expected "<line-number> <statement>"`, 'E003'); return; }
+    const lineNum = parseInt(match[1], 10);
+    if (lines[lineNum]) { addErr(lineNum, `duplicate line number`, 'E004'); return; }
+    lines[lineNum] = match[2]; order.push(lineNum);
+  });
+  if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
+    addErr(order[order.length - 1], `program must end with END`, 'E010');
+  }
+  return { diagnostics: state, lines, order };
+}
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/validation') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: SCRIPT_CORS_HEADERS });
+      }
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Invalid JSON', details: e.message }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      const source = String(body.source || '').trim();
+      const vars = body.vars && typeof body.vars === 'object' ? body.vars : {};
+      if (!source) {
+        return new Response(JSON.stringify({ error: 'Missing source code' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+      try {
+        const result = validateGcomSource(source, vars);
+        return new Response(JSON.stringify({
+          success: true,
+          diagnostics: result.diagnostics.all,
+          summary: result.diagnostics.summary,
+          byLine: result.diagnostics.byLine,
+          bySeverity: result.diagnostics.bySeverity,
+          timestamp: new Date().toISOString()
+        }), {
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Validation failed', details: error.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS }
+        });
+      }
+    }
+    // All other routes: 404
+    return new Response('Not found', { status: 404 });
+  }
+};

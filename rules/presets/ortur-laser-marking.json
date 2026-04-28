@@ -1,0 +1,8 @@
+{
+  "id": "ortur-laser-marking",
+  "type": "preset",
+  "description": "Preset for Ortur LM2 Pro S2 laser marking.",
+  "controller": "grbl-base",
+  "machine": "ortur-lm2pro-s2",
+  "policy": "laser_marking"
+}

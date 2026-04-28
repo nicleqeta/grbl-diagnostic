@@ -1,0 +1,7 @@
+{
+  "id": "grbl-base",
+  "type": "controller",
+  "description": "Base rules for GRBL-compatible controllers.",
+  "inherits": ["gcom-core"],
+  "rules": []
+}

@@ -1,0 +1,6 @@
+{
+  "id": "laser_marking",
+  "type": "policy",
+  "description": "Laser marking process policy rules.",
+  "rules": []
+}

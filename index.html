@@ -1849,7 +1849,8 @@ async function setActiveProfile(profileId) {
     profileDesc.textContent = 'Profile not found.';
     document.getElementById('machine-pill').textContent = 'Unknown';
   }
-  // TODO: Wire activeProfile.rules into validation/AI logic as needed
+  // Re-validate script with new profile
+  validateScriptWithProfile();
 }
 
 profileSelect.addEventListener('change', e => {
@@ -1858,6 +1859,79 @@ profileSelect.addEventListener('change', e => {
 
 // On load, set default profile
 setActiveProfile(profileSelect.value);
+
+// --- Script Validation Integration ---
+const scriptInput = document.getElementById('basic-script-input');
+const validationBox = document.getElementById('basic-validation-box');
+
+async function validateScriptWithProfile() {
+  if (!activeProfile || !activeProfile.rules) {
+    validationBox.textContent = 'No active profile or rules.';
+    return;
+  }
+  const source = scriptInput.value;
+  // Example: enforce max_feed_rate and arc_support from rules
+  let errors = [];
+  if (activeProfile.rules.max_feed_rate) {
+    const feedRegex = /F(\d+)/gi;
+    let match;
+    while ((match = feedRegex.exec(source))) {
+      const feed = parseInt(match[1], 10);
+      if (feed > activeProfile.rules.max_feed_rate) {
+        errors.push(`Feed rate ${feed} exceeds max (${activeProfile.rules.max_feed_rate}) for this machine.`);
+      }
+    }
+  }
+  if (activeProfile.rules.arc_support === false) {
+    if (/G2|G3/.test(source)) {
+      errors.push('Arcs (G2/G3) are not supported on this machine.');
+    }
+  }
+  // Add more rule-based checks as needed
+  if (errors.length) {
+    validationBox.textContent = 'Validation errors:\n' + errors.join('\n');
+    validationBox.classList.add('error');
+  } else {
+    validationBox.textContent = 'Syntax check: no rule violations detected.';
+    validationBox.classList.remove('error');
+  }
+}
+
+scriptInput.addEventListener('input', validateScriptWithProfile);
+
+// --- AI Agent Integration ---
+// Patch AI prompt/context to include activeProfile.rules
+const aiSendBtn = document.getElementById('ai-send-btn');
+const aiPromptInput = document.getElementById('ai-prompt-input');
+const aiChatContainer = document.getElementById('ai-chat-container');
+
+async function sendAiPrompt() {
+  const prompt = aiPromptInput.value;
+  if (!prompt.trim()) return;
+  let context = '';
+  if (activeProfile && activeProfile.rules) {
+    context += `\n\n=== ACTIVE MACHINE PROFILE RULES ===\n`;
+    for (const [k, v] of Object.entries(activeProfile.rules)) {
+      context += `- ${k}: ${JSON.stringify(v)}\n`;
+    }
+    context += '=== END RULES ===\n';
+  }
+  // Display user prompt
+  const userMsg = document.createElement('div');
+  userMsg.className = 'ai-msg ai-msg-user';
+  userMsg.innerHTML = `<div class="ai-msg-bubble">${prompt}</div>`;
+  aiChatContainer.appendChild(userMsg);
+  // Simulate AI response (replace with real API call)
+  const aiMsg = document.createElement('div');
+  aiMsg.className = 'ai-msg ai-msg-assistant';
+  aiMsg.innerHTML = `<div class="ai-msg-bubble">[AI sees these rules:]<br><pre>${context}</pre></div>`;
+  aiChatContainer.appendChild(aiMsg);
+  aiPromptInput.value = '';
+  aiChatContainer.scrollTop = aiChatContainer.scrollHeight;
+}
+
+aiSendBtn.addEventListener('click', sendAiPrompt);
+aiPromptInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiPrompt(); } });
 </script>
 
     <div class="section" id="no-serial-section" style="display:none;">

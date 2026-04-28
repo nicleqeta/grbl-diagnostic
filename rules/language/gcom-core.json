@@ -1,0 +1,9 @@
+{
+  "id": "gcom-core",
+  "type": "language",
+  "description": "Core GCOM language rules and syntax.",
+  "rules": [
+    { "id": "E003", "description": "Line must be in '<line-number> <statement>' format.", "severity": "error" },
+    { "id": "E010", "description": "Program must end with END.", "severity": "error" }
+  ]
+}

@@ -1,0 +1,69 @@
+  "variables": {
+    "x": { "description": "Target X position", "default": 0 },
+    "y": { "description": "Target Y position", "default": 0 },
+    "z": { "description": "Target Z position", "default": 0 },
+    "rot": { "description": "Rotary axis position", "default": 0 },
+    "speed": { "description": "Feed rate", "default": 1000 },
+    "spindlespeed": { "description": "Spindle/laser power", "default": 1000 },
+    "tool": { "description": "Tool number", "default": 1 },
+    "dwell": { "description": "Dwell time (seconds)", "default": 1 }
+  },
+{
+  "id": "ortur-lm2pro-s2",
+  "type": "machine",
+  "description": "Ortur Laser Master 2 Pro S2 machine class rules.",
+  "inherits": ["grbl-base"],
+  "connection": {
+    "method": "serial",
+    "settings": {
+      "port": "COM3",
+      "baud": 115200,
+      "parity": "none"
+    },
+    "connection_script": [
+      "SEND '$$' REQUIRE_OK",
+      "SEND 'G21' REQUIRE_OK",
+      "SEND 'G90' REQUIRE_OK"
+    ]
+  },
+  "macros": {
+    "job_header": [],
+    "home": ["SEND '$H' REQUIRE_OK"],
+    "home_x": ["SEND '$HX' REQUIRE_OK"],
+    "home_y": ["SEND '$HY' REQUIRE_OK"],
+    "home_z": ["SEND '$HZ' REQUIRE_OK"],
+    "on_connect": [],
+    "user_start_script": [],
+    "user_end_script": [],
+    "tool_on": ["SEND 'M3 S{spindlespeed}' REQUIRE_OK"],
+    "tool_off": ["SEND 'M5' REQUIRE_OK"],
+    "tool_change": ["SEND 'T{tool}' REQUIRE_OK"],
+    "tool_length_probe": [],
+    "tool_probe": ["SEND 'G38.2 [X]{x}[Y]{y}[Z]{z} F{speed}' REQUIRE_OK"],
+    "dwell": ["SEND 'G4 P{dwell}' REQUIRE_OK"],
+    "coolant_on": [],
+    "coolant_off": [],
+    "vacuum_on": [],
+    "vacuum_off": [],
+    "cut_move": ["SEND 'G1 [X]{x}[Y]{y}[Z]{z}[A]{rot}[F]{speed}' REQUIRE_OK"],
+    "rapid_move": ["SEND 'G0 [X]{x}[Y]{y}[Z]{z}[A]{rot}' REQUIRE_OK"],
+    "safe_rapid": ["SEND 'G30' REQUIRE_OK"],
+    "abort": ["SEND 'x18' REQUIRE_OK"],
+    "pause": ["SEND '!' REQUIRE_OK"],
+    "resume": ["SEND '~' REQUIRE_OK"],
+    "job_end": ["SEND 'M2' REQUIRE_OK"],
+    "get_position": ["SEND '?' REQUIRE_OK"],
+    "get_status": ["SEND '?' REQUIRE_OK"],
+    "zero_all_axis": ["SEND 'G10 L20 P1 X0Y0Z0' REQUIRE_OK"],
+    "zero_x_axis": ["SEND 'G10 L20 P1 X0' REQUIRE_OK"],
+    "zero_y_axis": ["SEND 'G10 L20 P1 Y0' REQUIRE_OK"],
+    "zero_z_axis": ["SEND 'G10 L20 P1 Z0' REQUIRE_OK"],
+    "metric_modal": ["SEND 'G21' REQUIRE_OK"],
+    "custom_alarm_codes": []
+    "abort": ["SEND 'x18'"],
+    "pause": ["SEND '!'"],
+    "resume": ["SEND '~'"],
+    "homing": ["SEND '$H' REQUIRE_OK"]
+  },
+  "rules": []
+}
