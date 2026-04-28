@@ -3339,10 +3339,167 @@ let basicRawConfigText = '';
 let basicLoadedVars = {};
 let basicBaseVars = {};
 let basicSourceId = '';
+
+/* ─── STRUCTURED DIAGNOSTIC MODEL (v2) ────────────────────────────────────
+   NEW architecture for AI-friendly, third-party-compatible error reporting.
+   All diagnostics are structured objects, not flat strings.
+   JSON-serializable for export and third-party integrations.
+*/
+
+const DIAGNOSTIC_CODES = {
+  // Syntax errors
+  E001_SYNTAX: 'E001',
+  E002_UNDEFINED_VAR: 'E002',
+  E003_INVALID_LINE_NUM: 'E003',
+  E004_DUPLICATE_LINE_NUM: 'E004',
+  E005_INVALID_STATEMENT: 'E005',
+  E006_INVALID_EXPRESSION: 'E006',
+  E007_INVALID_FUNCTION: 'E007',
+  E008_MALFORMED_BRACKETS: 'E008',
+  E009_INVALID_PLACEHOLDER: 'E009',
+  E010_MISSING_END: 'E010',
+  
+  // Semantic errors
+  E101_UNDEFINED_JUMP_TARGET: 'E101',
+  E102_UNDEFINED_GOSUB_TARGET: 'E102',
+  E103_VARIABLE_USED_UNDEFINED: 'E103',
+  E104_INVALID_FOR_STEP: 'E104',
+  E105_NEXT_MISMATCH: 'E105',
+  E106_ORPHANED_NEXT: 'E106',
+  E107_ORPHANED_RETURN: 'E107',
+  
+  // Runtime-risk warnings
+  W001_BACKWARD_GOTO: 'W001',
+  W002_DIV_BY_ZERO_RISK: 'W002',
+  W003_INVALID_STEP_ZERO: 'W003',
+  W004_BUFFER_OVERFLOW_RISK: 'W004',
+  W005_ORPHANED_GOSUB: 'W005',
+  W006_UNUSED_VARIABLE: 'W006',
+  W007_UNINITIALIZED_VARIABLE: 'W007',
+  
+  // Compiler diagnostics (renamed from compiler output)
+  C001_COMPILE_ERROR: 'C001',
+  C002_MACRO_EXPANSION_ERROR: 'C002',
+  C003_INVALID_INTERPOLATION: 'C003'
+};
+
+const DIAGNOSTIC_SEVERITY = {
+  ERROR: 'error',
+  WARNING: 'warning',
+  INFO: 'info'
+};
+
+function createDiagnostic(lineNum, code, severity, message, context = {}) {
+  return {
+    lineNum: Number(lineNum) || null,
+    code: String(code),
+    severity: String(severity).toLowerCase(),
+    message: String(message),
+    context: {
+      variableName: context.variableName ? String(context.variableName) : null,
+      suggestion: context.suggestion ? String(context.suggestion) : null,
+      relatedLines: Array.isArray(context.relatedLines) ? context.relatedLines.filter(n => Number.isFinite(n)) : [],
+      sourceText: context.sourceText ? String(context.sourceText).slice(0, 200) : null
+    },
+    timestamp: new Date().toISOString()
+  };
+}
+
+function initializeDiagnosticState() {
+  return {
+    all: [],                    // Flat list of all diagnostics
+    byLine: {},                 // Map lineNum → diagnostic[]
+    byCode: {},                 // Map code → diagnostic[]
+    bySeverity: {
+      error: [],
+      warning: [],
+      info: []
+    },
+    summary: {
+      totalCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+      firstError: null,
+      lastUpdated: null
+    }
+  };
+}
+
+let basicDiagnosticState = initializeDiagnosticState();
+
+function addDiagnostic(diagnostic) {
+  basicDiagnosticState.all.push(diagnostic);
+  
+  // Index by line
+  const ln = diagnostic.lineNum;
+  if (ln != null) {
+    if (!basicDiagnosticState.byLine[ln]) basicDiagnosticState.byLine[ln] = [];
+    basicDiagnosticState.byLine[ln].push(diagnostic);
+  }
+  
+  // Index by code
+  const code = diagnostic.code;
+  if (!basicDiagnosticState.byCode[code]) basicDiagnosticState.byCode[code] = [];
+  basicDiagnosticState.byCode[code].push(diagnostic);
+  
+  // Index by severity
+  const severity = diagnostic.severity;
+  basicDiagnosticState.bySeverity[severity].push(diagnostic);
+  
+  // Update summary
+  basicDiagnosticState.summary.totalCount = basicDiagnosticState.all.length;
+  basicDiagnosticState.summary.errorCount = basicDiagnosticState.bySeverity.error.length;
+  basicDiagnosticState.summary.warningCount = basicDiagnosticState.bySeverity.warning.length;
+  basicDiagnosticState.summary.infoCount = basicDiagnosticState.bySeverity.info.length;
+  if (basicDiagnosticState.summary.errorCount > 0 && !basicDiagnosticState.summary.firstError) {
+    basicDiagnosticState.summary.firstError = basicDiagnosticState.bySeverity.error[0];
+  }
+  basicDiagnosticState.summary.lastUpdated = new Date().toISOString();
+}
+
+function clearDiagnostics() {
+  basicDiagnosticState = initializeDiagnosticState();
+}
+
+// ─── BACKWARDS COMPATIBILITY LAYER ───────────────────────────────────────
+// Old validation state structure kept for transition period
 let basicValidationState = { errors: [], warnings: [], lines: {}, order: [] };
 let basicValidationDirty = false;
 let basicDescriptionTab = 'edit';
 let basicDescriptionScrollRatio = 0;
+
+function syncDiagnosticsToLegacyState() {
+  // Bridge: convert new structured diagnostics to old flat format for backwards compat
+  basicValidationState.errors = basicDiagnosticState.bySeverity.error.map(d => 
+    `Line ${d.lineNum || '?'}: ${d.message}`
+  );
+  basicValidationState.warnings = basicDiagnosticState.bySeverity.warning.map(d =>
+    `Line ${d.lineNum || '?'}: ${d.message}`
+  );
+  basicValidationState.lines = {};
+  basicValidationState.order = Object.keys(basicDiagnosticState.byLine).map(n => Number(n)).sort((a, b) => a - b);
+}
+
+function addErrorDiagnostic(lineNum, message, code = DIAGNOSTIC_CODES.E001_SYNTAX) {
+  const diag = createDiagnostic(lineNum, code, DIAGNOSTIC_SEVERITY.ERROR, message);
+  addDiagnostic(diag);
+}
+
+function addWarningDiagnostic(lineNum, message, code = DIAGNOSTIC_CODES.W001_BACKWARD_GOTO) {
+  const diag = createDiagnostic(lineNum, code, DIAGNOSTIC_SEVERITY.WARNING, message);
+  addDiagnostic(diag);
+}
+
+function reportError(errors, lineNum, message) {
+  errors.push(`Line ${lineNum}: ${message}`);
+  addErrorDiagnostic(lineNum, message);
+}
+
+function reportWarning(warnings, lineNum, message) {
+  warnings.push(`Line ${lineNum}: ${message}`);
+  addWarningDiagnostic(lineNum, message);
+}
 
 function basicParseValue(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -3504,8 +3661,25 @@ function getNextBasicVarName() {
 }
 
 function basicBuildValidationState(errors = [], warnings = [], lines = {}, order = []) {
-  return { errors, warnings, lines, order };
-}
+  // Supports both old flat format and new structured diagnostics
+  if (errors.length > 0 || warnings.length > 0) {
+    clearDiagnostics();
+    for (const msg of errors) {
+      const match = String(msg).match(/^Line (\d+):\s*(.*)$/);
+      const lineNum = match ? parseInt(match[1], 10) : null;
+      const message = match ? match[2] : msg;
+      addErrorDiagnostic(lineNum, message);
+    }
+    for (const msg of warnings) {
+      const match = String(msg).match(/^Line (\d+):\s*(.*)$/);
+      const lineNum = match ? parseInt(match[1], 10) : null;
+      const message = match ? match[2] : msg;
+      addWarningDiagnostic(lineNum, message);
+    }
+  }
+  syncDiagnosticsToLegacyState();
+  return basicValidationState;
+
 
 function basicValidateVariableDefinitions() {
   const errors = [];
@@ -3806,7 +3980,7 @@ function basicValidateScript(source, paramNames = []) {
 
     const match = trimmed.match(/^(\d+)\s+(.*)$/);
     if (!match) {
-      errors.push(`Source line ${index + 1}: expected "<line-number> <statement>"`);
+      addErrorDiagnostic(null, `Source line ${index + 1}: expected "<line-number> <statement>"`, DIAGNOSTIC_CODES.E003_INVALID_LINE_NUM);
       return;
     }
 
@@ -3814,11 +3988,11 @@ function basicValidateScript(source, paramNames = []) {
     const statements = basicSplitStatementChain(match[2]);
 
     if (!statements.length) {
-      errors.push(`Line ${lineNum}: statement is empty`);
+      reportError(errors, lineNum, `statement is empty`);
       return;
     }
     if (Object.prototype.hasOwnProperty.call(lines, lineNum)) {
-      errors.push(`Line ${lineNum}: duplicate line number`);
+      reportError(errors, lineNum, `duplicate line number`);
       return;
     }
 
@@ -4140,46 +4314,67 @@ function basicValidateScript(source, paramNames = []) {
     const resetVar = basicNormalizeRuntimeVarName(targetLet[1]);
     if (resetVar !== loopVar) return;
 
-    warnings.push(
-      `Line ${fromLine}: potential non-terminating loop; backward jump to line ${target} resets ${targetLet[1]} before the IF condition re-checks.`
+    addWarningDiagnostic(
+      fromLine,
+      `potential non-terminating loop; backward jump to line ${target} resets ${targetLet[1]} before the IF condition re-checks.`,
+      DIAGNOSTIC_CODES.W001_BACKWARD_GOTO
     );
   });
 
   if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
-    warnings.push('The script does not end with END; execution will stop after the last line.');
+    addWarningDiagnostic(order[order.length - 1], 'The script does not end with END; execution will stop after the last line.', DIAGNOSTIC_CODES.W001_BACKWARD_GOTO);
   }
-
-  return basicBuildValidationState(errors, warnings, lines, order);
 }
 
 function basicValidateDraft() {
-  const variableValidation = basicValidateVariableDefinitions();
-  const compiled = compileBasicProgramSource(basicScriptInput.value);
-  if (!compiled.success) {
-    return basicBuildValidationState(
-      [...variableValidation.errors, `Compile error: ${compiled.error}`],
-      [],
-      {},
-      []
-    );
-  }
+  // Placeholder for backwards compatibility - real validation is now serverside
+  // Call basicValidateDraftAsync() for actual validation
+  return basicBuildValidationState();
+}
 
-  const scriptValidation = basicValidateScript(compiled.effectiveScript, variableValidation.names);
-  const compileWarnings = (compiled.diagnostics || []).map(diag => {
-    if (typeof diag === 'string') return `Compiler: ${diag}`;
-    if (diag && typeof diag.message === 'string') return `Compiler: ${diag.message}`;
-    try {
-      return `Compiler: ${JSON.stringify(diag)}`;
-    } catch {
-      return 'Compiler: [unserializable diagnostic]';
+// ─── SERVERSIDE VALIDATION ADAPTER ───────────────────────────────────────
+// Calls /api/validation endpoint on worker and populates local diagnostic state
+async function basicValidateDraftAsync() {
+  clearDiagnostics();
+  
+  const payload = {
+    source: basicScriptInput.value,
+    vars: basicLoadedVars || {},
+    profile: 'grbl'
+  };
+  
+  try {
+    const response = await fetch('/api/validation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      addErrorDiagnostic(null, `Validation service error: ${error.error}`, DIAGNOSTIC_CODES.C001_COMPILE_ERROR);
+      return basicBuildValidationState();
     }
-  });
-  return basicBuildValidationState(
-    [...variableValidation.errors, ...scriptValidation.errors],
-    [...scriptValidation.warnings, ...compileWarnings],
-    scriptValidation.lines,
-    scriptValidation.order
-  );
+    
+    const result = await response.json();
+    if (result.success && Array.isArray(result.diagnostics)) {
+      for (const diag of result.diagnostics) {
+        const code = diag.code || DIAGNOSTIC_CODES.E001_SYNTAX;
+        const severity = diag.severity || DIAGNOSTIC_SEVERITY.ERROR;
+        addValidationDiagnostic(diag.lineNum, code, severity, diag.message, diag.context || {});
+      }
+    }
+  } catch (error) {
+    addErrorDiagnostic(null, `Validation request failed: ${error.message}`, DIAGNOSTIC_CODES.C001_COMPILE_ERROR);
+  }
+  
+  return basicBuildValidationState();
+}
+
+// Helper to add diagnostic from server response
+function addValidationDiagnostic(lineNum, code, severity, message, context = {}) {
+  const diag = createDiagnostic(lineNum, code, severity, message, context);
+  addDiagnostic(diag);
 }
 
 function updateBasicValidationUi() {
@@ -4211,7 +4406,6 @@ function updateBasicValidationUi() {
 function refreshBasicVariableViews(syncUrl = true) {
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
-  basicValidationState = basicValidateDraft();
   basicValidationDirty = false;
   basicConfigBox.className = basicRawProgram || basicRawConfigText || getBasicScriptMeta().title ? 'diag-box' : 'diag-box muted';
   basicConfigBox.textContent = buildBasicPreviewText(true);
@@ -4219,6 +4413,13 @@ function refreshBasicVariableViews(syncUrl = true) {
   updateBasicDocumentTitle();
   updateBasicControlUi();
   if (syncUrl) updateUrlFromAdvancedDiagnostics();
+  
+  // Async serverside validation (non-blocking)
+  basicValidateDraftAsync().then(() => {
+    updateBasicValidationUi();
+  }).catch(err => {
+    console.error('Validation error:', err);
+  });
 }
 
 function markBasicScriptStructuralDirty() {
@@ -7218,13 +7419,13 @@ window.addEventListener('message', event => {
   }
 });
 
-function openBasicPreview() {
+async function openBasicPreview() {
   const src = basicScriptInput.value.trim();
   if (!src) {
     addLine('No script to preview - enter a GCOM script first', 'err');
     return;
   }
-  basicValidationState = basicValidateDraft();
+  basicValidationState = await basicValidateDraftAsync();
   updateBasicValidationUi();
   updateBasicControlUi();
   if (basicValidationState.errors.length) {
@@ -8327,10 +8528,10 @@ async function runGcodeQueue() {
 
 // --------------- End GCode Queue ---------------
 
-basicRunBtn.addEventListener('click', () => {
+basicRunBtn.addEventListener('click', async () => {
   const src = basicScriptInput.value.trim();
   if (!src) { addLine('No script to run - enter a GCOM script first', 'err'); return; }
-  basicValidationState = basicValidateDraft();
+  basicValidationState = await basicValidateDraftAsync();
   updateBasicValidationUi();
   updateBasicControlUi();
   if (basicValidationState.errors.length) {
@@ -9402,13 +9603,13 @@ async function copyTextPayload(text, successMessage, filenamePrefix) {
   }
 }
 
-function collectBasicScriptPayload() {
+async function collectBasicScriptPayload() {
   basicLoadedVars = collectBasicVarsFromEditor();
   basicRawConfigText = basicDescriptionInput.value.trim();
   basicRawProgram = basicScriptInput.value.trim();
 
   if (basicValidationDirty) {
-    basicValidationState = basicValidateDraft();
+    basicValidationState = await basicValidateDraftAsync();
     basicValidationDirty = false;
     updateBasicValidationUi();
     updateBasicControlUi();
@@ -9458,7 +9659,7 @@ function buildBasicForumPost() {
 }
 
 async function saveBasicScript() {
-  const payload = collectBasicScriptPayload();
+  const payload = await collectBasicScriptPayload();
   basicSaveBtn.disabled = true;
   basicSaveBtn.textContent = 'Saving and getting URL...';
 
@@ -10377,7 +10578,10 @@ cmdInput.addEventListener('blur', syncCommandPrompt);
 applyPresetToUi();
 loadSidebarWidth();
 renderVarEditor(basicLoadedVars);
-basicValidationState = basicValidateDraft();
+basicValidateDraftAsync().then(state => {
+  basicValidationState = state;
+  updateBasicValidationUi();
+}).catch(err => console.error('Initial validation failed:', err));
 try {
   const savedTerminalMode = localStorage.getItem(TERMINAL_RENDER_MODE_KEY);
   terminalPerformanceMode = savedTerminalMode == null ? false : savedTerminalMode === 'plain';
@@ -10719,6 +10923,7 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature, optio
   aiShowThinking(true);
 
   const composerContext = aiBuildComposerContext('');
+  const diagnosticsContext = aiBuildDiagnosticsContext();
   const payload = {
     mode: 'repair',
     failedScript: String(failedScript || ''),
@@ -10727,6 +10932,7 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature, optio
     sessionLearning: aiBuildSessionLearningSummary(),
     gcomContext: aiSelectionContext ? { ...aiSelectionContext } : null,
     composerContext,
+    diagnosticsContext,
     messages: [
       ...aiChatHistory.slice(-10),
       {
@@ -10922,6 +11128,39 @@ function aiBuildComposerContext(userText = '') {
     approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20),
     terminalContext: aiGetTerminalContext(userText),
     controllerProfile: aiBuildControllerProfileContext()
+  };
+}
+
+// ─── PHASE 5: BUILD DIAGNOSTICS CONTEXT FOR AI ────────────────────────────
+function aiBuildDiagnosticsContext() {
+  // Extract structured diagnostics from basicDiagnosticState and prepare for AI
+  if (!basicDiagnosticState || !basicDiagnosticState.all) {
+    return null;
+  }
+  
+  const state = basicDiagnosticState;
+  if (state.all.length === 0) {
+    return null;  // No diagnostics to report
+  }
+  
+  // Return the full structured state for worker.js rendering
+  return {
+    all: state.all.slice(0, 200),  // Limit to prevent context bloat
+    byLine: state.byLine || {},
+    byCode: state.byCode || {},
+    bySeverity: {
+      error: (state.bySeverity?.error || []).slice(0, 50),
+      warning: (state.bySeverity?.warning || []).slice(0, 50),
+      info: (state.bySeverity?.info || []).slice(0, 20)
+    },
+    summary: state.summary || {
+      totalCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+      firstError: null,
+      lastUpdated: null
+    }
   };
 }
 
@@ -11153,9 +11392,11 @@ function aiHandleAction(action, msgEl) {
     }
 
     if (typeof markBasicScriptStructuralDirty === 'function') markBasicScriptStructuralDirty();
-    if (typeof basicValidateDraft === 'function') {
-      basicValidationState = basicValidateDraft();
-      if (typeof updateBasicValidationUi === 'function') updateBasicValidationUi();
+    if (typeof basicValidateDraftAsync === 'function') {
+      basicValidateDraftAsync().then(state => {
+        basicValidationState = state;
+        if (typeof updateBasicValidationUi === 'function') updateBasicValidationUi();
+      }).catch(err => console.error('Validation failed:', err));
     }
     if (basicSection) basicSection.open = true;
 
@@ -11305,6 +11546,7 @@ async function aiSend(userText) {
   const terminalContext = aiGetTerminalContext(userText);
   const composerContext = aiBuildComposerContext(userText);
   composerContext.terminalContext = terminalContext;
+  const diagnosticsContext = aiBuildDiagnosticsContext();
   try {
     const res = await fetch('/api/ai/agent', {
       method: 'POST',
@@ -11313,6 +11555,7 @@ async function aiSend(userText) {
         messages: aiChatHistory,
         gcomContext,
         composerContext,
+        diagnosticsContext,
         mode: 'chat',
         intent: aiCurrentUserIntent,
         sessionLearning: aiBuildSessionLearningSummary()
