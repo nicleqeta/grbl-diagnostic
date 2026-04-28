@@ -3876,6 +3876,59 @@ function basicParseSendOptions(sendBody) {
   };
 }
 
+const BASIC_ALLOWED_SET_KEYS = new Set([
+  'SEND_DELAY', 'ACK_TIMEOUT', 'RX_BUFFER', 'SEND_MODE',
+  'BANNER_TIMEOUT', 'READY_SETTLE', 'SEQUENCE_DELAY', 'STATUS_DELAY'
+]);
+
+function basicExtractStaticSendText(sendExpr) {
+  const match = String(sendExpr || '').trim().match(/^"((?:[^"\\]|\\.)*)"$/);
+  if (!match) return null;
+  return match[1]
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
+function basicValidateArcSendCommand(sendText, lineNum, errors) {
+  const command = String(sendText || '').trim();
+  if (!/^G0?[23]\b/i.test(command)) return;
+
+  const hasRadius = /\bR[-+]?(?:\d|\.\d)/i.test(command);
+  const hasCenterOffsets = /\b[IJK][-+]?(?:\d|\.\d)/i.test(command);
+
+  if (hasRadius && hasCenterOffsets) {
+    errors.push(`Line ${lineNum}: G2/G3 cannot mix R with I/J/K in the same arc command`);
+    return;
+  }
+
+  if (!hasRadius && !hasCenterOffsets) {
+    errors.push(`Line ${lineNum}: G2/G3 requires either R or I/J/K arc parameters`);
+  }
+}
+
+function basicValidateSetStatement(statement, lineNum, errors) {
+  const match = String(statement || '').trim().match(/^SET\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.+))?$/i);
+  if (!match) return false;
+
+  const rawKey = String(match[1] || '').trim();
+  const key = rawKey.toUpperCase();
+  const valueExpr = String(match[2] || '').trim();
+
+  if (!BASIC_ALLOWED_SET_KEYS.has(key)) {
+    if (/^[GM]\d+(?:\.\d+)?$/i.test(rawKey)) {
+      errors.push(`Line ${lineNum}: SET ${rawKey} is invalid; emit controller modal commands with SEND \"${rawKey}\"`);
+      return true;
+    }
+    errors.push(`Line ${lineNum}: unsupported SET key \"${rawKey}\"`);
+    return true;
+  }
+
+  if (!valueExpr) {
+    errors.push(`Line ${lineNum}: SET ${rawKey} requires a value expression`);
+  }
+  return true;
+}
+
 function basicParseWaitStateOptions(waitStateBody) {
   const body = String(waitStateBody || '').trim();
   const timeoutIndex = basicFindTrailingKeyword(body, 'TIMEOUT');
@@ -4153,6 +4206,10 @@ function basicValidateScript(source, paramNames = []) {
         return;
       }
       basicValidateExpressionSyntax(sendSpec.expression, lineNum, 'the SEND expression', definedParams, errors);
+      const staticSendText = basicExtractStaticSendText(sendSpec.expression);
+      if (staticSendText != null) {
+        basicValidateArcSendCommand(staticSendText, lineNum, errors);
+      }
       if (sendSpec.timeoutExpr != null) {
         if (!sendSpec.timeoutExpr) {
           errors.push(`Line ${lineNum}: the SEND TIMEOUT expression is empty`);
@@ -4312,7 +4369,7 @@ function basicValidateScript(source, paramNames = []) {
    if (/^REM\b/i.test(statement)) return;
 
     // Phase 1-3 script-settable runtime / connection statements
-    if (/^SET\s+\w+\b/i.test(statement)) return;
+    if (basicValidateSetStatement(statement, lineNum, errors)) return;
     if (/^RESET_SETTINGS$/i.test(statement)) return;
     if (/^CONNECT(?:\s|$)/i.test(statement)) return;
     if (/^DISCONNECT$/i.test(statement)) return;
