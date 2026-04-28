@@ -1203,14 +1203,31 @@ function updateAiContextBar() {
 function buildAiSelectionPayload() {
   if (!timeline || !timeline.commands) return null;
   const sourceLines = String(timeline.scriptSource || '').split('\n');
+  const gcomLineToPhysicalIndex = new Map();
+  sourceLines.forEach((text, index) => {
+    const match = String(text || '').match(/^\s*(\d+)\s+/);
+    if (!match) return;
+    const gcomLine = parseInt(match[1], 10);
+    if (Number.isFinite(gcomLine)) gcomLineToPhysicalIndex.set(gcomLine, index);
+  });
 
   const selectedCmds = [];
   const selectedSegments = [];
   const usedSourceLineNums = new Set();
+  const selectedCommandIdSet = new Set();
+  const commandTape = timeline.commands.map(cmd => ({
+    commandId: cmd.commandId,
+    sourceLine: cmd.sourceLine,
+    raw: cmd.raw,
+    display: cmd.display,
+    firstSegment: cmd.firstSegment,
+    lastSegment: cmd.lastSegment
+  }));
 
   for (const id of [...selectedCommandIds].sort((a, b) => a - b)) {
     const cmd = timeline.commands[id];
     if (!cmd) continue;
+    selectedCommandIdSet.add(cmd.commandId);
     selectedCmds.push({
       commandId: cmd.commandId,
       sourceLine: cmd.sourceLine,
@@ -1240,12 +1257,22 @@ function buildAiSelectionPayload() {
   const contextLines = [];
   const addedLineNums = new Set();
   for (const lineNum of [...usedSourceLineNums].sort((a, b) => a - b)) {
-    for (let ln = Math.max(1, lineNum - 1); ln <= lineNum + 1; ln += 1) {
-      if (!addedLineNums.has(ln)) {
-        addedLineNums.add(ln);
-        const text = sourceLines[ln - 1] ?? '';
-        if (text.trim()) contextLines.push({ lineNumber: ln, text });
-      }
+    const physicalIndex = gcomLineToPhysicalIndex.has(lineNum)
+      ? gcomLineToPhysicalIndex.get(lineNum)
+      : (lineNum >= 1 && lineNum <= sourceLines.length ? lineNum - 1 : -1);
+    if (physicalIndex < 0) continue;
+    for (let idx = Math.max(0, physicalIndex - 1); idx <= Math.min(sourceLines.length - 1, physicalIndex + 1); idx += 1) {
+      const physicalLineNumber = idx + 1;
+      if (addedLineNums.has(physicalLineNumber)) continue;
+      addedLineNums.add(physicalLineNumber);
+      const text = sourceLines[idx] ?? '';
+      if (!text.trim()) continue;
+      const match = String(text).match(/^\s*(\d+)\s+/);
+      contextLines.push({
+        physicalLineNumber,
+        lineNumber: match ? parseInt(match[1], 10) : physicalLineNumber,
+        text
+      });
     }
   }
 
@@ -1272,8 +1299,15 @@ function buildAiSelectionPayload() {
   const allSourceLineNums = selectedCmds.map(c => c.sourceLine).filter(n => n != null);
 
   return {
+    selectionSummary: {
+      selectedCommandCount: selectedCmds.length,
+      selectedSegmentCount: selectedSegments.length,
+      selectedCommandIds: [...selectedCommandIdSet].sort((a, b) => a - b),
+      note: 'User selected these commands or segments for special attention. Interpret them within the context of the full command tape and whole script.'
+    },
     commands: selectedCmds,
     segments: selectedSegments,
+    commandTape,
     // Nearby GCOM source lines for each selected command — gives the AI the genesis of these moves
     sourceContext: contextLines,
     // Full script source (first 150 lines max) so the AI can see the overall program structure

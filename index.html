@@ -10653,13 +10653,7 @@ async function aiAutoRepairFromBlock(blockReason, failedScript, signature, optio
   );
   aiShowThinking(true);
 
-  const composerContext = {
-    meta: getBasicScriptMeta(),
-    vars: normalizeBasicVars(basicLoadedVars || {}),
-    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000),
-    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20),
-    controllerProfile: aiBuildControllerProfileContext()
-  };
+  const composerContext = aiBuildComposerContext('');
   const payload = {
     mode: 'repair',
     failedScript: String(failedScript || ''),
@@ -10827,6 +10821,42 @@ function aiBuildControllerProfileContext() {
       avoid: Array.isArray(guidance.avoid) ? guidance.avoid.slice(0, 40) : [],
       compatibility_policy: String(guidance.compatibility_policy || '').trim()
     }
+  };
+}
+
+function aiBuildComposerContext(userText = '') {
+  const meta = getBasicScriptMeta();
+  const vars = normalizeBasicVars(basicLoadedVars || {});
+  const validation = basicValidationState && typeof basicValidationState === 'object'
+    ? basicValidationState
+    : { errors: [], warnings: [], lines: {}, order: [] };
+  const scriptSource = String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000);
+  const validationSummary = basicValidationBox ? String(basicValidationBox.textContent || '').trim() : '';
+
+  return {
+    meta,
+    uiFields: {
+      title: meta.title,
+      version: meta.version,
+      author: meta.author,
+      descriptionRaw: meta.description,
+      descriptionRendered: getBasicRenderedDescription(),
+      sourceId: String(basicSourceId || ''),
+      descriptionTab: String(basicDescriptionTab || 'edit')
+    },
+    vars,
+    scriptSource,
+    scriptLineCount: scriptSource ? scriptSource.split('\n').length : 0,
+    validation: {
+      hasErrors: Array.isArray(validation.errors) && validation.errors.length > 0,
+      hasWarnings: Array.isArray(validation.warnings) && validation.warnings.length > 0,
+      errors: Array.isArray(validation.errors) ? validation.errors.slice(0, 80) : [],
+      warnings: Array.isArray(validation.warnings) ? validation.warnings.slice(0, 80) : [],
+      summaryText: validationSummary
+    },
+    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20),
+    terminalContext: aiGetTerminalContext(userText),
+    controllerProfile: aiBuildControllerProfileContext()
   };
 }
 
@@ -11202,14 +11232,8 @@ async function aiSend(userText) {
   aiShowThinking(true);
   const gcomContext = aiSelectionContext ? { ...aiSelectionContext } : null;
   const terminalContext = aiGetTerminalContext(userText);
-  const composerContext = {
-    meta: getBasicScriptMeta(),
-    vars: normalizeBasicVars(basicLoadedVars || {}),
-    scriptSource: String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000),
-    approvedBrainRules: (aiSessionMemory.approvedBrainRules || []).slice(-20),
-    terminalContext,
-    controllerProfile: aiBuildControllerProfileContext()
-  };
+  const composerContext = aiBuildComposerContext(userText);
+  composerContext.terminalContext = terminalContext;
   try {
     const res = await fetch('/api/ai/agent', {
       method: 'POST',
