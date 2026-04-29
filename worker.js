@@ -1073,8 +1073,10 @@ Before emitting a script, verify:
           }
 
           composerParts.push('Profile execution directives (must follow):');
-          composerParts.push('- Prefer abstract keywords from the active rule_set (HOME, STATUS, RESET, SPINDLE_ON, PROBE) over raw controller-specific SEND commands when intent matches.');
+          composerParts.push('- You MUST use abstract keywords from the active rule_set (HOME, STATUS, RESET, SPINDLE_ON, PROBE) when intent matches. Writing SEND "$H" when HOME exists in the rule_set is an error. Writing SEND "M3 S..." when SPINDLE_ON exists in the rule_set is an error.');
           composerParts.push('- If a rule_set keyword is marked unsupported, do not suggest that keyword; explain that it is unsupported for the active profile and include its feature guard warning.');
+          composerParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
+          composerParts.push('- Never use a spindle/laser power variable as a feed rate. Feed rate is speed. Laser power is spindlespeed. These are distinct variables with different defaults and purposes.');
 
           if (ruleSet) {
             const orderedKeywords = ['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE'];
@@ -1144,7 +1146,7 @@ Before emitting a script, verify:
               .filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value));
 
             if (operationEntries.length) {
-              composerParts.push('Directive: When composing motion sequences for this machine, prefer these named operations over ad-hoc SEND lines. Use the operation name and substitute variables from the defaults shown.');
+              composerParts.push('Directive: You MUST use named operations for motion sequences for this machine. Do not write raw SEND "G0..." or SEND "G1..." lines when rapid_move or cut_move exist in the operations block. Expand the template manually if needed - one SEND per line, one G-code per SEND. Use the operation name and substitute variables from the defaults shown.');
 
               const variableEntries = operationVariables ? Object.entries(operationVariables) : [];
               if (variableEntries.length) {
