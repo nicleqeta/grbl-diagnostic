@@ -7,6 +7,10 @@ compiler looks up in the active profile's rule_set and lowers to
 controller-specific GCOM at compile time. The runtime never sees abstract
 keywords.
 
+Abstract keywords (HOME, STATUS, RESET, SPINDLE_ON, PROBE) are
+compiler-only concepts. They must never appear in AI prompt instructions
+as things the AI should write. The AI writes plain GCOM only.
+
 ## Profile format
 
 Two standalone profiles only: grbl-vanilla and fluidnc.
@@ -16,7 +20,9 @@ Each profile has exactly four sections:
   connection defaults, ai_guidance, boilerplate_gcom
 - rule_set: the five abstract keywords with emit templates, bounds,
   and feature-guard warnings. PROBE may be marked unsupported.
-- operations: optional. Named machine-specific templates for motion,
+- operations: compiler and schema reference only. Not injected into
+  the AI prompt. The AI receives plain GCOM examples via user machine
+  profiles instead. Named machine-specific templates for motion,
   lifecycle, and tooling. Includes a variables map with typed defaults.
   Must not duplicate rule_set keyword names.
 - compiler_strategy: named key selecting internal lowering logic
@@ -45,8 +51,58 @@ is marked complete.
 
 Profile fields are read from profile.machine_description (not top-level).
 A resolved local (profileMachine = profile.machine_description ?? profile)
-is used as the fallback pattern. AI context builder includes operations
-block when present — operation names, templates, and variable defaults.
+is used as the fallback pattern. AI context builder does NOT inject the
+operations block or rule_set keywords into the AI prompt. The AI receives
+plain GCOM examples via user machine profiles instead.
+
+## AI prompt contract
+
+The AI must only ever be shown and told to write plain runnable GCOM.
+Never inject abstract keyword names (HOME, SPINDLE_ON etc.) or operation
+names (cut_move, tool_off etc.) into the AI prompt as callable statements.
+
+When a profileRef is present in composerContext:
+- Fetch the user machine profile from KV (key: profile:{id})
+- Inject: machine name and notes, base controller label, numbered
+  command list showing name and plain GCOM line, snippets as named
+  GCOM reference, default presets
+- Prefix with: "You are writing GCOM for a {meta.name} running
+  {base_controller}. Use these exact GCOM lines for common operations:"
+
+When no profileRef is present:
+- Inject only: controller flavor label, ai_guidance summary,
+  preferred_style, avoid list, and boilerplate_gcom as recommended
+  starting structure
+- Do not mention abstract keywords or operation names
+- The AI falls back to plain GCOM based on GCOM_SYSTEM rules and
+  flavor guidance only
+
+Keep in all cases: ack_policy, boilerplate_gcom, ai_guidance
+preferred_style and avoid lists.
+
+## User machine profiles
+
+User machine profiles are stored in KV under key profile:{id}.
+Schema defined in profiles/user-machine-profile.schema.json.
+A profile contains: meta, base_controller, commands (plain GCOM
+examples with name, description, gcom line, and example), snippets
+(named reusable GCOM blocks), and presets (default_feed, default_power,
+rapid_feed).
+
+Endpoints:
+- POST /api/profiles — stores profile, returns { id, url }
+- GET /api/profiles/:id — returns profile JSON or 404
+
+When a profileRef is present in composerContext, the AI contract
+injects the profile's command list as plain GCOM examples.
+When no profileRef is present, the AI receives only controller
+flavor guidance and boilerplate — no abstract keywords, no operation
+names.
+
+The profiler UI lives at /profiler — plain HTML, no build step.
+The main app passes profileRef in composerContext on AI requests.
+Scripts may contain ;PROFILE: abc123 as a metadata header line,
+recognised by the compiler as metadata only (not compiled).
 
 ## Slice discipline
 
@@ -62,14 +118,11 @@ block when present — operation names, templates, and variable defaults.
 - rules/ folder contents (language, controllers, machines, policies,
   presets) — future direction, not active
 - opcode-ir.js stage-2 IR lowering path
-- PHASE8-RUNTIME-SHIM.md — superseded
 - test-compiler-snapshot.js — references missing functions, needs
   rewriting after compiler stabilises
 - gcom-dev SvelteKit scaffold in profiles/ — future profile browser
 - Base profile / inheritance / preset composition — revisit when
   profile count makes duplication a real maintenance cost
-- worker-api.js — confirm deployment status before syncing with
-  worker.js validation logic
 
 ## Planned GCOM language extensions (not yet implemented)
 
