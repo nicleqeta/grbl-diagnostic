@@ -1040,6 +1040,9 @@ Before emitting a script, verify:
           const profileMachine = (profile.machine_description && typeof profile.machine_description === 'object')
             ? profile.machine_description
             : profile;
+          const ruleSet = (profile.rule_set && typeof profile.rule_set === 'object' && !Array.isArray(profile.rule_set))
+            ? profile.rule_set
+            : null;
           const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
             ? profile.operations
             : null;
@@ -1068,6 +1071,71 @@ Before emitting a script, verify:
           if (guidance.compatibility_policy) {
             composerParts.push(`- compatibility policy: ${guidance.compatibility_policy}`);
           }
+
+          composerParts.push('Profile execution directives (must follow):');
+          composerParts.push('- Prefer abstract keywords from the active rule_set (HOME, STATUS, RESET, SPINDLE_ON, PROBE) over raw controller-specific SEND commands when intent matches.');
+          composerParts.push('- If a rule_set keyword is marked unsupported, do not suggest that keyword; explain that it is unsupported for the active profile and include its feature guard warning.');
+
+          if (ruleSet) {
+            const orderedKeywords = ['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE'];
+            const ruleEntries = orderedKeywords
+              .filter(keyword => ruleSet[keyword] && typeof ruleSet[keyword] === 'object')
+              .map(keyword => [keyword, ruleSet[keyword]]);
+
+            if (ruleEntries.length) {
+              composerParts.push('Active rule_set contract (concrete generation contract):');
+              for (const [keyword, definition] of ruleEntries) {
+                const emit = typeof definition.emit === 'string' ? definition.emit.trim() : '';
+                const unsupported = definition.unsupported === true;
+                if (unsupported) {
+                  composerParts.push(`- ${keyword}: unsupported`);
+                } else if (emit) {
+                  composerParts.push(`- ${keyword}: emit="${emit}"`);
+                } else {
+                  composerParts.push(`- ${keyword}: emit not defined`);
+                }
+
+                const bounds = (definition.parameter_bounds && typeof definition.parameter_bounds === 'object' && !Array.isArray(definition.parameter_bounds))
+                  ? definition.parameter_bounds
+                  : null;
+                if (bounds) {
+                  const boundEntries = Object.entries(bounds).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value));
+                  for (const [paramName, paramBounds] of boundEntries) {
+                    const hasMin = Number.isFinite(Number(paramBounds.min));
+                    const hasMax = Number.isFinite(Number(paramBounds.max));
+                    if (hasMin || hasMax) {
+                      const minValue = hasMin ? Number(paramBounds.min) : '-inf';
+                      const maxValue = hasMax ? Number(paramBounds.max) : '+inf';
+                      composerParts.push(`  - bounds.${paramName}: min=${minValue}, max=${maxValue}`);
+                    }
+                  }
+                }
+
+                const guardWarnings = Array.isArray(definition.feature_guard_warnings) ? definition.feature_guard_warnings : [];
+                for (const warning of guardWarnings) {
+                  const message = warning && typeof warning.message === 'string' ? warning.message.trim() : '';
+                  if (message) composerParts.push(`  - feature guard: ${message}`);
+                }
+              }
+            }
+          }
+
+          const boilerplate = (profileMachine.boilerplate_gcom && typeof profileMachine.boilerplate_gcom === 'object')
+            ? profileMachine.boilerplate_gcom
+            : null;
+          if (boilerplate && typeof boilerplate.gcom === 'string' && boilerplate.gcom.trim()) {
+            composerParts.push('Recommended boilerplate prior (use as preferred script structure for this machine):');
+            if (typeof boilerplate.title === 'string' && boilerplate.title.trim()) {
+              composerParts.push(`- title: ${boilerplate.title.trim()}`);
+            }
+            if (typeof boilerplate.description === 'string' && boilerplate.description.trim()) {
+              composerParts.push(`- description: ${boilerplate.description.trim()}`);
+            }
+            composerParts.push('```gcom');
+            composerParts.push(String(boilerplate.gcom).trim());
+            composerParts.push('```');
+          }
+
           if (operations) {
             const operationVariables = (operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
               ? operations.variables
@@ -1075,33 +1143,33 @@ Before emitting a script, verify:
             const operationEntries = Object.entries(operations)
               .filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value));
 
-            if (operationVariables) {
-              const variableEntries = Object.entries(operationVariables);
+            if (operationEntries.length) {
+              composerParts.push('Directive: When composing motion sequences for this machine, prefer these named operations over ad-hoc SEND lines. Use the operation name and substitute variables from the defaults shown.');
+
+              const variableEntries = operationVariables ? Object.entries(operationVariables) : [];
               if (variableEntries.length) {
-                composerParts.push('- operations variables defaults:');
+                composerParts.push('Operations variable defaults reference table:');
+                composerParts.push('| Variable | Default | Description |');
+                composerParts.push('| --- | --- | --- |');
                 for (const [name, definition] of variableEntries) {
                   const desc = (definition && typeof definition.description === 'string' && definition.description.trim())
                     ? definition.description.trim()
                     : '';
                   const hasDefault = definition && Object.prototype.hasOwnProperty.call(definition, 'default');
                   const defaultValue = hasDefault ? JSON.stringify(definition.default) : 'null';
-                  if (desc) {
-                    composerParts.push(`  - ${name}=${defaultValue} (${desc})`);
-                  } else {
-                    composerParts.push(`  - ${name}=${defaultValue}`);
-                  }
+                  composerParts.push(`| ${name} | ${defaultValue} | ${desc || '-'} |`);
                 }
               }
-            }
 
-            if (operationEntries.length) {
-              composerParts.push('- operations templates:');
+              composerParts.push('Operations reference table (name -> template behavior):');
+              composerParts.push('| Operation | Template(s) |');
+              composerParts.push('| --- | --- |');
               for (const [name, definition] of operationEntries) {
                 const templates = Array.isArray(definition.template)
                   ? definition.template.map(line => String(line || '').trim()).filter(Boolean)
                   : [];
                 if (!templates.length) continue;
-                composerParts.push(`  - ${name}: ${templates.join(' | ')}`);
+                composerParts.push(`| ${name} | ${templates.join(' <br> ')} |`);
               }
             }
           }
