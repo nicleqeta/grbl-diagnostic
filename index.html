@@ -2166,7 +2166,8 @@ async function loadAndCheckVersion() {
     const response = await fetch('/version?t=' + Date.now());
     if (!response.ok) return;
     const data = await response.json();
-    let resolvedVersion = data.version;
+    const buildVersion = (typeof data.build === 'string' ? data.build.trim() : '');
+    let resolvedVersion = buildVersion || data.version;
     if (!resolvedVersion) {
       try {
         const fallbackResponse = await fetch('version.json?t=' + Date.now());
@@ -2178,7 +2179,10 @@ async function loadAndCheckVersion() {
         // Keep unresolved version if local fallback fetch fails.
       }
     }
-    const versionToken = [resolvedVersion, data.build].filter(Boolean).join('+');
+    const versionToken = [resolvedVersion, data.version]
+      .map(value => (typeof value === 'string' ? value.trim() : String(value || '').trim()))
+      .filter((value, idx, arr) => value && arr.indexOf(value) === idx)
+      .join('+');
     currentVersion = versionToken || null;
     storedVersion = localStorage.getItem('app-version');
     
