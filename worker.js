@@ -1094,27 +1094,8 @@ Before emitting a script, verify:
 
           const contractParts = [];
           contractParts.push('=== MACHINE CONTRACT (MUST FOLLOW) ===');
-          contractParts.push('- You MUST use abstract keywords from the active rule_set. Writing SEND "$H" when HOME exists in the rule_set is an error. Writing SEND "M3 S..." when SPINDLE_ON exists in the rule_set is an error.');
-          contractParts.push('- You MUST use the operation templates as reference for motion sequences. Expand them inline with the correct variable substitutions rather than calling operation names directly; operations are reference documentation, not callable runtime statements.');
           contractParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
           contractParts.push(`- Never use a spindle/laser power variable as a feed rate. Feed rate is ${feedVariableDisplayName}. Laser power is ${spindleVariableDisplayName}. These are distinct variables with different defaults and purposes.`);
-
-          const orderedKeywords = ['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE'];
-          const ruleEntries = ruleSet
-            ? orderedKeywords
-              .filter(keyword => ruleSet[keyword] && typeof ruleSet[keyword] === 'object')
-              .map(keyword => [keyword, ruleSet[keyword]])
-            : [];
-          if (ruleEntries.length) {
-            contractParts.push('Active rule_set keyword table (keyword -> emit template):');
-            contractParts.push('| Keyword | Emit Template |');
-            contractParts.push('| --- | --- |');
-            for (const [keyword, definition] of ruleEntries) {
-              const emit = typeof definition.emit === 'string' ? definition.emit.trim() : '';
-              const unsupported = definition.unsupported === true;
-              contractParts.push(`| ${keyword} | ${unsupported ? 'unsupported' : (emit || 'emit not defined')} |`);
-            }
-          }
 
           const boilerplate = (profileMachine.boilerplate_gcom && typeof profileMachine.boilerplate_gcom === 'object')
             ? profileMachine.boilerplate_gcom
@@ -1130,35 +1111,6 @@ Before emitting a script, verify:
             composerParts.push('```gcom');
             composerParts.push(String(boilerplate.gcom).trim());
             composerParts.push('```');
-          }
-
-          if (operationEntries.length) {
-            const variableEntries = operationVariables ? Object.entries(operationVariables) : [];
-            if (variableEntries.length) {
-              contractParts.push('Active operations variable defaults table:');
-              contractParts.push('| Variable | Default | Description |');
-              contractParts.push('| --- | --- | --- |');
-              for (const [name, definition] of variableEntries) {
-                const displayName = getOperationVariableDisplayName(name);
-                const desc = (definition && typeof definition.description === 'string' && definition.description.trim())
-                  ? definition.description.trim()
-                  : '';
-                const hasDefault = definition && Object.prototype.hasOwnProperty.call(definition, 'default');
-                const defaultValue = hasDefault ? JSON.stringify(definition.default) : 'null';
-                contractParts.push(`| ${displayName} | ${defaultValue} | ${desc || '-'} |`);
-              }
-            }
-
-            contractParts.push('Active operations table (name -> template behavior):');
-            contractParts.push('| Operation | Template(s) |');
-            contractParts.push('| --- | --- |');
-            for (const [name, definition] of operationEntries) {
-              const templates = Array.isArray(definition.template)
-                ? definition.template.map(line => String(line || '').trim()).filter(Boolean)
-                : [];
-              if (!templates.length) continue;
-              contractParts.push(`| ${name} | ${templates.join(' <br> ')} |`);
-            }
           }
 
           if (contractParts.length > 1) {
