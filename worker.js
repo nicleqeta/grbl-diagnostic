@@ -754,7 +754,7 @@ ARC / CIRCLE RULES (G2/G3)
 AUTHORING RULES
 - Validation blocks save/preview when syntax errors exist.
 - Preview/runtime fail on undefined variables.
-- PREVIEW LIMITATION: The motion preview does static analysis of SEND payloads. A SEND whose G-code text is assembled by string concatenation at runtime (e.g. SEND "G1 X" & x & " Y" & y) cannot be traced by the preview — it will show no path. This is expected and not an error. Inform the user when generating path-computation scripts that preview will be blank but the script will run correctly on the machine.
+- PREVIEW: The motion preview fully dry-runs the script synchronously. SEND expressions built by string concatenation (e.g. SEND "G1 X" & x & " Y" & y) ARE evaluated using the actual variable values, so parametric path scripts do produce a visible preview path. If the preview appears blank or wrong, the most common cause is incorrect variable values (e.g. wrong trig units) rather than a limitation of the preview engine. INPUT(), READ(), SETTING(), STATE() and live runtime calls return 0 in preview; this can affect path computations that depend on them.
 - Use REM for program comments, or ';' only for import headers.
 - Do not use // comments.
 - Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
