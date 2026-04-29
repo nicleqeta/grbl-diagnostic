@@ -11226,27 +11226,7 @@ function aiGetTerminalContext(userText) {
 function aiBuildControllerProfileContext() {
   const profile = getActiveControllerProfile();
   if (!profile || typeof profile !== 'object') return null;
-  const guidance = (profile.ai_guidance && typeof profile.ai_guidance === 'object') ? profile.ai_guidance : {};
-  const capabilities = (profile.capabilities && typeof profile.capabilities === 'object') ? profile.capabilities : {};
-  return {
-    id: String(profile.id || activeControllerProfileId || '').trim(),
-    label: String(profile.label || '').trim(),
-    controller_family: String(profile.controller_family || '').trim(),
-    status: String(profile.status || '').trim(),
-    ack_policy: {
-      mode: String(((profile.ack_policy && profile.ack_policy.mode) || '')).trim(),
-      default_timeout_ms: Number((profile.ack_policy && profile.ack_policy.default_timeout_ms) || 0) || 0
-    },
-    capabilities: {
-      gcode_core: Array.isArray(capabilities.gcode_core) ? capabilities.gcode_core.slice(0, 120) : []
-    },
-    ai_guidance: {
-      summary: String(guidance.summary || '').trim(),
-      preferred_style: Array.isArray(guidance.preferred_style) ? guidance.preferred_style.slice(0, 40) : [],
-      avoid: Array.isArray(guidance.avoid) ? guidance.avoid.slice(0, 40) : [],
-      compatibility_policy: String(guidance.compatibility_policy || '').trim()
-    }
-  };
+  return deepCloneJsonLike(profile);
 }
 
 function aiBuildComposerContext(userText = '') {
