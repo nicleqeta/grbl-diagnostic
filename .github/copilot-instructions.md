@@ -99,7 +99,9 @@ Commands should cover lifecycle hooks by name where present:
 - cut_move: cutting/marking move with feed rate
 
 These hook names are not enforced — they are conventions the AI
-recognises when structuring a complete job script.
+recognises when structuring a complete job script. The schema places
+no enum constraint on commands[].name. Lifecycle hook name suggestions
+are surfaced in the profiler UI via a datalist, not enforced by schema.
 
 Endpoints:
 - POST /api/profiles — stores profile, returns { id, url }
@@ -111,10 +113,63 @@ When no profileRef is present, the AI receives only controller
 flavor guidance and boilerplate — no abstract keywords, no operation
 names.
 
-The profiler UI lives at /profiler — plain HTML, no build step.
-The main app passes profileRef in composerContext on AI requests.
 Scripts may contain ;PROFILE: abc123 as a metadata header line,
-recognised by the compiler as metadata only (not compiled).
+recognised by the compiler as metadata only (not compiled). The
+compiler surfaces it in metadata.profile_id_hint. The worker reads
+it and uses it as profileRef for AI generation.
+
+## Profiler UI
+
+The profiler lives at /profiler as a standalone plain HTML page.
+It is a separate tool from the main app, not part of the core
+scripting experience.
+
+CRITICAL: The profiler must never open in the same window as the
+main app. All links and buttons in index.html that open the profiler
+must use target="_blank" and rel="noopener". The main app window
+must never navigate away from itself under any circumstance —
+it behaves as a persistent installed application.
+
+The main app should feel like a PWA. A Web App Manifest
+(manifest.json) with appropriate icons and display mode "standalone"
+should be added to index.html so the app can be installed to desktop
+or taskbar and opens without browser chrome.
+
+A beforeunload warning should fire in index.html if there is an
+active serial connection or a running script, to prevent accidental
+disconnection or loss of work.
+
+The profiler page (profiler.html) features:
+- Base controller selector (grbl-vanilla / fluidnc)
+- Machine meta form: name, firmware, bed size, tool, notes
+- Commands list: name | description | GCOM line | edit/delete
+  - "Add Command" uses a datalist suggesting lifecycle hook names
+  - Free entry, not constrained to the suggestions
+- Snippets tab and Presets tab
+- Live preview panel: boilerplate_gcom with machine context
+- Rosetta comparison panel: same hook name side-by-side for
+  grbl-vanilla vs fluidnc (display only, not injected into AI)
+- Save flow: POST /api/profiles → show share URL + copyable
+  ;PROFILE: abc123 header line
+- Load by ID input → GET /api/profiles/:id → populate form
+- localStorage draft auto-save on every change
+- "Back to app" link opens main app in a new tab (never replaces
+  the profiler tab either)
+
+The main app (index.html) machine profile control:
+- A small control near the controller profile selector showing
+  current machine context: [Default ▼ ✎] or [Machine name ▼ ✎]
+- Dropdown has three items:
+  - View defaults: read-only overlay of current controller flavor
+    ai_guidance, boilerplate_gcom, and default command patterns
+  - Create machine profile: opens /profiler in a new tab,
+    pre-populated via URL param ?base=grbl-vanilla (or active flavor)
+  - Load profile by ID: text input, fetches GET /api/profiles/:id,
+    shows profile meta.name as confirmation before applying
+- The ✎ icon: opens /profiler?id={activeId} in a new tab if a
+  profile is loaded, or /profiler?base={flavor} if on defaults
+- All profiler links must use window.open with target _blank —
+  never navigate the main app window
 
 ## Slice discipline
 
