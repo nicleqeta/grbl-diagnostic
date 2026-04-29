@@ -2166,8 +2166,7 @@ async function loadAndCheckVersion() {
     const response = await fetch('/version?t=' + Date.now());
     if (!response.ok) return;
     const data = await response.json();
-    const buildVersion = (typeof data.build === 'string' ? data.build.trim() : '');
-    let resolvedVersion = buildVersion || data.version;
+    let resolvedVersion = data.version;
     if (!resolvedVersion) {
       try {
         const fallbackResponse = await fetch('version.json?t=' + Date.now());
