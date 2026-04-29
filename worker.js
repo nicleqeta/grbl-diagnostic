@@ -1545,51 +1545,151 @@ Before emitting a script, verify:
           return merged;
         };
 
-        const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-          messages: buildAiMessages(baseSystemPrompt, messages),
-          max_tokens: 1800,
-          temperature: 0.4,
-        });
-        let reply = String(aiResponse.response || '');
-
-        const initialAnalysis = analyzeGcomBlock(reply);
-        const lowQualityTextScript = asksForTextEngraving && initialAnalysis.looksLikeArithmeticChurn;
-
-        // One-shot recovery for truncated script responses.
-        if (isLikelyTruncatedGcomReply(reply) || lowQualityTextScript) {
-          const recoveryPrompt = `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft is invalid for output quality (truncated and/or repetitive line spam). Regenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment). Keep it concise (<= 120 numbered lines), avoid repetitive unrolled lines, and ensure the script contains a final END line. If the request is text/font engraving, characters must be built from multiple geometric segments with explicit stroke moves; do not emit arithmetic churn loops with LET local_value.`;
-          const retryResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-            messages: buildAiMessages(baseSystemPrompt + recoveryPrompt, messages),
-            max_tokens: 1800,
+        const MODEL_TIERS = {
+          cheap: {
+            model: '@cf/meta/llama-3.1-8b-instruct',
+            max_tokens: 1600,
             temperature: 0.2,
-          });
-          const retried = String(retryResponse.response || '').trim();
-          if (retried) reply = retried;
-        }
+          },
+          main: {
+            model: '@cf/qwen/qwen2.5-coder-32b-instruct',
+            max_tokens: 1800,
+            temperature: 0.15,
+          },
+          rescue: {
+            model: '@cf/meta/llama-3.1-70b-instruct',
+            max_tokens: 2200,
+            temperature: 0.1,
+          },
+        };
 
-        // Guardrail: if model opened a fenced block but missed the closing fence, close it.
-        if (/```gcom\s*\n/i.test(reply)) {
-          const fenceCount = (reply.match(/```/g) || []).length;
-          if (fenceCount % 2 === 1) reply += '\n```';
-        }
+        const pickInitialTier = () => {
+          const lastUser = [...messages].reverse().find(m => m && m.role === 'user');
+          const text = String(lastUser && lastUser.content ? lastUser.content : '').toLowerCase();
+          if (!text) return 'cheap';
+          const complexHints = [
+            'g2', 'g3', 'arc', 'pattern', 'geometry', 'loop', 'for ', 'spiral',
+            'controller profile', 'fluidnc', 'grbl', 'compile', 'diagnostic'
+          ];
+          const isComplex = text.length > 180 || complexHints.some(hint => text.includes(hint));
+          return isComplex ? 'main' : 'cheap';
+        };
 
-        let repairHeader = 'skipped';
-        let repairCountHeader = '0';
-        const repairResult = applyDeterministicGcomRepair(reply, activeProfileRuleSet, activeProfileOperations);
-        repairHeader = repairResult && repairResult.invoked ? 'invoked' : 'skipped';
-        repairCountHeader = String(Number.isFinite(repairResult && repairResult.substitutionCount) ? repairResult.substitutionCount : 0);
-        if (repairResult.diagnostics.length) {
-          for (const message of repairResult.diagnostics) {
-            console.log(`[gcom-repair] ${message}`);
+        const nextTier = (tier) => {
+          if (tier === 'cheap') return 'main';
+          if (tier === 'main') return 'rescue';
+          return null;
+        };
+
+        const hasInlineExpressionPlaceholderInSend = (text) => {
+          const block = extractFirstGcomBlock(text);
+          if (!block) return false;
+          return /SEND\s+"[^"\n]*\{[^}\n]*[+\-*/][^}\n]*\}[^"\n]*"/i.test(block);
+        };
+
+        const evaluateGeneration = (text) => {
+          const analysis = analyzeGcomBlock(text);
+          const failures = [];
+          if (!analysis.hasBlock) failures.push('missing_gcom_block');
+          if (analysis.hasBlock && !analysis.hasEndLine) failures.push('missing_end_line');
+          if (analysis.suspiciousTail) failures.push('truncated_or_incomplete_tail');
+          if (hasInlineExpressionPlaceholderInSend(text)) failures.push('inline_expression_placeholder_in_send');
+          if (asksForTextEngraving && analysis.looksLikeArithmeticChurn) failures.push('text_engraving_arithmetic_churn');
+          return { analysis, failures, ok: failures.length === 0 };
+        };
+
+        const buildRecoveryPrompt = (failures, priorDiagnostics) => {
+          const reasonText = Array.isArray(failures) && failures.length
+            ? failures.join(', ')
+            : 'unknown quality failure';
+          const diagText = Array.isArray(priorDiagnostics) && priorDiagnostics.length
+            ? priorDiagnostics.slice(0, 20).map(d => `- ${String(d)}`).join('\n')
+            : '- none';
+          return `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft failed objective quality checks: ${reasonText}.\nRegenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment).\nRequirements:\n- Include a final END line\n- Avoid repetitive arithmetic churn\n- Do not emit inline expression placeholders inside SEND strings\nPrevious deterministic repair diagnostics:\n${diagText}`;
+        };
+
+        let selectedTier = pickInitialTier();
+        let attemptCount = 0;
+        let finalReply = '';
+        let finalRepairMeta = { invoked: false, substitutionCount: 0, diagnostics: [] };
+        let finalFailures = [];
+        let finalTierUsed = selectedTier;
+        const maxAttemptsForTier = (tier) => (tier === 'cheap' ? 1 : 2);
+
+        while (selectedTier) {
+          const tierConfig = MODEL_TIERS[selectedTier];
+          if (!tierConfig || !tierConfig.model) {
+            selectedTier = nextTier(selectedTier);
+            continue;
           }
-          reply = repairResult.reply;
+
+          const attemptsThisTier = maxAttemptsForTier(selectedTier);
+          for (let pass = 1; pass <= attemptsThisTier; pass += 1) {
+            attemptCount += 1;
+            const recoveryPrompt = pass > 1 ? buildRecoveryPrompt(finalFailures, finalRepairMeta.diagnostics) : '';
+            const systemPrompt = baseSystemPrompt + recoveryPrompt;
+
+            let aiResponse;
+            try {
+              aiResponse = await env.AI.run(tierConfig.model, {
+                messages: buildAiMessages(systemPrompt, messages),
+                max_tokens: tierConfig.max_tokens,
+                temperature: tierConfig.temperature,
+              });
+            } catch (modelErr) {
+              finalFailures = [`model_run_failed:${String(modelErr && modelErr.message ? modelErr.message : modelErr)}`];
+              break;
+            }
+
+            let candidateReply = String(aiResponse && aiResponse.response ? aiResponse.response : '');
+
+            if (/```gcom\s*\n/i.test(candidateReply)) {
+              const fenceCount = (candidateReply.match(/```/g) || []).length;
+              if (fenceCount % 2 === 1) candidateReply += '\n```';
+            }
+
+            const repairResult = applyDeterministicGcomRepair(candidateReply, activeProfileRuleSet, activeProfileOperations);
+            let repairedReply = repairResult.reply;
+            if (Array.isArray(repairResult.diagnostics) && repairResult.diagnostics.length) {
+              for (const message of repairResult.diagnostics) {
+                console.log(`[gcom-repair] ${message}`);
+              }
+            }
+
+            const evalResult = evaluateGeneration(repairedReply);
+            finalReply = repairedReply;
+            finalRepairMeta = {
+              invoked: Boolean(repairResult && repairResult.invoked),
+              substitutionCount: Number.isFinite(repairResult && repairResult.substitutionCount) ? repairResult.substitutionCount : 0,
+              diagnostics: Array.isArray(repairResult && repairResult.diagnostics) ? repairResult.diagnostics : [],
+            };
+            finalFailures = evalResult.failures;
+            finalTierUsed = selectedTier;
+
+            if (evalResult.ok) {
+              selectedTier = null;
+              break;
+            }
+          }
+
+          if (!selectedTier) break;
+          selectedTier = nextTier(selectedTier);
         }
 
-        return new Response(JSON.stringify({ reply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
+        if (!finalReply) {
+          throw new Error(`AI generation failed across all model tiers: ${finalFailures.join(', ') || 'unknown'}`);
+        }
+
+        const repairHeader = finalRepairMeta.invoked ? 'invoked' : 'skipped';
+        const repairCountHeader = String(finalRepairMeta.substitutionCount || 0);
+
+        return new Response(JSON.stringify({ reply: finalReply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
           headers: {
             'Content-Type': 'application/json',
             'x-gcom-repair': repairHeader,
             'x-gcom-repair-count': repairCountHeader,
+            'x-ai-model-tier': String(finalTierUsed || 'unknown'),
+            'x-ai-attempts': String(attemptCount),
             ...SCRIPT_CORS_HEADERS,
           },
         });
