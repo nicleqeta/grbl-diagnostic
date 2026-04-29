@@ -972,7 +972,6 @@ Before emitting a script, verify:
       }
 
       let machineContractSystemMessage = '';
-      let activeProfileRuleSet = null;
       const composerCtx = (body.composerContext && typeof body.composerContext === 'object') ? body.composerContext : null;
       if (composerCtx) {
         const composerParts = [];
@@ -1045,7 +1044,6 @@ Before emitting a script, verify:
           const ruleSet = (profile.rule_set && typeof profile.rule_set === 'object' && !Array.isArray(profile.rule_set))
             ? profile.rule_set
             : null;
-          if (ruleSet) activeProfileRuleSet = ruleSet;
           const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
             ? profile.operations
             : null;
@@ -1324,66 +1322,138 @@ Before emitting a script, verify:
           return !analysis.hasEndLine || analysis.suspiciousTail;
         };
 
-        const applyDeterministicGcomRepair = (replyText, ruleSet) => {
+        const applyDeterministicGcomRepair = (replyText) => {
           const rawReply = String(replyText || '');
           const fencedMatch = rawReply.match(/```gcom\s*\n([\s\S]*?)```/i);
           if (!fencedMatch) {
             return { reply: rawReply, diagnostics: [] };
           }
 
-          const supportsKeyword = (keyword) => {
-            if (!ruleSet || typeof ruleSet !== 'object') return false;
-            const definition = ruleSet[keyword];
-            if (!definition || typeof definition !== 'object' || Array.isArray(definition)) return false;
-            return definition.unsupported !== true;
+          const escapeQuoted = (value) => String(value || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+
+          const blockText = String(fencedMatch[1] || '');
+          const rawLines = blockText.split('\n');
+          const usedLineNumbers = new Set();
+          for (const line of rawLines) {
+            const numbered = String(line || '').match(/^\s*(\d+)\s+/);
+            if (numbered) usedLineNumbers.add(Number(numbered[1]));
+          }
+
+          const allocateInsertedLineNumbers = (count, prevNum, currentNum) => {
+            if (!Number.isFinite(count) || count <= 0) return [];
+            if (!Number.isFinite(currentNum) || currentNum <= 1) return [];
+
+            const min = Number.isFinite(prevNum) ? prevNum : 0;
+            const picks = [];
+            for (let candidate = currentNum - 1; candidate > min && picks.length < count; candidate -= 1) {
+              if (!usedLineNumbers.has(candidate)) picks.push(candidate);
+            }
+            if (picks.length < count) return [];
+            picks.sort((a, b) => a - b);
+            for (const n of picks) usedLineNumbers.add(n);
+            return picks;
           };
 
           const repairDiagnostics = [];
-          const blockText = String(fencedMatch[1] || '');
-          const repairedLines = blockText.split('\n').map((line, index) => {
+          const repairedLines = [];
+          let lastNumberedLine = 0;
+
+          for (let index = 0; index < rawLines.length; index += 1) {
+            const line = rawLines[index];
             const source = String(line || '');
-            const prefixMatch = source.match(/^(\s*\d+\s+)?(.*)$/);
-            const prefix = prefixMatch ? (prefixMatch[1] || '') : '';
-            const stmt = prefixMatch ? String(prefixMatch[2] || '').trim() : source.trim();
-            let replaced = null;
-
-            if (!replaced && supportsKeyword('HOME') && /^SEND\s+"\$H"\s+REQUIRE_OK\s*$/i.test(stmt)) {
-              replaced = `${prefix}HOME`;
-              repairDiagnostics.push(`line ${index + 1}: SEND \"$H\" REQUIRE_OK -> HOME`);
+            const numbered = source.match(/^(\s*)(\d+)\s+(.*)$/);
+            if (!numbered) {
+              repairedLines.push(source);
+              continue;
             }
 
-            if (!replaced && supportsKeyword('SPINDLE_ON')) {
-              const spindleOnMatch = stmt.match(/^SEND\s+"M3\s+S([^\"]+)"\s+REQUIRE_OK\s*$/i);
-              if (spindleOnMatch) {
-                const power = String(spindleOnMatch[1] || '').trim();
-                replaced = `${prefix}SPINDLE_ON ${power}`;
-                repairDiagnostics.push(`line ${index + 1}: SEND \"M3 S${power}\" REQUIRE_OK -> SPINDLE_ON ${power}`);
+            const indent = String(numbered[1] || '');
+            const lineNumber = Number(numbered[2]);
+            let stmt = String(numbered[3] || '');
+            const sendMatch = stmt.match(/^SEND\s+"([^\"]*)"(\s+.*)?$/i);
+
+            if (sendMatch) {
+              let commandText = String(sendMatch[1] || '');
+              const suffix = String(sendMatch[2] || '');
+
+              const correctedFeedText = commandText.replace(/\bF\{\s*spindlespeed\s*\}/gi, 'F{speed}');
+              if (correctedFeedText !== commandText && /\bG1\b/i.test(commandText)) {
+                commandText = correctedFeedText;
+                stmt = `SEND "${commandText}"${suffix}`;
+                repairDiagnostics.push(`line ${lineNumber}: repaired feed placeholder F{spindlespeed} -> F{speed}`);
               }
-            }
 
-            if (!replaced && supportsKeyword('SPINDLE_OFF') && /^SEND\s+"M5"(?:\s+REQUIRE_OK)?\s*$/i.test(stmt)) {
-              replaced = `${prefix}SPINDLE_OFF`;
-              repairDiagnostics.push(`line ${index + 1}: SEND \"M5\" -> SPINDLE_OFF`);
-            }
+              const placeholderRegex = /\{([^}]+)\}/g;
+              const placeholders = [];
+              let placeholderMatch;
+              while ((placeholderMatch = placeholderRegex.exec(commandText)) !== null) {
+                placeholders.push({
+                  start: placeholderMatch.index,
+                  end: placeholderRegex.lastIndex,
+                  raw: String(placeholderMatch[0] || ''),
+                  content: String(placeholderMatch[1] || '').trim(),
+                });
+              }
 
-            if (!replaced && supportsKeyword('STATUS') && /^SEND\s+"\?"(?:\s+REQUIRE_OK)?\s*$/i.test(stmt)) {
-              replaced = `${prefix}STATUS`;
-              repairDiagnostics.push(`line ${index + 1}: SEND \"?\" -> STATUS`);
-            }
+              const expressionPlaceholders = placeholders.filter(item => /^([A-Za-z_][A-Za-z0-9_]*)\s*([+-])\s*(\d+(?:\.\d+)?)$/.test(item.content));
+              if (expressionPlaceholders.length > 0) {
+                const axisTempCounters = { _x: 0, _y: 0, _z: 0 };
+                const placeholderValueExpr = new Map();
+                const letStatements = [];
 
-            if (!replaced && supportsKeyword('RESET')) {
-              const resetMatch = stmt.match(/^SEND\s+"([^\"]+)"(?:\s+REQUIRE_OK)?\s*$/i);
-              if (resetMatch) {
-                const payload = String(resetMatch[1] || '').trim().toUpperCase();
-                if (payload === '^X' || payload === '\\X18' || payload === '\\U0018' || payload === '0X18') {
-                  replaced = `${prefix}RESET`;
-                  repairDiagnostics.push(`line ${index + 1}: SEND \"${payload}\" -> RESET`);
+                for (const item of placeholders) {
+                  const expressionMatch = item.content.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*([+-])\s*(\d+(?:\.\d+)?)$/);
+                  if (!expressionMatch) continue;
+
+                  const baseVar = String(expressionMatch[1]);
+                  const operator = String(expressionMatch[2]);
+                  const amount = String(expressionMatch[3]);
+                  const axisChar = commandText.slice(Math.max(0, item.start - 1), item.start).toUpperCase();
+                  const axisBase = axisChar === 'X' ? '_x' : (axisChar === 'Y' ? '_y' : '_z');
+                  const axisCount = axisTempCounters[axisBase] || 0;
+                  axisTempCounters[axisBase] = axisCount + 1;
+                  const tempName = axisCount === 0 ? axisBase : `${axisBase}${axisCount + 1}`;
+
+                  placeholderValueExpr.set(item, tempName);
+                  letStatements.push(`LET ${tempName} = {${baseVar}} ${operator} ${amount}`);
+                }
+
+                const insertedLineNumbers = allocateInsertedLineNumbers(letStatements.length, lastNumberedLine, lineNumber);
+                if (insertedLineNumbers.length === letStatements.length) {
+                  for (let i = 0; i < letStatements.length; i += 1) {
+                    repairedLines.push(`${indent}${insertedLineNumbers[i]} ${letStatements[i]}`);
+                  }
+
+                  const sendExprParts = [];
+                  let cursor = 0;
+                  for (const item of placeholders) {
+                    const staticPart = commandText.slice(cursor, item.start);
+                    if (staticPart.length > 0) sendExprParts.push(`"${escapeQuoted(staticPart)}"`);
+
+                    if (placeholderValueExpr.has(item)) {
+                      sendExprParts.push(placeholderValueExpr.get(item));
+                    } else {
+                      sendExprParts.push(`{${item.content}}`);
+                    }
+                    cursor = item.end;
+                  }
+                  const tail = commandText.slice(cursor);
+                  if (tail.length > 0) sendExprParts.push(`"${escapeQuoted(tail)}"`);
+
+                  if (!sendExprParts.length) sendExprParts.push(`"${escapeQuoted(commandText)}"`);
+                  stmt = `SEND ${sendExprParts.join(' & ')}${suffix}`;
+                  repairDiagnostics.push(`line ${lineNumber}: rewrote inline SEND expression(s) to LET + concatenation`);
+                } else {
+                  repairDiagnostics.push(`line ${lineNumber}: skipped inline-expression rewrite (no available line numbers for LET insertion)`);
                 }
               }
             }
 
-            return replaced || source;
-          });
+            repairedLines.push(`${indent}${lineNumber} ${stmt}`);
+            lastNumberedLine = lineNumber;
+          }
 
           if (!repairDiagnostics.length) {
             return { reply: rawReply, diagnostics: [] };
@@ -1449,7 +1519,7 @@ Before emitting a script, verify:
           if (fenceCount % 2 === 1) reply += '\n```';
         }
 
-        const repairResult = applyDeterministicGcomRepair(reply, activeProfileRuleSet);
+        const repairResult = applyDeterministicGcomRepair(reply);
         if (repairResult.diagnostics.length) {
           for (const message of repairResult.diagnostics) {
             console.log(`[gcom-repair] ${message}`);
