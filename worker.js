@@ -972,6 +972,7 @@ Before emitting a script, verify:
       }
 
       let machineContractSystemMessage = '';
+      let activeProfileRuleSet = null;
       const composerCtx = (body.composerContext && typeof body.composerContext === 'object') ? body.composerContext : null;
       if (composerCtx) {
         const composerParts = [];
@@ -1044,6 +1045,7 @@ Before emitting a script, verify:
           const ruleSet = (profile.rule_set && typeof profile.rule_set === 'object' && !Array.isArray(profile.rule_set))
             ? profile.rule_set
             : null;
+          if (ruleSet) activeProfileRuleSet = ruleSet;
           const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
             ? profile.operations
             : null;
@@ -1322,6 +1324,76 @@ Before emitting a script, verify:
           return !analysis.hasEndLine || analysis.suspiciousTail;
         };
 
+        const applyDeterministicGcomRepair = (replyText, ruleSet) => {
+          const rawReply = String(replyText || '');
+          const fencedMatch = rawReply.match(/```gcom\s*\n([\s\S]*?)```/i);
+          if (!fencedMatch) {
+            return { reply: rawReply, diagnostics: [] };
+          }
+
+          const supportsKeyword = (keyword) => {
+            if (!ruleSet || typeof ruleSet !== 'object') return false;
+            const definition = ruleSet[keyword];
+            if (!definition || typeof definition !== 'object' || Array.isArray(definition)) return false;
+            return definition.unsupported !== true;
+          };
+
+          const repairDiagnostics = [];
+          const blockText = String(fencedMatch[1] || '');
+          const repairedLines = blockText.split('\n').map((line, index) => {
+            const source = String(line || '');
+            const prefixMatch = source.match(/^(\s*\d+\s+)?(.*)$/);
+            const prefix = prefixMatch ? (prefixMatch[1] || '') : '';
+            const stmt = prefixMatch ? String(prefixMatch[2] || '').trim() : source.trim();
+            let replaced = null;
+
+            if (!replaced && supportsKeyword('HOME') && /^SEND\s+"\$H"\s+REQUIRE_OK\s*$/i.test(stmt)) {
+              replaced = `${prefix}HOME`;
+              repairDiagnostics.push(`line ${index + 1}: SEND \"$H\" REQUIRE_OK -> HOME`);
+            }
+
+            if (!replaced && supportsKeyword('SPINDLE_ON')) {
+              const spindleOnMatch = stmt.match(/^SEND\s+"M3\s+S([^\"]+)"\s+REQUIRE_OK\s*$/i);
+              if (spindleOnMatch) {
+                const power = String(spindleOnMatch[1] || '').trim();
+                replaced = `${prefix}SPINDLE_ON ${power}`;
+                repairDiagnostics.push(`line ${index + 1}: SEND \"M3 S${power}\" REQUIRE_OK -> SPINDLE_ON ${power}`);
+              }
+            }
+
+            if (!replaced && supportsKeyword('SPINDLE_OFF') && /^SEND\s+"M5"(?:\s+REQUIRE_OK)?\s*$/i.test(stmt)) {
+              replaced = `${prefix}SPINDLE_OFF`;
+              repairDiagnostics.push(`line ${index + 1}: SEND \"M5\" -> SPINDLE_OFF`);
+            }
+
+            if (!replaced && supportsKeyword('STATUS') && /^SEND\s+"\?"(?:\s+REQUIRE_OK)?\s*$/i.test(stmt)) {
+              replaced = `${prefix}STATUS`;
+              repairDiagnostics.push(`line ${index + 1}: SEND \"?\" -> STATUS`);
+            }
+
+            if (!replaced && supportsKeyword('RESET')) {
+              const resetMatch = stmt.match(/^SEND\s+"([^\"]+)"(?:\s+REQUIRE_OK)?\s*$/i);
+              if (resetMatch) {
+                const payload = String(resetMatch[1] || '').trim().toUpperCase();
+                if (payload === '^X' || payload === '\\X18' || payload === '\\U0018' || payload === '0X18') {
+                  replaced = `${prefix}RESET`;
+                  repairDiagnostics.push(`line ${index + 1}: SEND \"${payload}\" -> RESET`);
+                }
+              }
+            }
+
+            return replaced || source;
+          });
+
+          if (!repairDiagnostics.length) {
+            return { reply: rawReply, diagnostics: [] };
+          }
+
+          const repairedBlock = repairedLines.join('\n');
+          const repairedReply = rawReply.replace(fencedMatch[0], `\`\`\`gcom\n${repairedBlock}\n\`\`\``);
+          return { reply: repairedReply, diagnostics: repairDiagnostics };
+        };
+
         const asksForTextEngraving = (() => {
           const lastUser = [...messages].reverse().find(m => m && m.role === 'user');
           const text = String(lastUser && lastUser.content ? lastUser.content : '').toLowerCase();
@@ -1376,6 +1448,15 @@ Before emitting a script, verify:
           const fenceCount = (reply.match(/```/g) || []).length;
           if (fenceCount % 2 === 1) reply += '\n```';
         }
+
+        const repairResult = applyDeterministicGcomRepair(reply, activeProfileRuleSet);
+        if (repairResult.diagnostics.length) {
+          for (const message of repairResult.diagnostics) {
+            console.log(`[gcom-repair] ${message}`);
+          }
+          reply = repairResult.reply;
+        }
+
         return new Response(JSON.stringify({ reply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
           headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
         });
