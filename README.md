@@ -1,6 +1,6 @@
 # gcomposer / GRBL console
 
-A browser-based GRBL console with a built-in scripting engine. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before connecting to hardware. Open it in Chrome or Edge, click Connect, and use USB / Serial or WebSocket with no install required.
+A browser-based GRBL console with a built-in scripting engine, a profile-driven compiler pipeline, and an AI agent that generates machine-correct GCOM scripts. Write scripts that send commands, wait for responses, loop, branch, and do math. Preview motion before connecting to hardware. Open it in Chrome or Edge, click Connect, and use USB / Serial or WebSocket with no install required.
 
 Live at https://gcomposer.app
 
@@ -8,47 +8,36 @@ Live at https://gcomposer.app
 
 ## Vision
 
-gcomposer started as a browser-based GRBL serial console and diagnostic tool. Its long-term direction is to become a **programmable CNC automation and diagnostics layer** that works alongside existing tools.
+gcomposer is a **programmable CNC automation and diagnostics layer** that works alongside existing tools.
 
 The goal is not to replace established CAM or control software, but to complement them by providing:
 
 * a scriptable environment for repeatable machine tests and workflows
 * a shareable, URL-based system for diagnostics and support
 * a structured execution layer that bridges human intent and machine motion
-* a foundation for higher-level tooling, including AI-assisted script generation and analysis
-
-Over time, gcomposer is evolving toward a model with:
-
-* a high-level, intent-focused scripting format
-* an intermediate representation (IR) of machine operations
-* a compiler layer targeting specific controller flavors such as GRBL
-
-This enables more portable, explainable, and verifiable CNC workflows while preserving the reliability and transparency of the current system.
+* AI-assisted script generation that is aware of the active controller profile
 
 ---
 
-## Pipeline And Abstraction Status (April 2026)
+## Current Architecture
 
-The pipeline and abstraction work is now in an implementation phase, not just planning.
+The compiler pipeline and AI agent are live in production.
 
-Current status:
+**Controller profiles**
 
-* stage-1 compile pipeline runs in production paths, with runtime summaries typically showing `stage=stage-1-real-pipeline`
-* passthrough fallback remains available and reports `stage=stage-1-passthrough` when used
-* profile-aware compile targeting is in place for baseline controllers (for example GRBL vanilla and FluidNC)
-* abstraction opcodes and machine overrides are represented at compile time, then lowered to standard GCOM output
-* compile metadata and diagnostics are visible in run logs/preview context so users can see stage/profile without changing runtime behavior
-* saved-script payloads support additive metadata for preview modes and compile context, with backward compatibility preserved
+Two standalone profiles are supported: `grbl-vanilla` (GRBL 1.1) and `fluidnc` (FluidNC). Each profile defines machine capabilities, connection defaults, AI guidance, abstract keyword rules, named operation templates, and a compiler strategy. Profiles are validated against a strict JSON Schema.
 
-Deliberate boundary for this phase:
+**Abstract keyword lowering**
 
-* runtime execution remains GCOM-first and profile-agnostic
-* no runtime dispatch layer has been introduced for high-level abstractions
-* runtime shims are deferred unless cross-controller verification proves a concrete limitation
+GCOM scripts may use five abstract keywords — `HOME`, `STATUS`, `RESET`, `SPINDLE_ON`, `PROBE` — that the compiler looks up in the active profile's rule set and lowers to controller-specific GCOM at compile time. The runtime never sees abstract keywords. A missing rule produces an explicit error; a rule marked unsupported produces a warning and skips emission.
 
-This keeps execution deterministic for existing scripts while allowing the compiler/pipeline layer to evolve safely.
+**Profile-aware AI agent**
 
-Design policy and boundaries are documented in [PHASE8-RUNTIME-SHIM.md](PHASE8-RUNTIME-SHIM.md).
+The AI agent receives a machine contract derived from the active profile, including rule set table, operation templates and variable defaults, preferred style guidance, and hard rules (one G-code per SEND, use abstract keywords, reference the correct variable names for speed vs. spindle). A deterministic repair pass runs after generation and rewrites any remaining invalid patterns before the script is returned.
+
+**Validation**
+
+Feed ceiling and arc support are validated at compile time and produce diagnostics for out-of-range or unsupported constructs.
 
 ---
 
@@ -254,8 +243,6 @@ It provides precise control over:
 
 GCOM can be thought of as the **execution layer of gcomposer** — a deterministic runtime that sends commands, waits for responses, and manages control flow.
 
-Future versions of gcomposer may introduce higher-level scripting formats that compile down to GCOM, allowing users to work at a more abstract level while preserving reliability and transparency.
-
 ---
 
 ### Example Script
@@ -372,29 +359,25 @@ Future versions may expose APIs or embeddable components for deeper integration.
 
 ## Future Directions
 
-Areas under active exploration include:
+Items not yet implemented:
 
-* higher-level, intent-based scripting built on top of GCOM
-* intermediate representations (IR) for machine operations
-* machine-aware compilation for different controller flavors
-* improved motion preview using structured data
-* AI-assisted script generation, explanation, and validation
-* safety analysis and motion verification
-
-These features will evolve over time as the project develops.
+* `CALL operation_name()` syntax — expands a named operation from the active profile operations block with argument substitution
+* Modal suppression — a profile flag for tracking G-code modal state and suppressing unchanged words at compile time
+* Additional controller profiles (grblHAL, LinuxCNC)
+* gcom.dev reference site — profile browser and GCOM language reference
+* test-compiler-snapshot.js coverage — needs rewriting after compiler stabilises
 
 ---
 
 ## Summary
 
-gcomposer is a browser-based GRBL serial console with a built-in scripting engine.
+gcomposer is a browser-based GRBL console with a built-in scripting engine, a profile-driven compiler pipeline, and an AI agent that generates machine-correct GCOM scripts.
 
 It combines:
 
 * low-level serial diagnostics
 * programmable automation
 * shareable workflows
-
-with a forward path toward structured, higher-level CNC scripting and analysis.
+* profile-aware AI script generation with deterministic post-processing
 
 No install required. Runs in Chrome and Edge via Web Serial.
