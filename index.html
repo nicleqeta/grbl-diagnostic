@@ -1798,142 +1798,6 @@
 
 <main>
   <div class="sidebar" id="sidebar">
-    <div class="section">
-      <div class="section-label">Machine/Controller Profile</div>
-      <select id="profile-select">
-        <option value="controller-grbl-ortur-lm2pro-s2">Ortur Laser Master 2 Pro S2 (GRBL)</option>
-        <option value="controller-profiles.v1">GRBL Default</option>
-      </select>
-      <div id="profile-desc" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
-    </div>
-<script>
-// --- Machine/Controller Profile Logic ---
-const profileSelect = document.getElementById('profile-select');
-const profileDesc = document.getElementById('profile-desc');
-let activeProfile = null;
-
-async function loadProfile(profileId) {
-  // Try rules/ first, fallback to profiles/ for legacy
-  let profile;
-  try {
-    profile = await fetch(`rules/${profileId}.json`).then(r => r.json());
-  } catch {
-    profile = await fetch(`profiles/${profileId}.json`).then(r => r.json());
-  }
-  if (profile.parent) {
-    let parent;
-    try {
-      parent = await fetch(`rules/${profile.parent}.json`).then(r => r.json());
-    } catch {
-      parent = null;
-    }
-    if (parent) {
-      // Deep merge: child overrides parent
-      profile = {
-        ...parent,
-        ...profile,
-        rules: { ...parent.rules, ...profile.rules },
-        provenance: { ...parent.provenance, ...profile.provenance }
-      };
-    }
-  }
-  return profile;
-}
-
-async function setActiveProfile(profileId) {
-  activeProfile = await loadProfile(profileId);
-  if (activeProfile) {
-    profileDesc.textContent = activeProfile.description || '';
-    document.getElementById('machine-pill').textContent = activeProfile.label || profileId;
-  } else {
-    profileDesc.textContent = 'Profile not found.';
-    document.getElementById('machine-pill').textContent = 'Unknown';
-  }
-  // Re-validate script with new profile
-  validateScriptWithProfile();
-}
-
-profileSelect.addEventListener('change', e => {
-  setActiveProfile(e.target.value);
-});
-
-// On load, set default profile
-setActiveProfile(profileSelect.value);
-
-// --- Script Validation Integration ---
-const scriptInput = document.getElementById('basic-script-input');
-const validationBox = document.getElementById('basic-validation-box');
-
-async function validateScriptWithProfile() {
-  if (!activeProfile || !activeProfile.rules) {
-    validationBox.textContent = 'No active profile or rules.';
-    return;
-  }
-  const source = scriptInput.value;
-  // Example: enforce max_feed_rate and arc_support from rules
-  let errors = [];
-  if (activeProfile.rules.max_feed_rate) {
-    const feedRegex = /F(\d+)/gi;
-    let match;
-    while ((match = feedRegex.exec(source))) {
-      const feed = parseInt(match[1], 10);
-      if (feed > activeProfile.rules.max_feed_rate) {
-        errors.push(`Feed rate ${feed} exceeds max (${activeProfile.rules.max_feed_rate}) for this machine.`);
-      }
-    }
-  }
-  if (activeProfile.rules.arc_support === false) {
-    if (/G2|G3/.test(source)) {
-      errors.push('Arcs (G2/G3) are not supported on this machine.');
-    }
-  }
-  // Add more rule-based checks as needed
-  if (errors.length) {
-    validationBox.textContent = 'Validation errors:\n' + errors.join('\n');
-    validationBox.classList.add('error');
-  } else {
-    validationBox.textContent = 'Syntax check: no rule violations detected.';
-    validationBox.classList.remove('error');
-  }
-}
-
-scriptInput.addEventListener('input', validateScriptWithProfile);
-
-// --- AI Agent Integration ---
-// Patch AI prompt/context to include activeProfile.rules
-const aiSendBtn = document.getElementById('ai-send-btn');
-const aiPromptInput = document.getElementById('ai-prompt-input');
-const aiChatContainer = document.getElementById('ai-chat-container');
-
-async function sendAiPrompt() {
-  const prompt = aiPromptInput.value;
-  if (!prompt.trim()) return;
-  let context = '';
-  if (activeProfile && activeProfile.rules) {
-    context += `\n\n=== ACTIVE MACHINE PROFILE RULES ===\n`;
-    for (const [k, v] of Object.entries(activeProfile.rules)) {
-      context += `- ${k}: ${JSON.stringify(v)}\n`;
-    }
-    context += '=== END RULES ===\n';
-  }
-  // Display user prompt
-  const userMsg = document.createElement('div');
-  userMsg.className = 'ai-msg ai-msg-user';
-  userMsg.innerHTML = `<div class="ai-msg-bubble">${prompt}</div>`;
-  aiChatContainer.appendChild(userMsg);
-  // Simulate AI response (replace with real API call)
-  const aiMsg = document.createElement('div');
-  aiMsg.className = 'ai-msg ai-msg-assistant';
-  aiMsg.innerHTML = `<div class="ai-msg-bubble">[AI sees these rules:]<br><pre>${context}</pre></div>`;
-  aiChatContainer.appendChild(aiMsg);
-  aiPromptInput.value = '';
-  aiChatContainer.scrollTop = aiChatContainer.scrollHeight;
-}
-
-aiSendBtn.addEventListener('click', sendAiPrompt);
-aiPromptInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiPrompt(); } });
-</script>
-
     <div class="section" id="no-serial-section" style="display:none;">
       <div class="no-serial-warning">
         Web Serial API not available.<br>
@@ -1945,7 +1809,7 @@ aiPromptInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shi
       <div class="section-label">Connection</div>
       <div class="section-label" style="margin-bottom:6px;">Controller Flavor</div>
       <select id="controller-profile-select" title="Select the active controller compatibility profile.">
-        <option value="grbl-vanilla">Vanilla GRBL</option>
+        <option value="grbl-vanilla" selected>Vanilla GRBL</option>
         <option value="fluidnc">FluidNC</option>
       </select>
       <div class="help-text" id="controller-profile-help" style="margin-top:-2px; margin-bottom:8px;">Profile controls compatibility checks and starter defaults. Vanilla GRBL is selected by default.</div>
@@ -9130,6 +8994,11 @@ function setActiveControllerProfile(profileId, { persist = true, announce = fals
   const nextId = controllerProfilesById[profileId] ? profileId : (controllerProfileRegistry?.default_profile_id || DEFAULT_CONTROLLER_PROFILE_ID);
   activeControllerProfileId = nextId;
   activeControllerProfile = controllerProfilesById[nextId] || null;
+  if (machinePill) {
+    machinePill.textContent = activeControllerProfile && activeControllerProfile.label
+      ? activeControllerProfile.label
+      : 'Unknown';
+  }
   if (controllerProfileSelect && controllerProfileSelect.value !== nextId) {
     controllerProfileSelect.value = nextId;
   }

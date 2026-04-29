@@ -216,6 +216,8 @@
         "controller_family",
         "status",
         "axes",
+        "max_feed_rate",
+        "arc_support",
         "capability_flags",
         "ack_policy",
         "connection_defaults",
@@ -255,6 +257,13 @@
             "type": "string",
             "pattern": "^[A-Z]$"
           }
+        },
+        "max_feed_rate": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "arc_support": {
+          "type": "boolean"
         },
         "capability_flags": {
           "$ref": "#/$defs/capabilityFlags"

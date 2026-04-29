@@ -23,6 +23,14 @@ function getProfileKeywordRule(profile, keyword) {
   return rule;
 }
 
+function getProfileMachineDescription(profile) {
+  if (!profile || typeof profile !== 'object') return null;
+  if (profile.machine_description && typeof profile.machine_description === 'object') {
+    return profile.machine_description;
+  }
+  return profile;
+}
+
 function buildKeywordEmission(keyword, rule, argsText = '') {
   if (!rule || typeof rule !== 'object') {
     return { error: `missing rule for ${keyword}` };
@@ -151,9 +159,30 @@ function generateGCOMFromIR(irNodes, profile = null) {
   const lines = [];
   const diagnostics = [];
   let lineNum = 1;
+  const machine = getProfileMachineDescription(profile);
+  const maxFeedRate = Number(machine && machine.max_feed_rate);
+  const enforceMaxFeedRate = Number.isFinite(maxFeedRate) && maxFeedRate > 0;
+  const arcSupport = machine && typeof machine.arc_support === 'boolean' ? machine.arc_support : true;
 
   irNodes.forEach(node => {
     if (node.type === 'gcom_passthrough') {
+      const content = String(node.payload.content || '');
+
+      if (enforceMaxFeedRate) {
+        const feedRegex = /F(\d+)/gi;
+        let match;
+        while ((match = feedRegex.exec(content))) {
+          const feed = parseInt(match[1], 10);
+          if (feed > maxFeedRate) {
+            diagnostics.push(`Warning: Line ${node.sourceLineNum}: Feed rate ${feed} exceeds max (${maxFeedRate}) for this machine.`);
+          }
+        }
+      }
+
+      if (!arcSupport && /\bG0?[23]\b/i.test(content)) {
+        diagnostics.push(`Error: Line ${node.sourceLineNum}: Arcs (G2/G3) are not supported on this machine.`);
+      }
+
       // Pass through GCOM line as-is
       lines.push(`${node.payload.lineNumber} ${node.payload.content}`);
       lineNum = Math.max(lineNum, node.payload.lineNumber + 1);
