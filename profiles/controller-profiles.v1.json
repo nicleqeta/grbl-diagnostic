@@ -109,14 +109,17 @@
             "default": 0
           },
           "speed": {
+            "label": "Feed rate (mm/min)",
             "description": "Feed rate",
             "default": 1000
           },
           "spindlespeed": {
+            "label": "Laser power (0–1000)",
             "description": "Spindle/laser power",
             "default": 1000
           },
           "dwell": {
+            "label": "Dwell time (seconds)",
             "description": "Dwell time (seconds)",
             "default": 1
           }
@@ -249,6 +252,72 @@
           "emit": "SEND \"G38.2 Z-5 F100\" REQUIRE_OK",
           "parameter_bounds": {},
           "feature_guard_warnings": []
+        }
+      },
+      "operations": {
+        "variables": {
+          "x": {
+            "description": "Target X position",
+            "default": 0
+          },
+          "y": {
+            "description": "Target Y position",
+            "default": 0
+          },
+          "z": {
+            "description": "Target Z position",
+            "default": 0
+          },
+          "speed": {
+            "label": "Feed rate (mm/min)",
+            "description": "Feed rate",
+            "default": 1000
+          },
+          "spindlespeed": {
+            "label": "Laser power (0–1000)",
+            "description": "Spindle/laser power",
+            "default": 1000
+          },
+          "dwell": {
+            "label": "Dwell time (seconds)",
+            "description": "Dwell time (seconds)",
+            "default": 1
+          }
+        },
+        "cut_move": {
+          "template": [
+            "SEND \"G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}\" REQUIRE_OK"
+          ]
+        },
+        "rapid_move": {
+          "template": [
+            "SEND \"G0 [X]{x}[Y]{y}[Z]{z}\" REQUIRE_OK"
+          ]
+        },
+        "tool_on": {
+          "template": [
+            "SEND \"M3 S{spindlespeed}\" REQUIRE_OK"
+          ]
+        },
+        "tool_off": {
+          "template": [
+            "SEND \"M5\" REQUIRE_OK"
+          ]
+        },
+        "dwell": {
+          "template": [
+            "SEND \"G4 P{dwell}\" REQUIRE_OK"
+          ]
+        },
+        "zero_all_axes": {
+          "template": [
+            "SEND \"G10 L20 P1 X0Y0Z0\" REQUIRE_OK"
+          ]
+        },
+        "job_end": {
+          "template": [
+            "SEND \"M2\" REQUIRE_OK"
+          ]
         }
       },
       "compiler_strategy": {

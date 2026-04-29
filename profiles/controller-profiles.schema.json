@@ -381,7 +381,18 @@
         {
           "required": [
             "emit"
-          ]
+          ],
+          "properties": {
+            "emit": {}
+          },
+          "not": {
+            "properties": {
+              "unsupported": {}
+            },
+            "required": [
+              "unsupported"
+            ]
+          }
         },
         {
           "required": [
@@ -391,6 +402,14 @@
             "unsupported": {
               "const": true
             }
+          },
+          "not": {
+            "properties": {
+              "emit": {}
+            },
+            "required": [
+              "emit"
+            ]
           }
         }
       ]
@@ -403,6 +422,10 @@
         "default"
       ],
       "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
         "description": {
           "type": "string",
           "minLength": 1
