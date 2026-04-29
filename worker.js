@@ -1095,7 +1095,7 @@ Before emitting a script, verify:
           const contractParts = [];
           contractParts.push('=== MACHINE CONTRACT (MUST FOLLOW) ===');
           contractParts.push('- You MUST use abstract keywords from the active rule_set. Writing SEND "$H" when HOME exists in the rule_set is an error. Writing SEND "M3 S..." when SPINDLE_ON exists in the rule_set is an error.');
-          contractParts.push('- You MUST use named operations for motion sequences. Do not write raw SEND "G0..." or SEND "G1..." lines when rapid_move or cut_move exist in the operations block.');
+          contractParts.push('- You MUST use the operation templates as reference for motion sequences. Expand them inline with the correct variable substitutions rather than calling operation names directly; operations are reference documentation, not callable runtime statements.');
           contractParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
           contractParts.push(`- Never use a spindle/laser power variable as a feed rate. Feed rate is ${feedVariableDisplayName}. Laser power is ${spindleVariableDisplayName}. These are distinct variables with different defaults and purposes.`);
 
