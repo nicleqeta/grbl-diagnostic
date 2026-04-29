@@ -971,6 +971,7 @@ Before emitting a script, verify:
         }
       }
 
+      let machineContractSystemMessage = '';
       const composerCtx = (body.composerContext && typeof body.composerContext === 'object') ? body.composerContext : null;
       if (composerCtx) {
         const composerParts = [];
@@ -1072,53 +1073,27 @@ Before emitting a script, verify:
             composerParts.push(`- compatibility policy: ${guidance.compatibility_policy}`);
           }
 
-          composerParts.push('Profile execution directives (must follow):');
-          composerParts.push('- You MUST use abstract keywords from the active rule_set (HOME, STATUS, RESET, SPINDLE_ON, PROBE) when intent matches. Writing SEND "$H" when HOME exists in the rule_set is an error. Writing SEND "M3 S..." when SPINDLE_ON exists in the rule_set is an error.');
-          composerParts.push('- If a rule_set keyword is marked unsupported, do not suggest that keyword; explain that it is unsupported for the active profile and include its feature guard warning.');
-          composerParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
-          composerParts.push('- Never use a spindle/laser power variable as a feed rate. Feed rate is speed. Laser power is spindlespeed. These are distinct variables with different defaults and purposes.');
+          const contractParts = [];
+          contractParts.push('=== MACHINE CONTRACT (MUST FOLLOW) ===');
+          contractParts.push('- You MUST use abstract keywords from the active rule_set. Writing SEND "$H" when HOME exists in the rule_set is an error. Writing SEND "M3 S..." when SPINDLE_ON exists in the rule_set is an error.');
+          contractParts.push('- You MUST use named operations for motion sequences. Do not write raw SEND "G0..." or SEND "G1..." lines when rapid_move or cut_move exist in the operations block.');
+          contractParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
+          contractParts.push('- Never use a spindle/laser power variable as a feed rate. Feed rate is speed. Laser power is spindlespeed. These are distinct variables with different defaults and purposes.');
 
-          if (ruleSet) {
-            const orderedKeywords = ['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE'];
-            const ruleEntries = orderedKeywords
+          const orderedKeywords = ['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE'];
+          const ruleEntries = ruleSet
+            ? orderedKeywords
               .filter(keyword => ruleSet[keyword] && typeof ruleSet[keyword] === 'object')
-              .map(keyword => [keyword, ruleSet[keyword]]);
-
-            if (ruleEntries.length) {
-              composerParts.push('Active rule_set contract (concrete generation contract):');
-              for (const [keyword, definition] of ruleEntries) {
-                const emit = typeof definition.emit === 'string' ? definition.emit.trim() : '';
-                const unsupported = definition.unsupported === true;
-                if (unsupported) {
-                  composerParts.push(`- ${keyword}: unsupported`);
-                } else if (emit) {
-                  composerParts.push(`- ${keyword}: emit="${emit}"`);
-                } else {
-                  composerParts.push(`- ${keyword}: emit not defined`);
-                }
-
-                const bounds = (definition.parameter_bounds && typeof definition.parameter_bounds === 'object' && !Array.isArray(definition.parameter_bounds))
-                  ? definition.parameter_bounds
-                  : null;
-                if (bounds) {
-                  const boundEntries = Object.entries(bounds).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value));
-                  for (const [paramName, paramBounds] of boundEntries) {
-                    const hasMin = Number.isFinite(Number(paramBounds.min));
-                    const hasMax = Number.isFinite(Number(paramBounds.max));
-                    if (hasMin || hasMax) {
-                      const minValue = hasMin ? Number(paramBounds.min) : '-inf';
-                      const maxValue = hasMax ? Number(paramBounds.max) : '+inf';
-                      composerParts.push(`  - bounds.${paramName}: min=${minValue}, max=${maxValue}`);
-                    }
-                  }
-                }
-
-                const guardWarnings = Array.isArray(definition.feature_guard_warnings) ? definition.feature_guard_warnings : [];
-                for (const warning of guardWarnings) {
-                  const message = warning && typeof warning.message === 'string' ? warning.message.trim() : '';
-                  if (message) composerParts.push(`  - feature guard: ${message}`);
-                }
-              }
+              .map(keyword => [keyword, ruleSet[keyword]])
+            : [];
+          if (ruleEntries.length) {
+            contractParts.push('Active rule_set keyword table (keyword -> emit template):');
+            contractParts.push('| Keyword | Emit Template |');
+            contractParts.push('| --- | --- |');
+            for (const [keyword, definition] of ruleEntries) {
+              const emit = typeof definition.emit === 'string' ? definition.emit.trim() : '';
+              const unsupported = definition.unsupported === true;
+              contractParts.push(`| ${keyword} | ${unsupported ? 'unsupported' : (emit || 'emit not defined')} |`);
             }
           }
 
@@ -1138,42 +1113,43 @@ Before emitting a script, verify:
             composerParts.push('```');
           }
 
-          if (operations) {
-            const operationVariables = (operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
-              ? operations.variables
-              : null;
-            const operationEntries = Object.entries(operations)
-              .filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value));
+          const operationVariables = (operations && operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
+            ? operations.variables
+            : null;
+          const operationEntries = operations
+            ? Object.entries(operations).filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value))
+            : [];
 
-            if (operationEntries.length) {
-              composerParts.push('Directive: You MUST use named operations for motion sequences for this machine. Do not write raw SEND "G0..." or SEND "G1..." lines when rapid_move or cut_move exist in the operations block. Expand the template manually if needed - one SEND per line, one G-code per SEND. Use the operation name and substitute variables from the defaults shown.');
-
-              const variableEntries = operationVariables ? Object.entries(operationVariables) : [];
-              if (variableEntries.length) {
-                composerParts.push('Operations variable defaults reference table:');
-                composerParts.push('| Variable | Default | Description |');
-                composerParts.push('| --- | --- | --- |');
-                for (const [name, definition] of variableEntries) {
-                  const desc = (definition && typeof definition.description === 'string' && definition.description.trim())
-                    ? definition.description.trim()
-                    : '';
-                  const hasDefault = definition && Object.prototype.hasOwnProperty.call(definition, 'default');
-                  const defaultValue = hasDefault ? JSON.stringify(definition.default) : 'null';
-                  composerParts.push(`| ${name} | ${defaultValue} | ${desc || '-'} |`);
-                }
-              }
-
-              composerParts.push('Operations reference table (name -> template behavior):');
-              composerParts.push('| Operation | Template(s) |');
-              composerParts.push('| --- | --- |');
-              for (const [name, definition] of operationEntries) {
-                const templates = Array.isArray(definition.template)
-                  ? definition.template.map(line => String(line || '').trim()).filter(Boolean)
-                  : [];
-                if (!templates.length) continue;
-                composerParts.push(`| ${name} | ${templates.join(' <br> ')} |`);
+          if (operationEntries.length) {
+            const variableEntries = operationVariables ? Object.entries(operationVariables) : [];
+            if (variableEntries.length) {
+              contractParts.push('Active operations variable defaults table:');
+              contractParts.push('| Variable | Default | Description |');
+              contractParts.push('| --- | --- | --- |');
+              for (const [name, definition] of variableEntries) {
+                const desc = (definition && typeof definition.description === 'string' && definition.description.trim())
+                  ? definition.description.trim()
+                  : '';
+                const hasDefault = definition && Object.prototype.hasOwnProperty.call(definition, 'default');
+                const defaultValue = hasDefault ? JSON.stringify(definition.default) : 'null';
+                contractParts.push(`| ${name} | ${defaultValue} | ${desc || '-'} |`);
               }
             }
+
+            contractParts.push('Active operations table (name -> template behavior):');
+            contractParts.push('| Operation | Template(s) |');
+            contractParts.push('| --- | --- |');
+            for (const [name, definition] of operationEntries) {
+              const templates = Array.isArray(definition.template)
+                ? definition.template.map(line => String(line || '').trim()).filter(Boolean)
+                : [];
+              if (!templates.length) continue;
+              contractParts.push(`| ${name} | ${templates.join(' <br> ')} |`);
+            }
+          }
+
+          if (contractParts.length > 1) {
+            machineContractSystemMessage = contractParts.join('\n');
           }
         }
         composerParts.push(`=== END COMPOSER CONTEXT ===`);
@@ -1354,11 +1330,27 @@ Before emitting a script, verify:
 
         const baseSystemPrompt = GCOM_SYSTEM + '\n\n' + GCOM_HELP_MANIFEST + '\n\n' + (mode === 'repair' ? REPAIR_SYSTEM : '') + contextAddendum + intentInstruction;
 
+        const buildAiMessages = (systemPrompt, conversationMessages) => {
+          const convo = Array.isArray(conversationMessages) ? conversationMessages : [];
+          const merged = [{ role: 'system', content: systemPrompt }];
+          if (machineContractSystemMessage && machineContractSystemMessage.trim()) {
+            const firstUserIdx = convo.findIndex(msg => msg && msg.role === 'user');
+            if (firstUserIdx === -1) {
+              merged.push({ role: 'system', content: machineContractSystemMessage });
+              merged.push(...convo);
+            } else {
+              merged.push(...convo.slice(0, firstUserIdx));
+              merged.push({ role: 'system', content: machineContractSystemMessage });
+              merged.push(...convo.slice(firstUserIdx));
+            }
+          } else {
+            merged.push(...convo);
+          }
+          return merged;
+        };
+
         const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-          messages: [
-            { role: 'system', content: baseSystemPrompt },
-            ...messages,
-          ],
+          messages: buildAiMessages(baseSystemPrompt, messages),
           max_tokens: 1800,
           temperature: 0.4,
         });
@@ -1371,10 +1363,7 @@ Before emitting a script, verify:
         if (isLikelyTruncatedGcomReply(reply) || lowQualityTextScript) {
           const recoveryPrompt = `\n\n=== OUTPUT RECOVERY DIRECTIVE ===\nThe previous draft is invalid for output quality (truncated and/or repetitive line spam). Regenerate from scratch and return ONLY one complete \`\`\`gcom fenced block (plus optional ACTIONS comment). Keep it concise (<= 120 numbered lines), avoid repetitive unrolled lines, and ensure the script contains a final END line. If the request is text/font engraving, characters must be built from multiple geometric segments with explicit stroke moves; do not emit arithmetic churn loops with LET local_value.`;
           const retryResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-            messages: [
-              { role: 'system', content: baseSystemPrompt + recoveryPrompt },
-              ...messages,
-            ],
+            messages: buildAiMessages(baseSystemPrompt + recoveryPrompt, messages),
             max_tokens: 1800,
             temperature: 0.2,
           });
