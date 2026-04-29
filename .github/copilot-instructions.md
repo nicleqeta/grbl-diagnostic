@@ -89,6 +89,18 @@ examples with name, description, gcom line, and example), snippets
 (named reusable GCOM blocks), and presets (default_feed, default_power,
 rapid_feed).
 
+Commands should cover lifecycle hooks by name where present:
+- job_start: full preamble sequence for this machine
+- job_end: full postamble sequence for this machine
+- tool_on_sequence: laser/spindle on with power
+- tool_off_sequence: laser/spindle off
+- home: homing sequence
+- rapid_move: positioning move
+- cut_move: cutting/marking move with feed rate
+
+These hook names are not enforced — they are conventions the AI
+recognises when structuring a complete job script.
+
 Endpoints:
 - POST /api/profiles — stores profile, returns { id, url }
 - GET /api/profiles/:id — returns profile JSON or 404
@@ -132,13 +144,40 @@ forecloses them.
 - Conditional axis suppression: [X{x}] in templates emits the X word
   and value only when x is non-zero or present. Affects operations
   templates and compiler codegen.
+
 - Built-in read-only variables: {DATE}, {TIME}, {SCRIPT_NAME}
   substituted at execution time. Useful in boilerplate headers.
+
 - Operation call syntax: CALL operation_name(arg1, arg2) expands a
   named operation from the active profile operations block with
   argument substitution. Connects operations to the scripting layer.
+
+- Subroutine syntax: DEF proc_name ... END DEF and CALL proc_name(args)
+  for user-defined reusable sub-programs within a script. Distinct from
+  operation call syntax which expands profile templates. Enables complex
+  patterns and spiral/grid generation without flat script repetition.
+  Inspired by FANUC postprocessor @proc / @end_proc / @call_proc pattern.
+
 - Modal suppression: a machine_description flag for tracking G-code
   modal state and suppressing unchanged words. Compiler behaviour
-  change driven by profile, not a language change.
+  change driven by profile, not a language change. Inspired by FANUC
+  postprocessor change(gcode) pattern.
+
 - Tile/repeat abstraction: TILE X={count} OFFSET={step} for grid
   repeat laser marking workflows. Abstract keyword lowered via profile.
+
+- Lifecycle hooks: formal preamble and postamble sequence declarations
+  in user machine profiles — job_start, job_end, tool_on_sequence,
+  tool_off_sequence — that the AI knows to reference when structuring
+  a complete job script. Partially addressed by profile commands array
+  convention but may need explicit compiler or runtime support later.
+
+- Arc parameter guidance: when to use IJK center form vs R radius form
+  for G2/G3. IJK required for full 360-degree arcs, R acceptable for
+  partial arcs under 180 degrees. Should be reflected in ai_guidance
+  in the controller profile and in GCOM_SYSTEM prompt guidance.
+
+- Numeric variable persistence: mechanism for variables to persist
+  across script sections or be passed into sub-programs. GCOM LET
+  variables are currently local and flat. Inspired by FANUC #N register
+  pattern used for repeat counts and origin offsets.
