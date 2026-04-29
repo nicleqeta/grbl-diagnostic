@@ -721,6 +721,7 @@ MATH AND TRIG SEMANTICS
 - ASIN, ACOS, ATAN, ATAN2 return degrees.
 - Use RAD(degValue) only when you explicitly need radians for another computation.
 - Do not convert degrees to radians before calling SIN/COS/TAN.
+- CRITICAL: When computing a parametric angle that sweeps 0..360 (or 0..2π), use degree-based steps, NOT radian-based steps. For N points over a full circle: step = 360 / N, and the angle variable increments in degrees. Never use 2*PI/N as an angle step — PI is approximately 3.14159, so 2*PI/500 ≈ 0.01257 degrees, which would collapse all points to nearly the same location.
 
 STRING AND TOKEN HELPERS
 - STR(value) converts to text; LEN returns character count.
@@ -753,6 +754,7 @@ ARC / CIRCLE RULES (G2/G3)
 AUTHORING RULES
 - Validation blocks save/preview when syntax errors exist.
 - Preview/runtime fail on undefined variables.
+- PREVIEW LIMITATION: The motion preview does static analysis of SEND payloads. A SEND whose G-code text is assembled by string concatenation at runtime (e.g. SEND "G1 X" & x & " Y" & y) cannot be traced by the preview — it will show no path. This is expected and not an error. Inform the user when generating path-computation scripts that preview will be blank but the script will run correctly on the machine.
 - Use REM for program comments, or ';' only for import headers.
 - Do not use // comments.
 - Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
