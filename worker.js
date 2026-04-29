@@ -972,6 +972,8 @@ Before emitting a script, verify:
       }
 
       let machineContractSystemMessage = '';
+      let activeProfileRuleSet = null;
+      let activeProfileOperations = null;
       const composerCtx = (body.composerContext && typeof body.composerContext === 'object') ? body.composerContext : null;
       if (composerCtx) {
         const composerParts = [];
@@ -1047,6 +1049,8 @@ Before emitting a script, verify:
           const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
             ? profile.operations
             : null;
+          activeProfileRuleSet = ruleSet;
+          activeProfileOperations = operations;
           const guidance = (profileMachine.ai_guidance && typeof profileMachine.ai_guidance === 'object') ? profileMachine.ai_guidance : {};
           const ackPolicy = (profileMachine.ack_policy && typeof profileMachine.ack_policy === 'object') ? profileMachine.ack_policy : {};
           const capabilities = (profileMachine.capabilities && typeof profileMachine.capabilities === 'object') ? profileMachine.capabilities : {};
@@ -1322,12 +1326,45 @@ Before emitting a script, verify:
           return !analysis.hasEndLine || analysis.suspiciousTail;
         };
 
-        const applyDeterministicGcomRepair = (replyText) => {
+        const applyDeterministicGcomRepair = (replyText, ruleSet, operations) => {
+          console.log('[gcom-repair] pass invoked');
           const rawReply = String(replyText || '');
           const fencedMatch = rawReply.match(/```gcom\s*\n([\s\S]*?)```/i);
           if (!fencedMatch) {
             return { reply: rawReply, diagnostics: [] };
           }
+
+          if (!ruleSet || typeof ruleSet !== 'object' || Array.isArray(ruleSet) || !operations || typeof operations !== 'object' || Array.isArray(operations)) {
+            return { reply: rawReply, diagnostics: [] };
+          }
+
+          const supportsKeyword = (keyword) => {
+            const definition = ruleSet[keyword];
+            if (!definition || typeof definition !== 'object' || Array.isArray(definition)) return false;
+            return definition.unsupported !== true;
+          };
+
+          const operationVariables = (operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
+            ? operations.variables
+            : null;
+          if (!operationVariables) {
+            return { reply: rawReply, diagnostics: [] };
+          }
+
+          const resolveOperationVariableRole = (matcher) => {
+            for (const [name, definition] of Object.entries(operationVariables)) {
+              const description = String(definition && definition.description ? definition.description : '').trim().toLowerCase();
+              if (matcher(description, name)) return String(name);
+            }
+            return '';
+          };
+
+          const feedVariableName = resolveOperationVariableRole((description, name) => {
+            return /feed rate|feedrate|feed/.test(description) || /^feed(?:_rate)?$/i.test(String(name));
+          });
+          const spindleVariableName = resolveOperationVariableRole((description, name) => {
+            return /spindle|laser power|power/.test(description) || /spindle|power/i.test(String(name));
+          });
 
           const escapeQuoted = (value) => String(value || '')
             .replace(/\\/g, '\\\\')
@@ -1378,11 +1415,15 @@ Before emitting a script, verify:
               let commandText = String(sendMatch[1] || '');
               const suffix = String(sendMatch[2] || '');
 
-              const correctedFeedText = commandText.replace(/\bF\{\s*spindlespeed\s*\}/gi, 'F{speed}');
+              let correctedFeedText = commandText;
+              if (supportsKeyword('SPINDLE_ON') && feedVariableName && spindleVariableName) {
+                const spindleFeedPattern = new RegExp(`\\bF\\{\\s*${spindleVariableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`, 'gi');
+                correctedFeedText = commandText.replace(spindleFeedPattern, `F{${feedVariableName}}`);
+              }
               if (correctedFeedText !== commandText && /\bG1\b/i.test(commandText)) {
                 commandText = correctedFeedText;
                 stmt = `SEND "${commandText}"${suffix}`;
-                repairDiagnostics.push(`line ${lineNumber}: repaired feed placeholder F{spindlespeed} -> F{speed}`);
+                repairDiagnostics.push(`line ${lineNumber}: repaired feed placeholder F{${spindleVariableName}} -> F{${feedVariableName}}`);
               }
 
               const placeholderRegex = /\{([^}]+)\}/g;
@@ -1519,7 +1560,7 @@ Before emitting a script, verify:
           if (fenceCount % 2 === 1) reply += '\n```';
         }
 
-        const repairResult = applyDeterministicGcomRepair(reply);
+        const repairResult = applyDeterministicGcomRepair(reply, activeProfileRuleSet, activeProfileOperations);
         if (repairResult.diagnostics.length) {
           for (const message of repairResult.diagnostics) {
             console.log(`[gcom-repair] ${message}`);
