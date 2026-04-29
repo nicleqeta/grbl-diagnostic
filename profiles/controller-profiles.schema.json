@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gcomposer.app/schemas/controller-profiles.schema.json",
   "title": "GCOM Controller Profile Registry",
-  "description": "Strict profile registry for controller flavor aware GCOM/GCode generation with an optional v2 preview block for higher-level compiler planning.",
+  "description": "Standalone controller profiles for compile-time lowering of abstract keywords into concrete GCOM.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,6 +12,9 @@
     "profiles"
   ],
   "properties": {
+    "$schema": {
+      "type": "string"
+    },
     "schema_version": {
       "type": "string",
       "const": "1.0.0"
@@ -31,24 +34,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "grbl-base",
         "grbl-vanilla",
         "fluidnc"
       ],
       "properties": {
-        "grbl-base": {
-          "$ref": "#/$defs/grblBaseProfile"
-        },
         "grbl-vanilla": {
-          "$ref": "#/$defs/grblVanillaProfile"
+          "$ref": "#/$defs/standaloneProfile"
         },
         "fluidnc": {
-          "$ref": "#/$defs/fluidNcProfile"
+          "$ref": "#/$defs/standaloneProfile"
         }
       }
-    },
-    "v2_preview": {
-      "$ref": "#/$defs/v2Preview"
     }
   },
   "$defs": {
@@ -93,7 +89,7 @@
         }
       }
     },
-    "boilerplate": {
+    "boilerplateGcom": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -113,29 +109,6 @@
         "gcom": {
           "type": "string",
           "minLength": 1
-        }
-      }
-    },
-    "transport": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "primary",
-        "supports_usb_serial",
-        "supports_websocket"
-      ],
-      "properties": {
-        "primary": {
-          "type": "string",
-          "enum": [
-            "serial-ascii"
-          ]
-        },
-        "supports_usb_serial": {
-          "type": "boolean"
-        },
-        "supports_websocket": {
-          "type": "boolean"
         }
       }
     },
@@ -174,108 +147,67 @@
         }
       }
     },
-    "realtimeCommands": {
+    "connectionDefaults": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "status",
-        "feed_hold",
-        "cycle_start",
-        "soft_reset"
+        "primary_transport",
+        "baud_rate",
+        "supports_usb_serial",
+        "supports_websocket"
       ],
       "properties": {
-        "status": {
-          "type": "string",
-          "const": "?"
-        },
-        "feed_hold": {
-          "type": "string",
-          "const": "!"
-        },
-        "cycle_start": {
-          "type": "string",
-          "const": "~"
-        },
-        "soft_reset": {
-          "type": "string",
-          "pattern": "^(\\^X|\\\\x18)$"
-        }
-      }
-    },
-    "capabilities": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "gcode_core",
-        "grbl_system",
-        "realtime",
-        "notes"
-      ],
-      "properties": {
-        "gcode_core": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "pattern": "^[GMT$][A-Z0-9.]*$"
-          }
-        },
-        "grbl_system": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "pattern": "^\\$[A-Z0-9#/.*=]+$"
-          }
-        },
-        "realtime": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "pattern": "^(\\?|!|~|\\^X|0x[0-9A-Fa-f]{2})$"
-          }
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "compatibilityRule": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "match",
-        "decision",
-        "reason_code",
-        "message"
-      ],
-      "properties": {
-        "match": {
-          "$ref": "#/$defs/regexPattern"
-        },
-        "decision": {
+        "primary_transport": {
           "type": "string",
           "enum": [
-            "allow",
-            "warn",
-            "block"
+            "serial-ascii"
           ]
         },
-        "reason_code": {
-          "type": "string",
-          "pattern": "^[A-Z0-9_]+$"
+        "baud_rate": {
+          "type": "integer",
+          "minimum": 300
         },
-        "message": {
-          "type": "string",
-          "minLength": 1
+        "supports_usb_serial": {
+          "type": "boolean"
+        },
+        "supports_websocket": {
+          "type": "boolean"
         }
       }
     },
-    "profileCommon": {
+    "capabilityFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supports_homing",
+        "supports_machine_coordinates",
+        "supports_tool_table",
+        "supports_macro_call",
+        "supports_canned_cycles",
+        "supports_multiple_spindles"
+      ],
+      "properties": {
+        "supports_homing": {
+          "type": "boolean"
+        },
+        "supports_machine_coordinates": {
+          "type": "boolean"
+        },
+        "supports_tool_table": {
+          "type": "boolean"
+        },
+        "supports_macro_call": {
+          "type": "boolean"
+        },
+        "supports_canned_cycles": {
+          "type": "boolean"
+        },
+        "supports_multiple_spindles": {
+          "type": "boolean"
+        }
+      }
+    },
+    "machineDescription": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -283,19 +215,20 @@
         "label",
         "controller_family",
         "status",
-        "inherits",
-        "transport",
+        "axes",
+        "capability_flags",
         "ack_policy",
-        "response_patterns",
-        "realtime_commands",
-        "capabilities",
-        "compatibility_rules",
-        "boilerplate",
-        "ai_guidance"
+        "connection_defaults",
+        "ai_guidance",
+        "boilerplate_gcom"
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "grbl-vanilla",
+            "fluidnc"
+          ]
         },
         "label": {
           "type": "string",
@@ -315,447 +248,86 @@
             "planned"
           ]
         },
-        "inherits": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "axes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]$"
+          }
         },
-        "transport": {
-          "$ref": "#/$defs/transport"
+        "capability_flags": {
+          "$ref": "#/$defs/capabilityFlags"
         },
         "ack_policy": {
           "$ref": "#/$defs/ackPolicy"
         },
-        "response_patterns": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "startup_banner_regex",
-            "status_report_regex",
-            "message_prefixes"
-          ],
-          "properties": {
-            "startup_banner_regex": {
-              "$ref": "#/$defs/regexPattern"
-            },
-            "status_report_regex": {
-              "$ref": "#/$defs/regexPattern"
-            },
-            "message_prefixes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "realtime_commands": {
-          "$ref": "#/$defs/realtimeCommands"
-        },
-        "capabilities": {
-          "$ref": "#/$defs/capabilities"
-        },
-        "compatibility_rules": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/compatibilityRule"
-          }
-        },
-        "boilerplate": {
-          "$ref": "#/$defs/boilerplate"
+        "connection_defaults": {
+          "$ref": "#/$defs/connectionDefaults"
         },
         "ai_guidance": {
           "$ref": "#/$defs/aiGuidance"
+        },
+        "boilerplate_gcom": {
+          "$ref": "#/$defs/boilerplateGcom"
         }
       }
     },
-    "grblBaseProfile": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/profileCommon"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "const": "grbl-base"
-            },
-            "label": {
-              "const": "GRBL Base"
-            },
-            "status": {
-              "const": "stable"
-            },
-            "inherits": {
-              "type": "null"
-            }
-          }
-        }
-      ]
-    },
-    "grblVanillaProfile": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/profileCommon"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "const": "grbl-vanilla"
-            },
-            "label": {
-              "const": "Vanilla GRBL"
-            },
-            "status": {
-              "const": "stable"
-            },
-            "inherits": {
-              "const": "grbl-base"
-            }
-          }
-        }
-      ]
-    },
-    "fluidNcProfile": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/profileCommon"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "const": "fluidnc"
-            },
-            "label": {
-              "const": "FluidNC"
-            },
-            "status": {
-              "const": "stable"
-            },
-            "inherits": {
-              "const": "grbl-base"
-            }
-          }
-        }
-      ]
-    },
-    "v2Preview": {
+    "featureGuardWarning": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "schema_version",
-        "default_base_profile_id",
-        "base_profiles"
+        "message"
       ],
       "properties": {
-        "schema_version": {
-          "type": "string",
-          "const": "2.0.0"
-        },
-        "default_base_profile_id": {
+        "message": {
           "type": "string",
           "minLength": 1
-        },
-        "base_profiles": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {
-            "$ref": "#/$defs/baseProfileV2"
+        }
+      }
+    },
+    "ruleParameterBounds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
           }
         }
       }
     },
-    "baseProfileV2": {
+    "ruleDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "label",
-        "family",
-        "status",
-        "inherits",
-        "runtime",
-        "compile",
-        "guidance"
-      ],
       "properties": {
-        "id": {
+        "emit": {
           "type": "string",
           "minLength": 1
         },
-        "label": {
-          "type": "string",
-          "minLength": 1
+        "unsupported": {
+          "type": "boolean"
         },
-        "family": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "stable",
-            "experimental",
-            "planned"
-          ]
-        },
-        "inherits": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "runtime": {
+        "args": {
           "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "ack_policy",
-            "startup_banner_regex",
-            "status_report_regex"
-          ],
-          "properties": {
-            "ack_policy": {
-              "$ref": "#/$defs/ackPolicy"
-            },
-            "startup_banner_regex": {
-              "$ref": "#/$defs/regexPattern"
-            },
-            "status_report_regex": {
-              "$ref": "#/$defs/regexPattern"
-            }
-          }
-        },
-        "compile": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "modal_reset",
-            "abstract_ops",
-            "machine_model",
-            "state_map"
-          ],
-          "properties": {
-            "modal_reset": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "units",
-                "distance",
-                "feed_mode",
-                "plane",
-                "motion",
-                "wcs"
-              ],
-              "properties": {
-                "units": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "distance": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "feed_mode": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "plane": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "motion": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "wcs": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              }
-            },
-            "abstract_ops": {
-              "type": "object",
-              "minProperties": 1,
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "kind"
-                ],
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "command",
-                      "gcode",
-                      "sequence",
-                      "realtime",
-                      "unsupported"
-                    ]
-                  },
-                  "emit": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  },
-                  "wait": {
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "machine_model": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "supports_homing",
-                "supports_machine_coordinates",
-                "supports_tool_table",
-                "supports_macro_call",
-                "supports_canned_cycles",
-                "supports_multiple_spindles"
-              ],
-              "properties": {
-                "supports_homing": {
-                  "type": "boolean"
-                },
-                "supports_machine_coordinates": {
-                  "type": "boolean"
-                },
-                "supports_tool_table": {
-                  "type": "boolean"
-                },
-                "supports_macro_call": {
-                  "type": "boolean"
-                },
-                "supports_canned_cycles": {
-                  "type": "boolean"
-                },
-                "supports_multiple_spindles": {
-                  "type": "boolean"
-                }
-              }
-            },
-            "state_map": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "idle",
-                "run",
-                "hold",
-                "alarm"
-              ],
-              "properties": {
-                "idle": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "run": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "hold": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "alarm": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "home": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            }
-          }
-        },
-        "guidance": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "summary",
-            "preferred_style",
-            "avoid"
-          ],
-          "properties": {
-            "summary": {
-              "type": "string",
-              "minLength": 1
-            },
-            "preferred_style": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "avoid": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        }
-      }
-    },
-    "machineOverride": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "machine_name",
-        "base_profile_id"
-      ],
-      "properties": {
-        "machine_name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "User-friendly name of the machine this override applies to"
-        },
-        "base_profile_id": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Reference to base profile (grbl-vanilla, fluidnc, etc)"
-        },
-        "macros": {
-          "type": "object",
-          "description": "Machine-specific macro expansions for common operations",
-          "minProperties": 0,
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["gcode"],
             "properties": {
-              "gcode": {
+              "type": {
                 "type": "string",
-                "description": "GCODE sequence for this macro"
+                "enum": [
+                  "number",
+                  "string",
+                  "boolean"
+                ]
+              },
+              "required": {
+                "type": "boolean"
               },
               "description": {
                 "type": "string"
@@ -763,33 +335,190 @@
             }
           }
         },
-        "tool_change_procedure": {
-          "type": "string",
-          "description": "GCODE sequence for tool change, if non-standard"
-        },
-        "parking_position": {
+        "params": {
           "type": "object",
-          "description": "Safe parking coordinates",
-          "additionalProperties": false,
-          "properties": {
-            "x": { "type": "number" },
-            "y": { "type": "number" },
-            "z": { "type": "number" }
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "number",
+                  "string",
+                  "boolean"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
           }
         },
-        "spindle_config": {
-          "type": "object",
-          "description": "Machine-specific spindle behavior",
-          "additionalProperties": false,
-          "properties": {
-            "type": { "type": "string", "enum": ["VFD", "PWM", "relay"] },
-            "max_rpm": { "type": "number" },
-            "min_rpm": { "type": "number" }
-          }
+        "parameter_bounds": {
+          "$ref": "#/$defs/ruleParameterBounds"
         },
-        "notes": {
+        "feature_guard_warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/featureGuardWarning"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "emit"
+          ]
+        },
+        {
+          "required": [
+            "unsupported"
+          ],
+          "properties": {
+            "unsupported": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "operationVariableDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "default"
+      ],
+      "properties": {
+        "description": {
           "type": "string",
-          "description": "Machine notes (optional; may include imported docs/postprocessor refs)"
+          "minLength": 1
+        },
+        "default": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" },
+            { "type": "boolean" }
+          ]
+        }
+      }
+    },
+    "operationVariables": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/operationVariableDefinition"
+      }
+    },
+    "operationDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template"
+      ],
+      "properties": {
+        "template": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "properties": {
+        "variables": {
+          "$ref": "#/$defs/operationVariables"
+        }
+      },
+      "patternProperties": {
+        "^(?!variables$).+": {
+          "$ref": "#/$defs/operationDefinition"
+        }
+      },
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "HOME",
+            "STATUS",
+            "RESET",
+            "SPINDLE_ON",
+            "PROBE"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "HOME",
+        "STATUS",
+        "RESET",
+        "SPINDLE_ON",
+        "PROBE"
+      ],
+      "properties": {
+        "HOME": {
+          "$ref": "#/$defs/ruleDefinition"
+        },
+        "STATUS": {
+          "$ref": "#/$defs/ruleDefinition"
+        },
+        "RESET": {
+          "$ref": "#/$defs/ruleDefinition"
+        },
+        "SPINDLE_ON": {
+          "$ref": "#/$defs/ruleDefinition"
+        },
+        "PROBE": {
+          "$ref": "#/$defs/ruleDefinition"
+        }
+      }
+    },
+    "compilerStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "grbl-1.1",
+            "fluidnc"
+          ]
+        }
+      }
+    },
+    "standaloneProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "machine_description",
+        "rule_set",
+        "compiler_strategy"
+      ],
+      "properties": {
+        "machine_description": {
+          "$ref": "#/$defs/machineDescription"
+        },
+        "rule_set": {
+          "$ref": "#/$defs/ruleSet"
+        },
+        "operations": {
+          "$ref": "#/$defs/operations"
+        },
+        "compiler_strategy": {
+          "$ref": "#/$defs/compilerStrategy"
         }
       }
     }

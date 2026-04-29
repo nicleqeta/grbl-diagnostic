@@ -1037,16 +1037,22 @@ Before emitting a script, verify:
           for (const line of terminalLines) composerParts.push(`- ${line}`);
         }
         if (profile) {
-          const guidance = (profile.ai_guidance && typeof profile.ai_guidance === 'object') ? profile.ai_guidance : {};
-          const ackPolicy = (profile.ack_policy && typeof profile.ack_policy === 'object') ? profile.ack_policy : {};
-          const capabilities = (profile.capabilities && typeof profile.capabilities === 'object') ? profile.capabilities : {};
+          const profileMachine = (profile.machine_description && typeof profile.machine_description === 'object')
+            ? profile.machine_description
+            : profile;
+          const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
+            ? profile.operations
+            : null;
+          const guidance = (profileMachine.ai_guidance && typeof profileMachine.ai_guidance === 'object') ? profileMachine.ai_guidance : {};
+          const ackPolicy = (profileMachine.ack_policy && typeof profileMachine.ack_policy === 'object') ? profileMachine.ack_policy : {};
+          const capabilities = (profileMachine.capabilities && typeof profileMachine.capabilities === 'object') ? profileMachine.capabilities : {};
           const gcodeCore = Array.isArray(capabilities.gcode_core) ? capabilities.gcode_core.slice(0, 120) : [];
 
           composerParts.push(`Active controller profile:`);
-          if (profile.id) composerParts.push(`- id: ${profile.id}`);
-          if (profile.label) composerParts.push(`- label: ${profile.label}`);
-          if (profile.controller_family) composerParts.push(`- family: ${profile.controller_family}`);
-          if (profile.status) composerParts.push(`- status: ${profile.status}`);
+          if (profileMachine.id) composerParts.push(`- id: ${profileMachine.id}`);
+          if (profileMachine.label) composerParts.push(`- label: ${profileMachine.label}`);
+          if (profileMachine.controller_family) composerParts.push(`- family: ${profileMachine.controller_family}`);
+          if (profileMachine.status) composerParts.push(`- status: ${profileMachine.status}`);
           if (ackPolicy.mode) composerParts.push(`- ack mode: ${ackPolicy.mode}`);
           if (Number.isFinite(Number(ackPolicy.default_timeout_ms)) && Number(ackPolicy.default_timeout_ms) > 0) {
             composerParts.push(`- ack default timeout ms: ${Number(ackPolicy.default_timeout_ms)}`);
@@ -1061,6 +1067,43 @@ Before emitting a script, verify:
           }
           if (guidance.compatibility_policy) {
             composerParts.push(`- compatibility policy: ${guidance.compatibility_policy}`);
+          }
+          if (operations) {
+            const operationVariables = (operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
+              ? operations.variables
+              : null;
+            const operationEntries = Object.entries(operations)
+              .filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value));
+
+            if (operationVariables) {
+              const variableEntries = Object.entries(operationVariables);
+              if (variableEntries.length) {
+                composerParts.push('- operations variables defaults:');
+                for (const [name, definition] of variableEntries) {
+                  const desc = (definition && typeof definition.description === 'string' && definition.description.trim())
+                    ? definition.description.trim()
+                    : '';
+                  const hasDefault = definition && Object.prototype.hasOwnProperty.call(definition, 'default');
+                  const defaultValue = hasDefault ? JSON.stringify(definition.default) : 'null';
+                  if (desc) {
+                    composerParts.push(`  - ${name}=${defaultValue} (${desc})`);
+                  } else {
+                    composerParts.push(`  - ${name}=${defaultValue}`);
+                  }
+                }
+              }
+            }
+
+            if (operationEntries.length) {
+              composerParts.push('- operations templates:');
+              for (const [name, definition] of operationEntries) {
+                const templates = Array.isArray(definition.template)
+                  ? definition.template.map(line => String(line || '').trim()).filter(Boolean)
+                  : [];
+                if (!templates.length) continue;
+                composerParts.push(`  - ${name}: ${templates.join(' | ')}`);
+              }
+            }
           }
         }
         composerParts.push(`=== END COMPOSER CONTEXT ===`);

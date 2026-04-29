@@ -1,10 +1,56 @@
 // Phase 5: Real Compiler Pipeline
-// High-level script → Parsed statements → IR → GCOM (via profile mapping)
-// This is the foundation for higher-level scripting with cross-controller portability.
+// High-level script → classified statements → direct GCOM (via profile rule_set lookup)
+// This slice handles a fixed abstract keyword set and keeps direct GCOM passthrough intact.
+
+const ABSTRACT_KEYWORDS = new Set(['HOME', 'STATUS', 'RESET', 'SPINDLE_ON', 'PROBE']);
+
+function getProfileId(profile) {
+  if (!profile || typeof profile !== 'object') return null;
+  if (profile.machine_description && typeof profile.machine_description === 'object') {
+    const machineId = profile.machine_description.id;
+    if (typeof machineId === 'string' && machineId.trim()) return machineId.trim();
+  }
+  if (typeof profile.id === 'string' && profile.id.trim()) return profile.id.trim();
+  return null;
+}
+
+function getProfileKeywordRule(profile, keyword) {
+  if (!profile || typeof profile !== 'object') return null;
+  const ruleSet = profile.rule_set && typeof profile.rule_set === 'object' ? profile.rule_set : null;
+  if (!ruleSet) return null;
+  const rule = ruleSet[keyword];
+  if (!rule || typeof rule !== 'object') return null;
+  return rule;
+}
+
+function buildKeywordEmission(keyword, rule, argsText = '') {
+  if (!rule || typeof rule !== 'object') {
+    return { error: `missing rule for ${keyword}` };
+  }
+
+  if (rule.unsupported === true) {
+    const warning = Array.isArray(rule.feature_guard_warnings) && rule.feature_guard_warnings.length
+      ? String(rule.feature_guard_warnings[0].message || '').trim()
+      : `${keyword} is unsupported for the active profile`;
+    return { warning: warning || `${keyword} is unsupported for the active profile` };
+  }
+
+  let emit = typeof rule.emit === 'string' ? rule.emit.trim() : '';
+  if (!emit) {
+    return { error: `rule for ${keyword} does not define emit` };
+  }
+
+  if (keyword === 'SPINDLE_ON') {
+    const powerArg = String(argsText || '').trim().split(/\s+/)[0] || '';
+    emit = emit.replaceAll('{power}', powerArg || '');
+  }
+
+  return { emit };
+}
 
 /**
  * Parse high-level script into normalized statements.
- * Supports both direct GCOM (line-numbered) and high-level opcodes.
+ * Supports comments/metadata, direct line-numbered GCOM, and fixed abstract keywords.
  * 
  * Returns: { success, statements[], errors[], warnings[] }
  */
@@ -13,12 +59,6 @@ function parseHighLevelScript(source) {
   const errors = [];
   const warnings = [];
   const lines = source.split('\n');
-
-  // Build Tier 1 opcode names for regex
-  const tier1Names = Object.keys(TIER1_OPCODES || {});
-  const opcodePattern = tier1Names.length > 0 
-    ? new RegExp(`^(${tier1Names.join('|')})\\b`, 'i')
-    : null;
 
   lines.forEach((line, lineIdx) => {
     const lineNum = lineIdx + 1;
@@ -42,33 +82,14 @@ function parseHighLevelScript(source) {
       return;
     }
 
-    // Try Tier 1 opcode parsing
-    if (opcodePattern) {
-      const opcodeMatch = trimmed.match(opcodePattern);
-      if (opcodeMatch) {
-        const opcode = opcodeMatch[1].toUpperCase();
-        const args = trimmed.substring(opcodeMatch[0].length).trim();
-        
-        // Parse arguments (key=value pairs or positional)
-        const argMap = {};
-        if (args) {
-          // Try key=value format first
-          const kvPairs = args.split(/\s+/);
-          kvPairs.forEach(pair => {
-            const [key, value] = pair.split('=');
-            if (key && value !== undefined) {
-              argMap[key.toUpperCase()] = value;
-            } else if (key) {
-              // Positional argument: treated as flags or axis spec
-              argMap[key.toUpperCase()] = true;
-            }
-          });
-        }
-        
+    const keywordMatch = trimmed.match(/^([A-Z][A-Z0-9_]*)\b(.*)$/i);
+    if (keywordMatch) {
+      const keyword = keywordMatch[1].toUpperCase();
+      if (ABSTRACT_KEYWORDS.has(keyword)) {
         statements.push({
-          type: 'opcode',
-          opcode,
-          args: argMap,
+          type: 'abstract_keyword',
+          keyword,
+          argsText: String(keywordMatch[2] || '').trim(),
           sourceLineNum: lineNum,
           rawLine: trimmed
         });
@@ -77,15 +98,15 @@ function parseHighLevelScript(source) {
     }
 
     // Unrecognized format
-    warnings.push(`Line ${lineNum}: unrecognized format (expected "LINE_NUM GCODE", "OPCODE [args]", or comment)`);
+    warnings.push(`Line ${lineNum}: unrecognized format (expected "LINE_NUM GCODE", "HOME", or comment)`);
   });
 
   return { success: errors.length === 0, statements, errors, warnings };
 }
 
 /**
- * Lower parsed statements to IR nodes.
- * Maps GCOM/opcodes to abstract IR representation.
+ * Lower parsed statements to lightweight compile nodes.
+ * This slice avoids the Tier-1 opcode IR path and keeps only the data needed for stage-1 generation.
  * 
  * Returns: { success, irNodes[], errors[], warnings[] }
  */
@@ -96,51 +117,24 @@ function lowerToIR(statements, profile = null) {
 
   statements.forEach(stmt => {
     if (stmt.type === 'gcom_direct') {
-      // Pass through GCOM directly as diagnostic IR node
-      irNodes.push(createIRNode(
-        IR_NODE_TYPES.DIAGNOSTICS,
-        stmt.sourceLineNum,
-        {
-          kind: 'gcom_passthrough',
+      irNodes.push({
+        type: 'gcom_passthrough',
+        sourceLineNum: stmt.sourceLineNum,
+        payload: {
           content: stmt.content,
           lineNumber: stmt.lineNumber
         }
-      ));
-    } else if (stmt.type === 'opcode') {
-      // Map Tier 1 opcode to IR node
-      const opcodeId = stmt.opcode.toUpperCase();
-      const opcodedef = TIER1_OPCODES && TIER1_OPCODES[opcodeId];
-      
-      if (!opcodedef) {
-        errors.push(`Line ${stmt.sourceLineNum}: unknown opcode '${stmt.opcode}'`);
-        return;
-      }
-      
-      // Map opcode to IR type
-      let irType = IR_NODE_TYPES.DIAGNOSTICS;
-      if (opcodedef.category === 'motion') {
-        irType = IR_NODE_TYPES.MOTION;
-      } else if (opcodedef.category === 'state') {
-        irType = IR_NODE_TYPES.STATE_CHANGE;
-      } else if (opcodedef.category === 'setup') {
-        irType = IR_NODE_TYPES.SETUP;
-      } else if (opcodedef.category === 'tool') {
-        irType = IR_NODE_TYPES.TOOL_EVENT;
-      } else if (opcodedef.category === 'probe') {
-        irType = IR_NODE_TYPES.PROBE_EVENT;
-      } else if (opcodedef.category === 'io') {
-        irType = IR_NODE_TYPES.IO_EVENT;
-      }
-      
-      // Create IR node with opcode payload
-      const irNode = createIRNode(irType, stmt.sourceLineNum, {
-        kind: 'opcode',
-        opcode: opcodeId,
-        args: stmt.args,
-        opcodedef: opcodedef
       });
-      
-      irNodes.push(irNode);
+    } else if (stmt.type === 'abstract_keyword') {
+      irNodes.push({
+        type: 'abstract_keyword',
+        sourceLineNum: stmt.sourceLineNum,
+        payload: {
+          keyword: stmt.keyword,
+          argsText: stmt.argsText,
+          rawLine: stmt.rawLine
+        }
+      });
     }
   });
 
@@ -148,9 +142,8 @@ function lowerToIR(statements, profile = null) {
 }
 
 /**
- * Generate GCOM from IR nodes using profile lowering rules.
- * For stage-1: pass through GCOM, emit opcodes as comments with diagnostic hints.
- * Future stages: use profile.v2_preview.compile.abstract_ops for opcode→GCOM mapping.
+ * Generate GCOM from compile nodes using direct profile rule_set lowering.
+ * For this slice, abstract keywords are lowered by profile rule_set. Direct GCOM passes through unchanged.
  * 
  * Returns: { success, gcom: string, diagnostics: [] }
  */
@@ -160,48 +153,37 @@ function generateGCOMFromIR(irNodes, profile = null) {
   let lineNum = 1;
 
   irNodes.forEach(node => {
-    if (node.type === IR_NODE_TYPES.DIAGNOSTICS && node.payload.kind === 'gcom_passthrough') {
+    if (node.type === 'gcom_passthrough') {
       // Pass through GCOM line as-is
       lines.push(`${node.payload.lineNumber} ${node.payload.content}`);
       lineNum = Math.max(lineNum, node.payload.lineNumber + 1);
-    } else if (node.payload.kind === 'opcode') {
-      // Emit opcode as GCODE comment with diagnostics
-      const opcodeId = node.payload.opcode;
-      const opcodedef = node.payload.opcodedef;
-      const argsStr = Object.entries(node.payload.args)
-        .map(([k, v]) => v === true ? k : `${k}=${v}`)
-        .join(' ');
-      
-      // Generate GCODE from opcode (stage-1: use opcode→emit mapping or emit comment)
-      let gcode = `; [OPCODE:${opcodeId}]`;
-      
-      if (profile && profile.v2_preview && profile.v2_preview.compile && profile.v2_preview.compile.abstract_ops) {
-        const opcodeMapping = profile.v2_preview.compile.abstract_ops[opcodeId];
-        if (opcodeMapping && opcodeMapping.emit) {
-          gcode = opcodeMapping.emit;
-          if (opcodeMapping.wait) {
-            gcode += ` ; wait=${opcodeMapping.wait}`;
-          }
-        } else {
-          diagnostics.push(`Warning: Line ${node.sourceLineNum}: No profile mapping for opcode ${opcodeId}; emitting as comment`);
-        }
-      } else if (typeof getOpcodeMapping === 'function') {
-        const mapping = getOpcodeMapping(opcodeId, profile);
-        if (mapping && mapping.gcode) {
-          gcode = mapping.gcode;
-          if (mapping.wait) {
-            gcode += ` ; wait=${mapping.wait}`;
-          }
-        }
+    } else if (node.type === 'abstract_keyword') {
+      const keyword = node.payload.keyword;
+      const rule = getProfileKeywordRule(profile, keyword);
+      if (!rule) {
+        diagnostics.push(`Error: Line ${node.sourceLineNum}: Missing ${keyword} rule for profile ${getProfileId(profile) || 'unknown'}`);
+        return;
       }
-      
-      lines.push(`${lineNum} ${gcode}`);
+
+      const emission = buildKeywordEmission(keyword, rule, node.payload.argsText);
+      if (emission.error) {
+        diagnostics.push(`Error: Line ${node.sourceLineNum}: ${emission.error}`);
+        return;
+      }
+      if (emission.warning) {
+        diagnostics.push(`Warning: Line ${node.sourceLineNum}: ${emission.warning}`);
+        return;
+      }
+
+      lines.push(`${lineNum} ${emission.emit}`);
       lineNum++;
     }
   });
 
+  const hasErrors = diagnostics.some(d => String(d).startsWith('Error:'));
+
   return {
-    success: true,
+    success: !hasErrors,
     gcom: lines.join('\n'),
     diagnostics
   };
@@ -221,7 +203,7 @@ function compileWithRealPipeline(source, profile = null) {
       gcom: '',
       ir: [],
       diagnostics: parseResult.errors,
-      metadata: { stage: 'parse-error', profile_id: profile?.id }
+      metadata: { stage: 'parse-error', profile_id: getProfileId(profile) }
     };
   }
 
@@ -232,7 +214,7 @@ function compileWithRealPipeline(source, profile = null) {
       gcom: '',
       ir: lowerResult.irNodes,
       diagnostics: lowerResult.errors,
-      metadata: { stage: 'lower-error', profile_id: profile?.id }
+      metadata: { stage: 'lower-error', profile_id: getProfileId(profile) }
     };
   }
 
@@ -243,7 +225,7 @@ function compileWithRealPipeline(source, profile = null) {
       gcom: '',
       ir: lowerResult.irNodes,
       diagnostics: genResult.diagnostics,
-      metadata: { stage: 'codegen-error', profile_id: profile?.id }
+      metadata: { stage: 'codegen-error', profile_id: getProfileId(profile) }
     };
   }
 
@@ -254,8 +236,8 @@ function compileWithRealPipeline(source, profile = null) {
     diagnostics: [...parseResult.warnings, ...lowerResult.warnings, ...genResult.diagnostics],
     metadata: {
       stage: 'stage-1-real-pipeline',
-      profile_id: profile && typeof profile.id === 'string' ? profile.id : null,
-      tier1_opcodes_encountered: 0,
+      profile_id: getProfileId(profile),
+      abstract_keywords_encountered: parseResult.statements.filter(stmt => stmt.type === 'abstract_keyword').length,
       ir_nodes_generated: lowerResult.irNodes.length
     }
   };
