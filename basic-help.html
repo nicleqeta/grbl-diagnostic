@@ -799,8 +799,10 @@
 20 LET accel = {accel}
 30 LET distance = {distance}
 40 PRINT "BENCH START accel=" &amp; accel &amp; " distance=" &amp; distance
+45 SEND "G91" REQUIRE_OK
 50 SEND "G1 X" &amp; distance &amp; " F{x_feed}" BUFFERED
 60 SEND "G1 X-" &amp; distance &amp; " F{x_feed}" BUFFERED
+65 SEND "G90" REQUIRE_OK
 70 WAIT_IDLE {idle_timeout}
 80 PRINT "BENCH END accel=" &amp; accel &amp; " distance=" &amp; distance
 90 LET ms = BENCH_LAST_MS()
