@@ -8945,17 +8945,39 @@ function isValidControllerRegistryShape(registry) {
   if (registry.schema_version !== CONTROLLER_PROFILE_SCHEMA_VERSION) return false;
   if (registry.registry_id !== 'gcomposer-controller-profiles') return false;
   if (!registry.profiles || typeof registry.profiles !== 'object') return false;
-  return Boolean(registry.profiles['grbl-base'] && registry.profiles['grbl-vanilla'] && registry.profiles.fluidnc);
+  return Boolean(registry.profiles['grbl-vanilla'] && registry.profiles.fluidnc);
 }
 
 function buildResolvedControllerProfiles(registry) {
   const sourceProfiles = registry?.profiles || {};
   const resolved = {};
+  const hasBaseProfile = Boolean(sourceProfiles['grbl-base']);
   const base = sourceProfiles['grbl-base'] || {};
   for (const [profileId, profile] of Object.entries(sourceProfiles)) {
-    resolved[profileId] = profileId === 'grbl-base'
-      ? deepCloneJsonLike(profile)
-      : mergeProfileWithBase(base, profile);
+    const merged = (hasBaseProfile && profileId !== 'grbl-base')
+      ? mergeProfileWithBase(base, profile)
+      : deepCloneJsonLike(profile);
+    const machine = (merged.machine_description && typeof merged.machine_description === 'object')
+      ? merged.machine_description
+      : null;
+
+    if (machine) {
+      const normalized = {
+        ...merged,
+        ...machine
+      };
+      if (!normalized.ai_guidance && machine.ai_guidance) normalized.ai_guidance = machine.ai_guidance;
+      if (!normalized.ack_policy && machine.ack_policy) normalized.ack_policy = machine.ack_policy;
+      if (!normalized.connection_defaults && machine.connection_defaults) normalized.connection_defaults = machine.connection_defaults;
+      if (!normalized.capability_flags && machine.capability_flags) normalized.capability_flags = machine.capability_flags;
+      if (!normalized.boilerplate && machine.boilerplate_gcom) {
+        normalized.boilerplate = machine.boilerplate_gcom;
+      }
+      resolved[profileId] = normalized;
+    } else {
+      resolved[profileId] = merged;
+    }
+
     resolved[profileId].id = profileId;
   }
   return resolved;
