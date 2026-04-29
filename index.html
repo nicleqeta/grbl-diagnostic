@@ -2538,21 +2538,156 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       }
     },
     'grbl-vanilla': {
-      id: 'grbl-vanilla',
-      label: 'Vanilla GRBL',
-      inherits: 'grbl-base',
-      compatibility_rules: [
-        {
-          match: '^\\$Config/',
-          decision: 'block',
-          reason_code: 'FLUIDNC_ONLY_COMMAND',
-          message: 'This command is specific to FluidNC.'
+      machine_description: {
+        id: 'grbl-vanilla',
+        label: 'Vanilla GRBL',
+        controller_family: 'grbl',
+        status: 'stable',
+        axes: ['X', 'Y', 'Z'],
+        max_feed_rate: 6000,
+        arc_support: true,
+        capability_flags: {
+          supports_homing: true,
+          supports_machine_coordinates: true,
+          supports_tool_table: false,
+          supports_macro_call: false,
+          supports_canned_cycles: false,
+          supports_multiple_spindles: false
+        },
+        ack_policy: {
+          mode: 'required',
+          default_timeout_ms: 3500,
+          ok_regex: '^ok$',
+          error_regex: '^error:(\\d+)$',
+          alarm_regex: '^ALARM:(\\d+)$'
+        },
+        connection_defaults: {
+          primary_transport: 'serial-ascii',
+          baud_rate: 115200,
+          supports_usb_serial: true,
+          supports_websocket: true
+        },
+        ai_guidance: {
+          summary: 'Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.',
+          preferred_style: [
+            'Initialize parser state explicitly with G90 and unit mode.',
+            'Use conservative modal transitions and explicit feed rates.',
+            'Wrap setup commands with REQUIRE_OK on SEND.'
+          ],
+          avoid: [
+            'Do not emit FluidNC-specific config commands.',
+            'Do not assume macro or canned cycle support.',
+            'Do not emit advanced M-codes unless explicitly requested.'
+          ],
+          compatibility_policy: 'allow_warn_block'
+        },
+        boilerplate_gcom: {
+          title: 'Vanilla GRBL Starter',
+          description: 'Minimal setup sequence for common GRBL 1.1 machines.',
+          gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 STATUS\n70 END'
         }
-      ],
-      boilerplate: {
-        title: 'Vanilla GRBL Starter',
-        description: 'Minimal setup sequence for common GRBL 1.1 machines.',
-        gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 SEND "?"\n70 END'
+      },
+      rule_set: {
+        HOME: {
+          emit: 'SEND "$H" REQUIRE_OK',
+          parameter_bounds: {},
+          feature_guard_warnings: []
+        },
+        STATUS: {
+          emit: 'STATUS',
+          parameter_bounds: {},
+          feature_guard_warnings: []
+        },
+        RESET: {
+          emit: 'SOFT_RESET',
+          parameter_bounds: {},
+          feature_guard_warnings: []
+        },
+        SPINDLE_ON: {
+          emit: 'SEND "M3 S{power}" REQUIRE_OK',
+          parameter_bounds: {
+            power: {
+              min: 0,
+              max: 10000
+            }
+          },
+          feature_guard_warnings: []
+        },
+        PROBE: {
+          unsupported: true,
+          parameter_bounds: {},
+          feature_guard_warnings: [
+            {
+              message: 'PROBE is not enabled for grbl-vanilla in this phase.'
+            }
+          ]
+        }
+      },
+      operations: {
+        variables: {
+          x: {
+            description: 'Target X position',
+            default: 0
+          },
+          y: {
+            description: 'Target Y position',
+            default: 0
+          },
+          z: {
+            description: 'Target Z position',
+            default: 0
+          },
+          speed: {
+            description: 'Feed rate',
+            default: 1000
+          },
+          spindlespeed: {
+            description: 'Spindle/laser power',
+            default: 1000
+          },
+          dwell: {
+            description: 'Dwell time (seconds)',
+            default: 1
+          }
+        },
+        cut_move: {
+          template: [
+            'SEND "G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}" REQUIRE_OK'
+          ]
+        },
+        rapid_move: {
+          template: [
+            'SEND "G0 [X]{x}[Y]{y}[Z]{z}" REQUIRE_OK'
+          ]
+        },
+        tool_on: {
+          template: [
+            'SEND "M3 S{spindlespeed}" REQUIRE_OK'
+          ]
+        },
+        tool_off: {
+          template: [
+            'SEND "M5" REQUIRE_OK'
+          ]
+        },
+        dwell: {
+          template: [
+            'SEND "G4 P{dwell}" REQUIRE_OK'
+          ]
+        },
+        zero_all_axes: {
+          template: [
+            'SEND "G10 L20 P1 X0Y0Z0" REQUIRE_OK'
+          ]
+        },
+        job_end: {
+          template: [
+            'SEND "M2" REQUIRE_OK'
+          ]
+        }
+      },
+      compiler_strategy: {
+        name: 'grbl-1.1'
       }
     },
     fluidnc: {
@@ -9112,6 +9247,7 @@ async function loadControllerProfilesRegistry() {
   }
 
   if (!isValidControllerRegistryShape(registry)) {
+    console.warn('[gcomposer] Controller profile fallback mode active: fetched registry unavailable or invalid; using BUILTIN_CONTROLLER_PROFILE_FALLBACK.');
     if (registry) addLine('Controller profile registry is invalid; fallback profiles loaded', 'err');
     registry = deepCloneJsonLike(BUILTIN_CONTROLLER_PROFILE_FALLBACK);
   }
