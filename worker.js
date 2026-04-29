@@ -1331,11 +1331,11 @@ Before emitting a script, verify:
           const rawReply = String(replyText || '');
           const fencedMatch = rawReply.match(/```gcom\s*\n([\s\S]*?)```/i);
           if (!fencedMatch) {
-            return { reply: rawReply, diagnostics: [] };
+            return { reply: rawReply, diagnostics: [], substitutionCount: 0, invoked: true };
           }
 
           if (!ruleSet || typeof ruleSet !== 'object' || Array.isArray(ruleSet) || !operations || typeof operations !== 'object' || Array.isArray(operations)) {
-            return { reply: rawReply, diagnostics: [] };
+            return { reply: rawReply, diagnostics: [], substitutionCount: 0, invoked: true };
           }
 
           const supportsKeyword = (keyword) => {
@@ -1348,7 +1348,7 @@ Before emitting a script, verify:
             ? operations.variables
             : null;
           if (!operationVariables) {
-            return { reply: rawReply, diagnostics: [] };
+            return { reply: rawReply, diagnostics: [], substitutionCount: 0, invoked: true };
           }
 
           const resolveOperationVariableRole = (matcher) => {
@@ -1395,6 +1395,7 @@ Before emitting a script, verify:
 
           const repairDiagnostics = [];
           const repairedLines = [];
+          let substitutionCount = 0;
           let lastNumberedLine = 0;
 
           for (let index = 0; index < rawLines.length; index += 1) {
@@ -1421,8 +1422,10 @@ Before emitting a script, verify:
                 correctedFeedText = commandText.replace(spindleFeedPattern, `F{${feedVariableName}}`);
               }
               if (correctedFeedText !== commandText && /\bG1\b/i.test(commandText)) {
+                const feedMatches = commandText.match(new RegExp(`\\bF\\{\\s*${spindleVariableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}`, 'gi'));
                 commandText = correctedFeedText;
                 stmt = `SEND "${commandText}"${suffix}`;
+                substitutionCount += Array.isArray(feedMatches) ? feedMatches.length : 0;
                 repairDiagnostics.push(`line ${lineNumber}: repaired feed placeholder F{${spindleVariableName}} -> F{${feedVariableName}}`);
               }
 
@@ -1485,6 +1488,7 @@ Before emitting a script, verify:
 
                   if (!sendExprParts.length) sendExprParts.push(`"${escapeQuoted(commandText)}"`);
                   stmt = `SEND ${sendExprParts.join(' & ')}${suffix}`;
+                  substitutionCount += expressionPlaceholders.length;
                   repairDiagnostics.push(`line ${lineNumber}: rewrote inline SEND expression(s) to LET + concatenation`);
                 } else {
                   repairDiagnostics.push(`line ${lineNumber}: skipped inline-expression rewrite (no available line numbers for LET insertion)`);
@@ -1497,12 +1501,12 @@ Before emitting a script, verify:
           }
 
           if (!repairDiagnostics.length) {
-            return { reply: rawReply, diagnostics: [] };
+            return { reply: rawReply, diagnostics: [], substitutionCount, invoked: true };
           }
 
           const repairedBlock = repairedLines.join('\n');
           const repairedReply = rawReply.replace(fencedMatch[0], `\`\`\`gcom\n${repairedBlock}\n\`\`\``);
-          return { reply: repairedReply, diagnostics: repairDiagnostics };
+          return { reply: repairedReply, diagnostics: repairDiagnostics, substitutionCount, invoked: true };
         };
 
         const asksForTextEngraving = (() => {
@@ -1560,7 +1564,11 @@ Before emitting a script, verify:
           if (fenceCount % 2 === 1) reply += '\n```';
         }
 
+        let repairHeader = 'skipped';
+        let repairCountHeader = '0';
         const repairResult = applyDeterministicGcomRepair(reply, activeProfileRuleSet, activeProfileOperations);
+        repairHeader = repairResult && repairResult.invoked ? 'invoked' : 'skipped';
+        repairCountHeader = String(Number.isFinite(repairResult && repairResult.substitutionCount) ? repairResult.substitutionCount : 0);
         if (repairResult.diagnostics.length) {
           for (const message of repairResult.diagnostics) {
             console.log(`[gcom-repair] ${message}`);
@@ -1569,7 +1577,12 @@ Before emitting a script, verify:
         }
 
         return new Response(JSON.stringify({ reply, repairMeta: { mode, usedRepairSystem: mode === 'repair' } }), {
-          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-gcom-repair': repairHeader,
+            'x-gcom-repair-count': repairCountHeader,
+            ...SCRIPT_CORS_HEADERS,
+          },
         });
       } catch (e) {
         return new Response(JSON.stringify({ error: `AI inference failed: ${e.message || e}` }), {
