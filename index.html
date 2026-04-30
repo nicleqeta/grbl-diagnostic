@@ -5288,14 +5288,20 @@ function basicSplitStatementChain(statement) {
     return /^REM(?:\s|$)/i.test(source.slice(probe));
   };
   let remMode = updateRemMode();
+  let inSingleStr = false;
   for (let i = 0; i < source.length; i++) {
-    if (!inStr && remMode) break;
+    if (!inStr && !inSingleStr && remMode) break;
     const ch = source[i];
-    if (ch === '"') {
-      inStr = !inStr;
-      continue;
+    if (ch === '"' && !inSingleStr) { inStr = !inStr; continue; }
+    if (ch === "'" && !inStr) { inSingleStr = !inSingleStr; continue; }
+    if (inStr || inSingleStr) continue;
+    // ; is an inline comment — discard everything from here
+    if (ch === ';') {
+      const part = source.slice(start, i).trim();
+      if (part) segments.push(part);
+      return segments;
     }
-    if (!inStr && ch === ':') {
+    if (ch === ':') {
       const part = source.slice(start, i).trim();
       if (part) segments.push(part);
       start = i + 1;
