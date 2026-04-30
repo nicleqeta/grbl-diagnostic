@@ -66,14 +66,29 @@ function parseHighLevelScript(source) {
   const statements = [];
   const errors = [];
   const warnings = [];
+  const metadata = {};
   const lines = source.split('\n');
 
   lines.forEach((line, lineIdx) => {
     const lineNum = lineIdx + 1;
     const trimmed = line.trim();
     
-    if (!trimmed || trimmed.startsWith('REM') || trimmed.startsWith(';')) {
+    if (!trimmed || trimmed.startsWith('REM')) {
       return; // Skip comments and empty lines
+    }
+
+    if (trimmed.startsWith(';')) {
+      const headerMatch = trimmed.match(/^;\s*([A-Z_]+)\s*:\s*(.*)$/i);
+      if (headerMatch) {
+        const key = String(headerMatch[1] || '').toUpperCase();
+        const value = String(headerMatch[2] || '').trim();
+        if (key === 'TITLE') metadata.title = value;
+        if (key === 'VERSION') metadata.version = value;
+        if (key === 'AUTHOR') metadata.author = value;
+        if (key === 'DESCRIPTION') metadata.description = value;
+        if (key === 'PROFILE') metadata.profile_id_hint = value;
+      }
+      return; // Metadata/comment lines do not emit compile statements
     }
 
     // Try GCOM line-numbered format first
@@ -109,7 +124,7 @@ function parseHighLevelScript(source) {
     warnings.push(`Line ${lineNum}: unrecognized format (expected "LINE_NUM GCODE", "HOME", or comment)`);
   });
 
-  return { success: errors.length === 0, statements, errors, warnings };
+  return { success: errors.length === 0, statements, errors, warnings, metadata };
 }
 
 /**
@@ -226,13 +241,17 @@ function generateGCOMFromIR(irNodes, profile = null) {
  */
 function compileWithRealPipeline(source, profile = null) {
   const parseResult = parseHighLevelScript(source);
+  const profileIdHint = (parseResult.metadata && typeof parseResult.metadata.profile_id_hint === 'string' && parseResult.metadata.profile_id_hint.trim())
+    ? parseResult.metadata.profile_id_hint.trim()
+    : '';
+  const profileIdHintMetadata = profileIdHint ? { profile_id_hint: profileIdHint } : {};
   if (!parseResult.success) {
     return {
       success: false,
       gcom: '',
       ir: [],
       diagnostics: parseResult.errors,
-      metadata: { stage: 'parse-error', profile_id: getProfileId(profile) }
+      metadata: { stage: 'parse-error', profile_id: getProfileId(profile), ...profileIdHintMetadata }
     };
   }
 
@@ -243,7 +262,7 @@ function compileWithRealPipeline(source, profile = null) {
       gcom: '',
       ir: lowerResult.irNodes,
       diagnostics: lowerResult.errors,
-      metadata: { stage: 'lower-error', profile_id: getProfileId(profile) }
+      metadata: { stage: 'lower-error', profile_id: getProfileId(profile), ...profileIdHintMetadata }
     };
   }
 
@@ -254,7 +273,7 @@ function compileWithRealPipeline(source, profile = null) {
       gcom: '',
       ir: lowerResult.irNodes,
       diagnostics: genResult.diagnostics,
-      metadata: { stage: 'codegen-error', profile_id: getProfileId(profile) }
+      metadata: { stage: 'codegen-error', profile_id: getProfileId(profile), ...profileIdHintMetadata }
     };
   }
 
@@ -267,7 +286,8 @@ function compileWithRealPipeline(source, profile = null) {
       stage: 'stage-1-real-pipeline',
       profile_id: getProfileId(profile),
       abstract_keywords_encountered: parseResult.statements.filter(stmt => stmt.type === 'abstract_keyword').length,
-      ir_nodes_generated: lowerResult.irNodes.length
+      ir_nodes_generated: lowerResult.irNodes.length,
+      ...profileIdHintMetadata
     }
   };
 }

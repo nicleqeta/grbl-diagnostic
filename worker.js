@@ -1106,6 +1106,24 @@ Before emitting a script, verify:
           composerParts.push(lines.join('\n'));
           composerParts.push('```');
         }
+        const scriptMetadata = (composerCtx.metadata && typeof composerCtx.metadata === 'object' && !Array.isArray(composerCtx.metadata))
+          ? composerCtx.metadata
+          : null;
+        const scriptProfileHintFromMetadata = (scriptMetadata && typeof scriptMetadata.profile_id_hint === 'string' && scriptMetadata.profile_id_hint.trim())
+          ? scriptMetadata.profile_id_hint.trim()
+          : '';
+        const scriptProfileHintFromHeader = (() => {
+          if (!composerCtx.scriptSource || !String(composerCtx.scriptSource).trim()) return '';
+          const lines = String(composerCtx.scriptSource).split('\n').slice(0, 120);
+          for (const line of lines) {
+            const m = String(line || '').match(/^\s*;\s*PROFILE\s*:\s*(.+?)\s*$/i);
+            if (m && String(m[1] || '').trim()) {
+              return String(m[1]).trim();
+            }
+          }
+          return '';
+        })();
+        const scriptProfileHint = scriptProfileHintFromMetadata || scriptProfileHintFromHeader;
         if (terminalCtx && Array.isArray(terminalCtx.lines) && terminalCtx.lines.length) {
           const source = String(terminalCtx.source || 'terminal-output');
           const requestedByUser = terminalCtx.requestedByUser === true ? 'yes' : 'no';
@@ -1163,9 +1181,10 @@ Before emitting a script, verify:
           contractParts.push('=== MACHINE CONTRACT (MUST FOLLOW) ===');
 
           let machineProfile = null;
-          const profileRef = (typeof composerCtx.profileRef === 'string' && composerCtx.profileRef.trim())
+          const explicitProfileRef = (typeof composerCtx.profileRef === 'string' && composerCtx.profileRef.trim())
             ? composerCtx.profileRef.trim()
             : '';
+          const profileRef = explicitProfileRef || scriptProfileHint;
 
           if (profileRef && env.GCOM_SCRIPTS) {
             try {
