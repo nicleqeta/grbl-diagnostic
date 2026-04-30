@@ -445,6 +445,21 @@
       </div>
     </div>
 
+    <!-- Transport tuning -->
+    <div class="section">
+      <div class="section-label">Transport Tuning</div>
+      <div class="two-col">
+        <div class="field-row" style="margin:0">
+          <label>RX buffer bytes <small style="color:var(--text-muted)">(fallback)</small></label>
+          <input type="number" id="tuning-rx-buffer" placeholder="64" min="16" max="4096" step="1">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Planner slots <small style="color:var(--text-muted)">(fallback)</small></label>
+          <input type="number" id="tuning-planner-slots" placeholder="15" min="1" max="256" step="1">
+        </div>
+      </div>
+    </div>
+
   </div><!-- /left-panel -->
 
   <!-- Right panel — preview -->
@@ -557,6 +572,8 @@ const snipEmpty     = document.getElementById('snippets-empty');
 const presetFeed    = document.getElementById('preset-feed');
 const presetPower   = document.getElementById('preset-power');
 const presetRapid   = document.getElementById('preset-rapid');
+const tuningRxBuffer = document.getElementById('tuning-rx-buffer');
+const tuningPlannerSlots = document.getElementById('tuning-planner-slots');
 const aiPreview     = document.getElementById('ai-preview');
 const rosettaGrbl   = document.getElementById('rosetta-grbl');
 const rosettaFluid  = document.getElementById('rosetta-fluid');
@@ -693,6 +710,13 @@ function buildProfile() {
   if (!isNaN(dr) && dr >= 0) presets.rapid_feed    = dr;
   if (Object.keys(presets).length) profile.presets = presets;
 
+  const rxBufferRaw = Math.trunc(Number(tuningRxBuffer.value));
+  const plannerSlotsRaw = Math.trunc(Number(tuningPlannerSlots.value));
+  const tuning = {};
+  if (Number.isFinite(rxBufferRaw) && rxBufferRaw >= 16 && rxBufferRaw <= 4096) tuning.rx_buffer_bytes = rxBufferRaw;
+  if (Number.isFinite(plannerSlotsRaw) && plannerSlotsRaw >= 1 && plannerSlotsRaw <= 256) tuning.planner_slots = plannerSlotsRaw;
+  if (Object.keys(tuning).length) profile.transport_tuning = tuning;
+
   return profile;
 }
 
@@ -708,6 +732,8 @@ function populateForm(profile) {
   presetFeed.value         = (profile.presets && profile.presets.default_feed  != null) ? profile.presets.default_feed  : '';
   presetPower.value        = (profile.presets && profile.presets.default_power != null) ? profile.presets.default_power : '';
   presetRapid.value        = (profile.presets && profile.presets.rapid_feed    != null) ? profile.presets.rapid_feed    : '';
+  tuningRxBuffer.value     = (profile.transport_tuning && profile.transport_tuning.rx_buffer_bytes != null) ? profile.transport_tuning.rx_buffer_bytes : '';
+  tuningPlannerSlots.value = (profile.transport_tuning && profile.transport_tuning.planner_slots != null) ? profile.transport_tuning.planner_slots : '';
   commands = (profile.commands || []).map(c => ({ name: c.name || '', description: c.description || '', gcom: c.gcom || '' }));
   snippets = (profile.snippets || []).map(s => ({ name: s.name || '', gcom: s.gcom || '' }));
   renderCommands();
@@ -789,7 +815,7 @@ function onFormChange() {
 
 // ── Wire up all form inputs to onFormChange ──
 [baseCtrlSel, metaName, metaFirmware, metaTool, metaBedW, metaBedH, metaNotes,
- presetFeed, presetPower, presetRapid].forEach(el => {
+ presetFeed, presetPower, presetRapid, tuningRxBuffer, tuningPlannerSlots].forEach(el => {
   el.addEventListener('input', onFormChange);
   el.addEventListener('change', onFormChange);
 });

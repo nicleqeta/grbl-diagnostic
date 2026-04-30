@@ -2842,6 +2842,8 @@ const BASIC_BUFFERED_RX_BYTES = 64; // fallback when Bf: has not been observed
 const BASIC_SEND_MODE_AUTO_BUFFER_UTILIZATION_THRESHOLD = 0.5;
 let grblObservedRxBufBytes = 0; // largest RX-buffer-available bytes seen in Bf: reports
 let grblObservedPlannerSlots = 0; // largest planner-available slots seen in Bf: reports
+let machineProfileRxBufferHint = 0; // fallback from active machine profile transport_tuning.rx_buffer_bytes
+let machineProfilePlannerSlotsHint = 0; // fallback from active machine profile transport_tuning.planner_slots
 
 // Scriptable runtime settings — scripts can change these with SET; they reset after each run.
 // Defaults are tuned for immediate command pacing while preserving historical ack and connect timings.
@@ -2879,11 +2881,31 @@ function basicNormalizeSendMode(value) {
 }
 
 function basicGetSerialBufferCapacityEstimate() {
-  return Number(grblObservedRxBufBytes || basicScriptSettings.rxBuffer || BASIC_BUFFERED_RX_BYTES);
+  return Number(
+    grblObservedRxBufBytes ||
+    basicScriptSettings.rxBuffer ||
+    machineProfileRxBufferHint ||
+    BASIC_BUFFERED_RX_BYTES
+  );
 }
 
 function basicGetPlannerBufferCapacityEstimate() {
-  return grblObservedPlannerSlots > 0 ? Number(grblObservedPlannerSlots) : -1;
+  if (grblObservedPlannerSlots > 0) return Number(grblObservedPlannerSlots);
+  if (machineProfilePlannerSlotsHint > 0) return Number(machineProfilePlannerSlotsHint);
+  return -1;
+}
+
+function parseMachineProfilePositiveIntHint(value, min = 1, max = Number.MAX_SAFE_INTEGER) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 0;
+  if (parsed < min || parsed > max) return 0;
+  return parsed;
+}
+
+function applyMachineProfileTransportTuningHints(profile) {
+  const tuning = profile && typeof profile === 'object' ? profile.transport_tuning : null;
+  machineProfileRxBufferHint = parseMachineProfilePositiveIntHint(tuning?.rx_buffer_bytes, 16, 4096);
+  machineProfilePlannerSlotsHint = parseMachineProfilePositiveIntHint(tuning?.planner_slots, 1, 256);
 }
 
 function basicResolveBufferedIntentMode(commandText = '') {
@@ -12136,6 +12158,7 @@ function machineProfileControlInit() {
       .then(profile => {
         activeMachineProfile = profile;
         activeMachineProfileId = id;
+        applyMachineProfileTransportTuningHints(profile);
         const name = (profile && profile.meta && profile.meta.name) ? profile.meta.name : id;
         updatePill(name);
         if (mpdLoadInput) mpdLoadInput.value = '';
@@ -12162,6 +12185,7 @@ function machineProfileControlInit() {
   mpdClear.addEventListener('click', () => {
     activeMachineProfile = null;
     activeMachineProfileId = null;
+    applyMachineProfileTransportTuningHints(null);
     updatePill(null);
     closeDropdown();
   });
