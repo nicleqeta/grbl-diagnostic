@@ -104,6 +104,7 @@
   .mpd-item:hover { background:var(--surface2); color:var(--teal); }
   /* ── Machine defaults overlay ── */
   .machine-defaults-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; display:flex; align-items:center; justify-content:center; }
+  .machine-defaults-overlay[hidden] { display:none; }
   .machine-defaults-panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; width:min(480px,90vw); max-height:80vh; display:flex; flex-direction:column; overflow:hidden; }
   .machine-defaults-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); font-weight:600; color:var(--text); font-size:13px; }
   .machine-defaults-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:2px 6px; }
