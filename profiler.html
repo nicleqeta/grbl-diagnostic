@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCOM Profiler</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3347;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --green: #22c55e;
+    --green-dim: #166534;
+    --red: #ef4444;
+    --red-dim: #7f1d1d;
+    --amber: #f59e0b;
+    --amber-dim: #78350f;
+    --blue: #3b82f6;
+    --blue-dim: #1e3a5f;
+    --teal: #14b8a6;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .topbar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    flex: 1;
+  }
+  .topbar h1 span {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  /* ── Main layout ── */
+  .profiler-layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .left-panel {
+    width: 480px;
+    min-width: 320px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .right-panel {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  /* ── Shared controls ── */
+  select, input[type="text"], input[type="number"], textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: var(--sans);
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select:focus, input:focus, textarea:focus { border-color: var(--teal); }
+  select option { background: #1a1d27; }
+  textarea {
+    resize: vertical;
+    min-height: 70px;
+    line-height: 1.5;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .btn {
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    transition: all 0.15s;
+    font-family: var(--sans);
+    white-space: nowrap;
+  }
+  .btn:hover { background: #2a2f45; border-color: #3e4460; }
+  .btn:active { transform: scale(0.98); }
+  .btn.primary { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: #0d9488; }
+  .btn.danger { background: transparent; border-color: transparent; color: var(--text-muted); padding: 4px 8px; font-size: 12px; }
+  .btn.danger:hover { color: var(--red); background: var(--red-dim); border-color: #7f1d1d; }
+  .btn.back { background: var(--surface2); border-color: var(--border); color: var(--text-dim); }
+  .btn.back:hover { color: var(--text); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.full { width: 100%; }
+
+  /* ── Section ── */
+  .section {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .field-row {
+    margin-bottom: 8px;
+  }
+  .field-row label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .field-row label .req { color: var(--teal); }
+  .field-row input, .field-row select, .field-row textarea {
+    margin-bottom: 0;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+
+  /* ── Commands / Snippets table ── */
+  .cmd-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .cmd-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cmd-table td {
+    padding: 4px 4px;
+    vertical-align: top;
+  }
+  .cmd-table td input, .cmd-table td textarea {
+    font-size: 12px;
+    padding: 5px 7px;
+    margin-bottom: 0;
+    min-height: unset;
+  }
+  .cmd-table td textarea {
+    min-height: 46px;
+    resize: vertical;
+  }
+  .cmd-table .col-name  { width: 120px; }
+  .cmd-table .col-desc  { width: 140px; }
+  .cmd-table .col-gcom  { }
+  .cmd-table .col-del   { width: 36px; text-align: center; }
+  .cmd-table .col-snip-name { width: 140px; }
+  .cmd-table .col-snip-gcom { }
+  .cmd-table .col-snip-del  { width: 36px; text-align: center; }
+  .cmd-empty { font-size: 12px; color: var(--text-muted); padding: 8px 0; }
+  .add-row-btn {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: all 0.15s;
+    margin-top: 2px;
+  }
+  .add-row-btn:hover { border-color: var(--teal); color: var(--teal); background: rgba(20,184,166,0.06); }
+
+  /* ── Right panel sections ── */
+  .preview-section {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .preview-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .preview-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .preview-block .ph { color: var(--text-muted); font-style: italic; }
+  .preview-block .hl { color: var(--teal); }
+  .preview-block .hd { color: var(--text); font-weight: 600; }
+
+  .rosetta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .rosetta-col-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .rosetta-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Bottom bar ── */
+  .bottombar {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .bottombar-left { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+  .bottombar-right { display: flex; align-items: center; gap: 8px; }
+  .result-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--teal);
+    min-width: 160px;
+    display: none;
+  }
+  .result-box.visible { display: flex; flex-direction: column; gap: 2px; }
+  .copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--teal);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+    font-family: var(--sans);
+  }
+  .copy-btn:hover { color: #8ee9de; }
+  .load-row { display: flex; align-items: center; gap: 6px; }
+  .load-row input {
+    width: 100px;
+    margin-bottom: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+  .status-msg {
+    font-size: 12px;
+    padding: 4px 0;
+  }
+  .status-msg.ok { color: var(--green); }
+  .status-msg.err { color: var(--red); }
+  .status-msg.info { color: var(--text-muted); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<header class="topbar">
+  <h1>GCOM Profiler <span>machine context editor</span></h1>
+  <button class="btn back" onclick="window.open('/', '_blank', 'noopener')">← Back to app</button>
+</header>
+
+<!-- Main layout -->
+<div class="profiler-layout" style="flex:1; min-height:0; overflow:hidden; display:flex;">
+
+  <!-- Left panel — form -->
+  <div class="left-panel">
+
+    <!-- Controller selector -->
+    <div class="section">
+      <div class="section-label">Base controller</div>
+      <div class="field-row">
+        <label>Controller profile <span class="req">*</span></label>
+        <select id="base-controller">
+          <option value="grbl-vanilla">Vanilla GRBL</option>
+          <option value="fluidnc">FluidNC</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Machine meta -->
+    <div class="section">
+      <div class="section-label">Machine info</div>
+      <div class="field-row">
+        <label>Machine name <span class="req">*</span></label>
+        <input type="text" id="meta-name" placeholder="e.g. Ortur LM2 Pro S2">
+      </div>
+      <div class="two-col">
+        <div class="field-row" style="margin:0">
+          <label>Firmware</label>
+          <input type="text" id="meta-firmware" placeholder="e.g. 1.1h">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Tool type</label>
+          <input type="text" id="meta-tool" placeholder="e.g. diode laser">
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="field-row" style="margin:0">
+          <label>Bed width (mm)</label>
+          <input type="number" id="meta-bed-w" placeholder="400" min="0">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Bed height (mm)</label>
+          <input type="number" id="meta-bed-h" placeholder="400" min="0">
+        </div>
+      </div>
+      <div class="field-row" style="margin-top:8px">
+        <label>Notes <small style="color:var(--text-muted)">(injected into AI context)</small></label>
+        <textarea id="meta-notes" rows="3" placeholder="Any machine-specific notes the AI should know…"></textarea>
+      </div>
+    </div>
+
+    <!-- Commands -->
+    <div class="section">
+      <div class="section-label">Commands <small style="color:var(--text-muted);text-transform:none;letter-spacing:0;font-size:10px">— plain GCOM examples for the AI</small></div>
+      <table class="cmd-table" id="commands-table">
+        <thead>
+          <tr>
+            <th class="col-name">Name</th>
+            <th class="col-desc">Description</th>
+            <th class="col-gcom">GCOM line</th>
+            <th class="col-del"></th>
+          </tr>
+        </thead>
+        <tbody id="commands-tbody"></tbody>
+      </table>
+      <div id="commands-empty" class="cmd-empty">No commands yet — add one below.</div>
+      <button class="add-row-btn" id="add-command-btn">+ Add command</button>
+      <datalist id="command-name-suggestions">
+        <option value="job_start">
+        <option value="job_end">
+        <option value="tool_on_sequence">
+        <option value="tool_off_sequence">
+        <option value="home">
+        <option value="rapid_move">
+        <option value="cut_move">
+      </datalist>
+    </div>
+
+    <!-- Snippets -->
+    <div class="section">
+      <div class="section-label">Snippets <small style="color:var(--text-muted);text-transform:none;letter-spacing:0;font-size:10px">— named reusable GCOM blocks</small></div>
+      <table class="cmd-table" id="snippets-table">
+        <thead>
+          <tr>
+            <th class="col-snip-name">Name</th>
+            <th class="col-snip-gcom">GCOM block</th>
+            <th class="col-snip-del"></th>
+          </tr>
+        </thead>
+        <tbody id="snippets-tbody"></tbody>
+      </table>
+      <div id="snippets-empty" class="cmd-empty">No snippets yet.</div>
+      <button class="add-row-btn" id="add-snippet-btn">+ Add snippet</button>
+    </div>
+
+    <!-- Presets -->
+    <div class="section">
+      <div class="section-label">Presets</div>
+      <div class="three-col">
+        <div class="field-row" style="margin:0">
+          <label>Default feed (mm/min)</label>
+          <input type="number" id="preset-feed" placeholder="1000" min="0">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Default power</label>
+          <input type="number" id="preset-power" placeholder="255" min="0">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Rapid feed (mm/min)</label>
+          <input type="number" id="preset-rapid" placeholder="3000" min="0">
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /left-panel -->
+
+  <!-- Right panel — preview -->
+  <div class="right-panel">
+
+    <!-- AI preview -->
+    <div class="preview-section">
+      <div class="preview-section-label">AI will see this for your machine</div>
+      <div class="preview-block" id="ai-preview"><span class="ph">Fill in the form to see what the AI receives as context for this machine…</span></div>
+    </div>
+
+    <!-- Rosetta comparison -->
+    <div class="preview-section">
+      <div class="preview-section-label">Rosetta — controller boilerplate reference</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Default starter GCOM for each controller flavor. Not injected into the AI — for your reference when writing commands.</p>
+      <div class="rosetta-grid">
+        <div>
+          <div class="rosetta-col-label">Vanilla GRBL</div>
+          <div class="rosetta-block" id="rosetta-grbl"></div>
+        </div>
+        <div>
+          <div class="rosetta-col-label">FluidNC</div>
+          <div class="rosetta-block" id="rosetta-fluid"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /right-panel -->
+
+</div><!-- /profiler-layout -->
+
+<!-- Bottom bar -->
+<div class="bottombar">
+  <div class="bottombar-left">
+    <button class="btn primary" id="save-btn">Save and get link</button>
+    <div class="result-box" id="result-box">
+      <div id="result-id-line"></div>
+      <div id="result-header-line" style="color:var(--text-dim)"></div>
+      <button class="copy-btn" id="copy-header-btn">Copy ;PROFILE: line</button>
+    </div>
+    <span class="status-msg" id="save-status"></span>
+  </div>
+  <div class="bottombar-right">
+    <div class="load-row">
+      <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">Load by ID:</label>
+      <input type="text" id="load-id-input" placeholder="abc123" maxlength="32" spellcheck="false">
+      <button class="btn" id="load-btn">Load</button>
+    </div>
+    <span class="status-msg" id="load-status"></span>
+  </div>
+</div>
+
+<script>
+// ── Known controller data (embedded — matches controller-profiles.v1.json) ──
+const CONTROLLER_DATA = {
+  'grbl-vanilla': {
+    label: 'Vanilla GRBL',
+    boilerplate: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 STATUS\n70 END',
+    guidance: {
+      summary: 'Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.',
+      preferred_style: [
+        'Initialize parser state explicitly with G90 and unit mode.',
+        'Use conservative modal transitions and explicit feed rates.',
+        'Wrap setup commands with REQUIRE_OK on SEND.'
+      ],
+      avoid: [
+        'Do not emit FluidNC-specific config commands.',
+        'Do not assume macro or canned cycle support.',
+        'Do not emit advanced M-codes unless explicitly requested.'
+      ]
+    }
+  },
+  'fluidnc': {
+    label: 'FluidNC',
+    boilerplate: '10 PRINT "FluidNC starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 STATUS\n50 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n60 END',
+    guidance: {
+      summary: 'Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.',
+      preferred_style: [
+        'Start from GRBL-safe command forms.',
+        'Use FluidNC config commands only when profile-specific configuration is intended.',
+        'Annotate any profile-specific command in generated explanations.'
+      ],
+      avoid: [
+        'Do not assume every machine exposes identical FluidNC extensions.',
+        'Do not replace standard GRBL flow with config commands unless requested.',
+        'Do not silently downgrade blocked commands.'
+      ]
+    }
+  }
+};
+
+const DRAFT_KEY = 'gcom_profiler_draft';
+
+// ── State ──
+let commands = [];   // [{name, description, gcom}]
+let snippets = [];   // [{name, gcom}]
+
+// ── DOM refs ──
+const baseCtrlSel   = document.getElementById('base-controller');
+const metaName      = document.getElementById('meta-name');
+const metaFirmware  = document.getElementById('meta-firmware');
+const metaTool      = document.getElementById('meta-tool');
+const metaBedW      = document.getElementById('meta-bed-w');
+const metaBedH      = document.getElementById('meta-bed-h');
+const metaNotes     = document.getElementById('meta-notes');
+const cmdsTbody     = document.getElementById('commands-tbody');
+const cmdsEmpty     = document.getElementById('commands-empty');
+const snipTbody     = document.getElementById('snippets-tbody');
+const snipEmpty     = document.getElementById('snippets-empty');
+const presetFeed    = document.getElementById('preset-feed');
+const presetPower   = document.getElementById('preset-power');
+const presetRapid   = document.getElementById('preset-rapid');
+const aiPreview     = document.getElementById('ai-preview');
+const rosettaGrbl   = document.getElementById('rosetta-grbl');
+const rosettaFluid  = document.getElementById('rosetta-fluid');
+const saveBtn       = document.getElementById('save-btn');
+const resultBox     = document.getElementById('result-box');
+const resultIdLine  = document.getElementById('result-id-line');
+const resultHdrLine = document.getElementById('result-header-line');
+const copyHdrBtn    = document.getElementById('copy-header-btn');
+const saveStatus    = document.getElementById('save-status');
+const loadIdInput   = document.getElementById('load-id-input');
+const loadBtn       = document.getElementById('load-btn');
+const loadStatus    = document.getElementById('load-status');
+
+// ── Rosetta panel — static content ──
+rosettaGrbl.textContent  = CONTROLLER_DATA['grbl-vanilla'].boilerplate;
+rosettaFluid.textContent = CONTROLLER_DATA['fluidnc'].boilerplate;
+
+// ── Commands table ──
+function renderCommands() {
+  cmdsTbody.innerHTML = '';
+  cmdsEmpty.style.display = commands.length ? 'none' : 'block';
+  commands.forEach((cmd, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="col-name">
+        <input type="text" list="command-name-suggestions" value="${esc(cmd.name)}" placeholder="job_start" data-i="${i}" data-field="name">
+      </td>
+      <td class="col-desc">
+        <input type="text" value="${esc(cmd.description||'')}" placeholder="Optional description" data-i="${i}" data-field="description">
+      </td>
+      <td class="col-gcom">
+        <textarea rows="2" placeholder="10 SEND &quot;G28&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(cmd.gcom)}</textarea>
+      </td>
+      <td class="col-del">
+        <button class="btn danger" title="Remove" data-del-cmd="${i}">✕</button>
+      </td>`;
+    tr.querySelectorAll('[data-field]').forEach(el => {
+      el.addEventListener('input', e => {
+        commands[i][e.target.dataset.field] = e.target.value;
+        onFormChange();
+      });
+    });
+    tr.querySelector(`[data-del-cmd="${i}"]`).addEventListener('click', () => {
+      commands.splice(i, 1);
+      renderCommands();
+      onFormChange();
+    });
+    cmdsTbody.appendChild(tr);
+  });
+}
+
+document.getElementById('add-command-btn').addEventListener('click', () => {
+  commands.push({ name: '', description: '', gcom: '' });
+  renderCommands();
+  // focus the name cell of the new row
+  const rows = cmdsTbody.querySelectorAll('tr');
+  if (rows.length) rows[rows.length - 1].querySelector('input').focus();
+  onFormChange();
+});
+
+// ── Snippets table ──
+function renderSnippets() {
+  snipTbody.innerHTML = '';
+  snipEmpty.style.display = snippets.length ? 'none' : 'block';
+  snippets.forEach((snip, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="col-snip-name">
+        <input type="text" value="${esc(snip.name)}" placeholder="init_block" data-i="${i}" data-field="name">
+      </td>
+      <td class="col-snip-gcom">
+        <textarea rows="2" placeholder="10 SEND &quot;G90&quot; REQUIRE_OK\n20 SEND &quot;G21&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(snip.gcom)}</textarea>
+      </td>
+      <td class="col-snip-del">
+        <button class="btn danger" title="Remove" data-del-snip="${i}">✕</button>
+      </td>`;
+    tr.querySelectorAll('[data-field]').forEach(el => {
+      el.addEventListener('input', e => {
+        snippets[i][e.target.dataset.field] = e.target.value;
+        onFormChange();
+      });
+    });
+    tr.querySelector(`[data-del-snip="${i}"]`).addEventListener('click', () => {
+      snippets.splice(i, 1);
+      renderSnippets();
+      onFormChange();
+    });
+    snipTbody.appendChild(tr);
+  });
+}
+
+document.getElementById('add-snippet-btn').addEventListener('click', () => {
+  snippets.push({ name: '', gcom: '' });
+  renderSnippets();
+  const rows = snipTbody.querySelectorAll('tr');
+  if (rows.length) rows[rows.length - 1].querySelector('input').focus();
+  onFormChange();
+});
+
+// ── Build profile object from form ──
+function buildProfile() {
+  const profile = {
+    meta: { name: metaName.value.trim() },
+    base_controller: baseCtrlSel.value
+  };
+  if (metaFirmware.value.trim()) profile.meta.firmware = metaFirmware.value.trim();
+  if (metaTool.value.trim())     profile.meta.tool     = metaTool.value.trim();
+  if (metaNotes.value.trim())    profile.meta.notes    = metaNotes.value.trim();
+  const bw = parseFloat(metaBedW.value);
+  const bh = parseFloat(metaBedH.value);
+  if (!isNaN(bw) && bw >= 0) profile.meta.bed_width_mm  = bw;
+  if (!isNaN(bh) && bh >= 0) profile.meta.bed_height_mm = bh;
+
+  const validCmds = commands.filter(c => c.name.trim() && c.gcom.trim());
+  if (validCmds.length) {
+    profile.commands = validCmds.map(c => {
+      const o = { name: c.name.trim(), gcom: c.gcom.trim() };
+      if (c.description && c.description.trim()) o.description = c.description.trim();
+      return o;
+    });
+  }
+
+  const validSnips = snippets.filter(s => s.name.trim() && s.gcom.trim());
+  if (validSnips.length) {
+    profile.snippets = validSnips.map(s => ({ name: s.name.trim(), gcom: s.gcom.trim() }));
+  }
+
+  const df = parseFloat(presetFeed.value);
+  const dp = parseFloat(presetPower.value);
+  const dr = parseFloat(presetRapid.value);
+  const presets = {};
+  if (!isNaN(df) && df >= 0) presets.default_feed  = df;
+  if (!isNaN(dp) && dp >= 0) presets.default_power = dp;
+  if (!isNaN(dr) && dr >= 0) presets.rapid_feed    = dr;
+  if (Object.keys(presets).length) profile.presets = presets;
+
+  return profile;
+}
+
+// ── Populate form from profile object ──
+function populateForm(profile) {
+  baseCtrlSel.value        = profile.base_controller || 'grbl-vanilla';
+  metaName.value           = (profile.meta && profile.meta.name)           || '';
+  metaFirmware.value       = (profile.meta && profile.meta.firmware)        || '';
+  metaTool.value           = (profile.meta && profile.meta.tool)            || '';
+  metaNotes.value          = (profile.meta && profile.meta.notes)           || '';
+  metaBedW.value           = (profile.meta && profile.meta.bed_width_mm  != null) ? profile.meta.bed_width_mm  : '';
+  metaBedH.value           = (profile.meta && profile.meta.bed_height_mm != null) ? profile.meta.bed_height_mm : '';
+  presetFeed.value         = (profile.presets && profile.presets.default_feed  != null) ? profile.presets.default_feed  : '';
+  presetPower.value        = (profile.presets && profile.presets.default_power != null) ? profile.presets.default_power : '';
+  presetRapid.value        = (profile.presets && profile.presets.rapid_feed    != null) ? profile.presets.rapid_feed    : '';
+  commands = (profile.commands || []).map(c => ({ name: c.name || '', description: c.description || '', gcom: c.gcom || '' }));
+  snippets = (profile.snippets || []).map(s => ({ name: s.name || '', gcom: s.gcom || '' }));
+  renderCommands();
+  renderSnippets();
+}
+
+// ── AI preview ──
+function renderPreview() {
+  const ctrl = baseCtrlSel.value;
+  const cd   = CONTROLLER_DATA[ctrl] || CONTROLLER_DATA['grbl-vanilla'];
+  const name = metaName.value.trim();
+
+  if (!name) {
+    aiPreview.innerHTML = '<span class="ph">Enter a machine name to see the AI context preview…</span>';
+    return;
+  }
+
+  const lines = [];
+  lines.push(`You are writing GCOM for a ${escHtml(name)} running ${escHtml(cd.label)}.`);
+  if (metaTool.value.trim()) lines.push(`Tool: ${escHtml(metaTool.value.trim())}`);
+  if (metaBedW.value && metaBedH.value) lines.push(`Work area: ${metaBedW.value} × ${metaBedH.value} mm`);
+  if (metaNotes.value.trim()) lines.push(`Notes: ${escHtml(metaNotes.value.trim())}`);
+
+  const validCmds = commands.filter(c => c.name.trim() && c.gcom.trim());
+  if (validCmds.length) {
+    lines.push('');
+    lines.push('Use these exact GCOM lines for common operations:');
+    validCmds.forEach((c, i) => {
+      lines.push(`  ${i + 1}. ${escHtml(c.name)}${c.description ? ': ' + escHtml(c.description) : ''}`);
+      lines.push(`     ${escHtml(c.gcom)}`);
+    });
+  }
+
+  const validSnips = snippets.filter(s => s.name.trim() && s.gcom.trim());
+  if (validSnips.length) {
+    lines.push('');
+    lines.push('Named GCOM snippets:');
+    validSnips.forEach(s => {
+      lines.push(`  [${escHtml(s.name)}]`);
+      lines.push(`  ${escHtml(s.gcom)}`);
+    });
+  }
+
+  const df = parseFloat(presetFeed.value);
+  const dp = parseFloat(presetPower.value);
+  const dr = parseFloat(presetRapid.value);
+  const presetLines = [];
+  if (!isNaN(df) && df >= 0) presetLines.push(`default_feed=${df}`);
+  if (!isNaN(dp) && dp >= 0) presetLines.push(`default_power=${dp}`);
+  if (!isNaN(dr) && dr >= 0) presetLines.push(`rapid_feed=${dr}`);
+  if (presetLines.length) {
+    lines.push('');
+    lines.push('Default presets: ' + presetLines.join(', '));
+  }
+
+  aiPreview.innerHTML = lines.join('\n');
+}
+
+// ── localStorage draft ──
+function saveDraft() {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(buildProfile()));
+  } catch (_) {}
+}
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) { populateForm(JSON.parse(raw)); return true; }
+  } catch (_) {}
+  return false;
+}
+
+// ── Form change handler ──
+function onFormChange() {
+  renderPreview();
+  saveDraft();
+}
+
+// ── Wire up all form inputs to onFormChange ──
+[baseCtrlSel, metaName, metaFirmware, metaTool, metaBedW, metaBedH, metaNotes,
+ presetFeed, presetPower, presetRapid].forEach(el => {
+  el.addEventListener('input', onFormChange);
+  el.addEventListener('change', onFormChange);
+});
+
+// ── Save ──
+saveBtn.addEventListener('click', async () => {
+  saveStatus.className = 'status-msg info';
+  saveStatus.textContent = 'Saving…';
+  saveBtn.disabled = true;
+  resultBox.classList.remove('visible');
+
+  const profile = buildProfile();
+  if (!profile.meta.name) {
+    saveStatus.className = 'status-msg err';
+    saveStatus.textContent = 'Machine name is required.';
+    saveBtn.disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    const id = data.id;
+    resultIdLine.textContent  = `ID: ${id}`;
+    resultHdrLine.textContent = `;PROFILE: ${id}`;
+    copyHdrBtn.dataset.text   = `;PROFILE: ${id}`;
+    resultBox.classList.add('visible');
+    saveStatus.className = 'status-msg ok';
+    saveStatus.textContent = 'Saved!';
+  } catch (e) {
+    saveStatus.className = 'status-msg err';
+    saveStatus.textContent = `Error: ${e.message}`;
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+copyHdrBtn.addEventListener('click', () => {
+  const text = copyHdrBtn.dataset.text || '';
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      copyHdrBtn.textContent = 'Copied!';
+      setTimeout(() => { copyHdrBtn.textContent = 'Copy ;PROFILE: line'; }, 1500);
+    }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+});
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (_) {}
+  document.body.removeChild(ta);
+  copyHdrBtn.textContent = 'Copied!';
+  setTimeout(() => { copyHdrBtn.textContent = 'Copy ;PROFILE: line'; }, 1500);
+}
+
+// ── Load by ID ──
+loadBtn.addEventListener('click', loadById);
+loadIdInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadById(); });
+
+async function loadById() {
+  const id = loadIdInput.value.trim();
+  if (!id) {
+    loadStatus.className = 'status-msg err';
+    loadStatus.textContent = 'Enter a profile ID.';
+    return;
+  }
+  loadStatus.className = 'status-msg info';
+  loadStatus.textContent = 'Loading…';
+  loadBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/profiles/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    populateForm(data);
+    onFormChange();
+    loadStatus.className = 'status-msg ok';
+    loadStatus.textContent = `Loaded: ${data.meta && data.meta.name ? data.meta.name : id}`;
+    loadIdInput.value = '';
+    // show loaded ID in result box
+    resultIdLine.textContent  = `ID: ${id}`;
+    resultHdrLine.textContent = `;PROFILE: ${id}`;
+    copyHdrBtn.dataset.text   = `;PROFILE: ${id}`;
+    resultBox.classList.add('visible');
+  } catch (e) {
+    loadStatus.className = 'status-msg err';
+    loadStatus.textContent = `Error: ${e.message}`;
+  } finally {
+    loadBtn.disabled = false;
+  }
+}
+
+// ── URL param handling ──
+function handleUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const idParam   = params.get('id');
+  const baseParam = params.get('base');
+
+  if (idParam) {
+    // Load existing profile by ID
+    loadIdInput.value = idParam;
+    loadById().then(() => {
+      loadIdInput.value = '';
+    });
+    return;
+  }
+
+  // Try to restore draft
+  if (!loadDraft()) {
+    // Nothing in draft — pre-set base if provided
+    if (baseParam && (baseParam === 'grbl-vanilla' || baseParam === 'fluidnc')) {
+      baseCtrlSel.value = baseParam;
+    }
+    renderPreview();
+  }
+}
+
+// ── HTML escape helpers ──
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// ── Init ──
+renderCommands();
+renderSnippets();
+handleUrlParams();
+</script>
+</body>
+</html>

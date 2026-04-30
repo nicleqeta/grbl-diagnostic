@@ -469,6 +469,12 @@ export default {
       }
     }
 
+    // ── /profiler — serve profiler.html ──────────────────────────────────
+    if (request.method === 'GET' && (url.pathname === '/profiler' || url.pathname === '/profiler/')) {
+      const profilerReq = new Request(new URL('/profiler.html', url.origin).href, request);
+      return env.ASSETS.fetch(profilerReq);
+    }
+
     if (request.method === 'GET' && url.pathname === '/' && url.searchParams.has('gcom') && env.GCOM_SCRIPTS) {
       const scriptId = (url.searchParams.get('gcom') || '').trim();
       if (scriptId) {

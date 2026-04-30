@@ -10,6 +10,7 @@
 <title>gcomposer / GRBL serial console</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="shortcut icon" href="/favicon.ico">
+<link rel="manifest" href="/manifest.json">
 <style>
   :root {
     --bg: #0f1117;
@@ -89,6 +90,29 @@
   .status-pill.busy         { background: var(--amber-dim); color: var(--amber);      border-color: #78350f; }
   .status-pill.fault        { background: var(--red-dim);   color: #fca5a5;           border-color: #991b1b; }
   .status-pill.reset        { background: var(--blue-dim);  color: #93c5fd;           border-color: #1d4ed8; }
+
+  /* ── Machine profile control ── */
+  .machine-profile-control { display:flex; align-items:center; gap:4px; margin-bottom:8px; }
+  .machine-profile-btn { flex:1; display:flex; align-items:center; justify-content:space-between; background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:5px 9px; font-size:12px; cursor:pointer; text-align:left; min-width:0; }
+  .machine-profile-btn:hover { border-color:var(--teal); }
+  .machine-profile-btn.has-profile { color:var(--teal); border-color:var(--teal); }
+  .machine-profile-chevron { font-size:9px; margin-left:4px; color:var(--text-muted); flex-shrink:0; }
+  .machine-profile-edit-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; flex-shrink:0; }
+  .machine-profile-edit-btn:hover { border-color:var(--teal); color:var(--teal); }
+  .machine-profile-dropdown { background:var(--surface); border:1px solid var(--border); border-radius:6px; margin-bottom:8px; overflow:hidden; }
+  .mpd-item { display:block; width:100%; background:none; border:none; color:var(--text); text-align:left; padding:7px 10px; font-size:12px; cursor:pointer; }
+  .mpd-item:hover { background:var(--surface2); color:var(--teal); }
+  /* ── Machine defaults overlay ── */
+  .machine-defaults-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; display:flex; align-items:center; justify-content:center; }
+  .machine-defaults-panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; width:min(480px,90vw); max-height:80vh; display:flex; flex-direction:column; overflow:hidden; }
+  .machine-defaults-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); font-weight:600; color:var(--text); font-size:13px; }
+  .machine-defaults-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:2px 6px; }
+  .machine-defaults-close:hover { color:var(--text); }
+  .machine-defaults-body { padding:14px 16px; overflow-y:auto; font-size:12px; color:var(--text); line-height:1.6; }
+  .machine-defaults-body h4 { color:var(--teal); margin:10px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; }
+  .machine-defaults-body h4:first-child { margin-top:0; }
+  .machine-defaults-body ul { margin:0 0 6px; padding-left:16px; }
+  .machine-defaults-body pre { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:8px 10px; font-size:11px; overflow-x:auto; white-space:pre; margin:0; font-family:monospace; }
 
   main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
@@ -1813,6 +1837,30 @@
         <option value="fluidnc">FluidNC</option>
       </select>
       <div class="help-text" id="controller-profile-help" style="margin-top:-2px; margin-bottom:8px;">Profile controls compatibility checks and starter defaults. Vanilla GRBL is selected by default.</div>
+      <div class="section-label" style="margin-bottom:6px; margin-top:2px;">Machine Profile</div>
+      <div class="machine-profile-control">
+        <button id="machine-profile-btn" type="button" class="machine-profile-btn" title="Machine profile options">
+          <span id="machine-profile-name">Default</span>
+          <span class="machine-profile-chevron">&#9660;</span>
+        </button>
+        <button id="machine-profile-edit-btn" type="button" class="machine-profile-edit-btn" title="Edit machine profile">&#9998;</button>
+      </div>
+      <div id="machine-profile-dropdown" class="machine-profile-dropdown" hidden>
+        <button type="button" id="mpd-view-defaults" class="mpd-item">View defaults</button>
+        <button type="button" id="mpd-create" class="mpd-item">Create machine profile</button>
+        <button type="button" id="mpd-load" class="mpd-item">Load profile by ID</button>
+        <div id="mpd-load-form" style="display:none; padding:6px 8px; border-top:1px solid var(--border);">
+          <input id="mpd-load-input" type="text" placeholder="Profile ID" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+          <div style="display:flex; gap:4px;">
+            <button type="button" id="mpd-load-confirm" class="mpd-item" style="flex:1; padding:5px 6px;">Load</button>
+            <button type="button" id="mpd-load-cancel" class="mpd-item" style="flex:1; padding:5px 6px;">Cancel</button>
+          </div>
+          <div id="mpd-load-status" style="font-size:11px; color:var(--text-muted); margin-top:4px;"></div>
+        </div>
+        <div id="mpd-clear-row" style="display:none; border-top:1px solid var(--border);">
+          <button type="button" id="mpd-clear" class="mpd-item" style="color:var(--text-muted);">Clear profile</button>
+        </div>
+      </div>
       <div class="transport-toggle">
         <button class="transport-toggle-btn active" id="transport-serial-btn" type="button">USB / Serial</button>
         <button class="transport-toggle-btn" id="transport-ws-btn" type="button">WebSocket</button>
@@ -9266,6 +9314,7 @@ async function loadControllerProfilesRegistry() {
   controllerProfilesById = buildResolvedControllerProfiles(registry);
   rebuildControllerProfileSelect();
   rebuildStarterSelect();
+  machineProfileControlInit();
 
   const requestedProfile = queryParams.get('profile');
   const storedProfile = getStoredControllerProfileId();
@@ -11384,7 +11433,7 @@ function aiBuildComposerContext(userText = '') {
   const scriptSource = String((basicScriptInput && basicScriptInput.value) || '').slice(0, 12000);
   const validationSummary = basicValidationBox ? String(basicValidationBox.textContent || '').trim() : '';
 
-  return {
+  const ctx = {
     meta,
     uiFields: {
       title: meta.title,
@@ -11409,6 +11458,8 @@ function aiBuildComposerContext(userText = '') {
     terminalContext: aiGetTerminalContext(userText),
     controllerProfile: aiBuildControllerProfileContext()
   };
+  if (activeMachineProfileId) ctx.profileRef = activeMachineProfileId;
+  return ctx;
 }
 
 // ─── PHASE 5: BUILD DIAGNOSTICS CONTEXT FOR AI ────────────────────────────
@@ -11996,6 +12047,184 @@ if (aiPromptInputEl) {
     aiPromptInputEl.style.height = Math.min(110, aiPromptInputEl.scrollHeight) + 'px';
   });
 }
+
+// ─── Machine Profile Control ─────────────────────────────────────────────────
+
+let activeMachineProfile = null;
+let activeMachineProfileId = null;
+
+function machineProfileControlInit() {
+  const machineProfBtn      = document.getElementById('machine-profile-btn');
+  const machineProfName     = document.getElementById('machine-profile-name');
+  const machineProfEditBtn  = document.getElementById('machine-profile-edit-btn');
+  const machineProfDropdown = document.getElementById('machine-profile-dropdown');
+  const mpdViewDefaults     = document.getElementById('mpd-view-defaults');
+  const mpdCreate           = document.getElementById('mpd-create');
+  const mpdLoad             = document.getElementById('mpd-load');
+  const mpdLoadForm         = document.getElementById('mpd-load-form');
+  const mpdLoadInput        = document.getElementById('mpd-load-input');
+  const mpdLoadConfirm      = document.getElementById('mpd-load-confirm');
+  const mpdLoadCancel       = document.getElementById('mpd-load-cancel');
+  const mpdLoadStatus       = document.getElementById('mpd-load-status');
+  const mpdClearRow         = document.getElementById('mpd-clear-row');
+  const mpdClear            = document.getElementById('mpd-clear');
+
+  if (!machineProfBtn) return;
+
+  function closeDropdown() {
+    machineProfDropdown.hidden = true;
+    mpdLoadForm.style.display = 'none';
+    if (mpdLoadStatus) mpdLoadStatus.textContent = '';
+  }
+
+  function updatePill(name) {
+    machineProfName.textContent = name || 'Default';
+    machineProfBtn.classList.toggle('has-profile', !!activeMachineProfileId);
+    if (mpdClearRow) mpdClearRow.style.display = activeMachineProfileId ? '' : 'none';
+  }
+
+  machineProfBtn.addEventListener('click', () => {
+    machineProfDropdown.hidden = !machineProfDropdown.hidden;
+    if (machineProfDropdown.hidden) mpdLoadForm.style.display = 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!machineProfDropdown.hidden &&
+        !machineProfDropdown.contains(e.target) &&
+        e.target !== machineProfBtn &&
+        !machineProfBtn.contains(e.target)) {
+      closeDropdown();
+    }
+  });
+
+  machineProfEditBtn.addEventListener('click', () => {
+    const base = (getActiveControllerProfile() && getActiveControllerProfile().id) || 'grbl-vanilla';
+    if (activeMachineProfileId) {
+      window.open('/profiler?id=' + encodeURIComponent(activeMachineProfileId), '_blank', 'noopener');
+    } else {
+      window.open('/profiler?base=' + encodeURIComponent(base), '_blank', 'noopener');
+    }
+  });
+
+  mpdViewDefaults.addEventListener('click', () => {
+    closeDropdown();
+    machineShowDefaults();
+  });
+
+  mpdCreate.addEventListener('click', () => {
+    closeDropdown();
+    const base = (getActiveControllerProfile() && getActiveControllerProfile().id) || 'grbl-vanilla';
+    window.open('/profiler?base=' + encodeURIComponent(base), '_blank', 'noopener');
+  });
+
+  mpdLoad.addEventListener('click', () => {
+    const nowShown = mpdLoadForm.style.display !== 'none';
+    mpdLoadForm.style.display = nowShown ? 'none' : 'block';
+    if (!nowShown && mpdLoadInput) mpdLoadInput.focus();
+  });
+
+  mpdLoadConfirm.addEventListener('click', () => {
+    const id = mpdLoadInput ? mpdLoadInput.value.trim() : '';
+    if (!id) return;
+    mpdLoadStatus.textContent = 'Loading\u2026';
+    fetch('/api/profiles/' + encodeURIComponent(id))
+      .then(r => {
+        if (!r.ok) throw new Error('Profile not found (HTTP ' + r.status + ')');
+        return r.json();
+      })
+      .then(profile => {
+        activeMachineProfile = profile;
+        activeMachineProfileId = id;
+        const name = (profile && profile.meta && profile.meta.name) ? profile.meta.name : id;
+        updatePill(name);
+        if (mpdLoadInput) mpdLoadInput.value = '';
+        closeDropdown();
+      })
+      .catch(err => {
+        if (mpdLoadStatus) mpdLoadStatus.textContent = 'Error: ' + err.message;
+      });
+  });
+
+  if (mpdLoadInput) {
+    mpdLoadInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') mpdLoadConfirm.click();
+      if (e.key === 'Escape') mpdLoadCancel.click();
+    });
+  }
+
+  mpdLoadCancel.addEventListener('click', () => {
+    mpdLoadForm.style.display = 'none';
+    if (mpdLoadInput) mpdLoadInput.value = '';
+    if (mpdLoadStatus) mpdLoadStatus.textContent = '';
+  });
+
+  mpdClear.addEventListener('click', () => {
+    activeMachineProfile = null;
+    activeMachineProfileId = null;
+    updatePill(null);
+    closeDropdown();
+  });
+
+  updatePill(null);
+}
+
+function machineShowDefaults() {
+  const overlay = document.getElementById('machine-defaults-overlay');
+  const titleEl = document.getElementById('machine-defaults-title');
+  const bodyEl  = document.getElementById('machine-defaults-body');
+  const closeEl = document.getElementById('machine-defaults-close');
+  if (!overlay) return;
+
+  const profile = getActiveControllerProfile();
+  if (!profile) return;
+
+  const guidance   = profile.ai_guidance || {};
+  const boilerplate = profile.boilerplate_gcom || {};
+  const label = profile.label || 'Controller';
+
+  if (titleEl) titleEl.textContent = label + ' \u2014 Controller Defaults';
+
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const parts = [];
+  parts.push('<h4>Summary</h4><p>' + esc(guidance.summary || '\u2014') + '</p>');
+  if (Array.isArray(guidance.preferred_style) && guidance.preferred_style.length) {
+    parts.push('<h4>Preferred Style</h4><ul>');
+    for (const item of guidance.preferred_style) parts.push('<li>' + esc(item) + '</li>');
+    parts.push('</ul>');
+  }
+  if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
+    parts.push('<h4>Avoid</h4><ul>');
+    for (const item of guidance.avoid) parts.push('<li>' + esc(item) + '</li>');
+    parts.push('</ul>');
+  }
+  if (boilerplate.gcom) {
+    parts.push('<h4>Boilerplate GCOM</h4><pre>' + esc(boilerplate.gcom) + '</pre>');
+  }
+  if (bodyEl) bodyEl.innerHTML = parts.join('');
+
+  if (closeEl) closeEl.onclick = () => { overlay.hidden = true; };
+  overlay.onclick = e => { if (e.target === overlay) overlay.hidden = true; };
+  overlay.hidden = false;
+}
+
+// beforeunload: warn if serial connection is active or script is running
+window.addEventListener('beforeunload', function(e) {
+  if (isTransportConnected() || basicRunning || gcodeRunning) {
+    e.preventDefault();
+    e.returnValue = 'A serial connection or script is active. Leaving will disconnect and stop the session.';
+    return e.returnValue;
+  }
+});
 </script>
+<!-- Machine defaults overlay -->
+<div id="machine-defaults-overlay" class="machine-defaults-overlay" hidden>
+  <div class="machine-defaults-panel">
+    <div class="machine-defaults-header">
+      <span id="machine-defaults-title">Controller Defaults</span>
+      <button type="button" id="machine-defaults-close" class="machine-defaults-close" title="Close">&#x2715;</button>
+    </div>
+    <div id="machine-defaults-body" class="machine-defaults-body"></div>
+  </div>
+</div>
 </body>
 </html>
