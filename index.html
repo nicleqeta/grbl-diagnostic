@@ -5428,10 +5428,11 @@ function basicTokenize(expr) {
   while (i < expr.length) {
     const ch = expr[i];
     if (/\s/.test(ch)) { i++; continue; }
-    // String literal
-    if (ch === '"') {
+    // String literal (double or single quotes)
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
       let j = i + 1;
-      while (j < expr.length && expr[j] !== '"') j++;
+      while (j < expr.length && expr[j] !== quote) j++;
       tokens.push({ type: 'STRING', value: expr.slice(i + 1, j) });
       i = j + 1;
       continue;
