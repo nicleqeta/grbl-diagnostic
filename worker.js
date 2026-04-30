@@ -1131,21 +1131,6 @@ Before emitting a script, verify:
           const operations = (profile.operations && typeof profile.operations === 'object' && !Array.isArray(profile.operations))
             ? profile.operations
             : null;
-          const operationVariables = (operations && operations.variables && typeof operations.variables === 'object' && !Array.isArray(operations.variables))
-            ? operations.variables
-            : null;
-          const operationEntries = operations
-            ? Object.entries(operations).filter(([name, value]) => name !== 'variables' && value && typeof value === 'object' && !Array.isArray(value))
-            : [];
-          const getOperationVariableDisplayName = (name) => {
-            const definition = operationVariables && operationVariables[name];
-            const label = (definition && typeof definition.label === 'string' && definition.label.trim())
-              ? definition.label.trim()
-              : '';
-            return label || name;
-          };
-          const feedVariableDisplayName = getOperationVariableDisplayName('speed');
-          const spindleVariableDisplayName = getOperationVariableDisplayName('spindlespeed');
           activeProfileRuleSet = ruleSet;
           activeProfileOperations = operations;
           const guidance = (profileMachine.ai_guidance && typeof profileMachine.ai_guidance === 'object') ? profileMachine.ai_guidance : {};
@@ -1176,23 +1161,123 @@ Before emitting a script, verify:
 
           const contractParts = [];
           contractParts.push('=== MACHINE CONTRACT (MUST FOLLOW) ===');
-          contractParts.push('- Never concatenate multiple G-code commands into a single SEND string. Each SEND must contain exactly one G-code command.');
-          contractParts.push(`- Never use a spindle/laser power variable as a feed rate. Feed rate is ${feedVariableDisplayName}. Laser power is ${spindleVariableDisplayName}. These are distinct variables with different defaults and purposes.`);
+
+          let machineProfile = null;
+          const profileRef = (typeof composerCtx.profileRef === 'string' && composerCtx.profileRef.trim())
+            ? composerCtx.profileRef.trim()
+            : '';
+
+          if (profileRef && env.GCOM_SCRIPTS) {
+            try {
+              const storedProfile = await env.GCOM_SCRIPTS.get(`profile:${profileRef}`);
+              if (storedProfile) {
+                const parsed = JSON.parse(String(storedProfile));
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                  machineProfile = parsed;
+                }
+              }
+            } catch (_) {
+              // Fall through to controller-only contract when profile lookup fails.
+            }
+          }
+
+          if (machineProfile && machineProfile.meta && machineProfile.meta.name && machineProfile.base_controller) {
+            const machineName = String(machineProfile.meta.name);
+            const baseController = String(machineProfile.base_controller);
+            contractParts.push(`You are writing GCOM for a ${machineName} (${baseController}). Use these exact GCOM lines for common operations on this machine:`);
+
+            const commands = Array.isArray(machineProfile.commands) ? machineProfile.commands : [];
+            for (let i = 0; i < commands.length; i++) {
+              const command = commands[i] && typeof commands[i] === 'object' ? commands[i] : null;
+              if (!command) continue;
+              const commandName = typeof command.name === 'string' ? command.name : '';
+              const commandGcom = typeof command.gcom === 'string' ? command.gcom : '';
+              if (!commandName || !commandGcom) continue;
+              contractParts.push(`${i + 1}. ${commandName}: ${commandGcom}`);
+            }
+
+            const snippets = Array.isArray(machineProfile.snippets) ? machineProfile.snippets : [];
+            if (snippets.length) {
+              contractParts.push('Reusable snippets:');
+              for (const snippet of snippets) {
+                if (!snippet || typeof snippet !== 'object') continue;
+                const snippetName = typeof snippet.name === 'string' ? snippet.name : '';
+                const snippetGcom = typeof snippet.gcom === 'string' ? snippet.gcom : '';
+                if (!snippetName || !snippetGcom) continue;
+                contractParts.push(`- ${snippetName}: ${snippetGcom}`);
+              }
+            }
+
+            const presets = (machineProfile.presets && typeof machineProfile.presets === 'object' && !Array.isArray(machineProfile.presets))
+              ? machineProfile.presets
+              : null;
+            if (presets) {
+              const presetFields = [];
+              if (presets.default_feed !== undefined) presetFields.push(`default_feed=${presets.default_feed}`);
+              if (presets.default_power !== undefined) presetFields.push(`default_power=${presets.default_power}`);
+              if (presets.rapid_feed !== undefined) presetFields.push(`rapid_feed=${presets.rapid_feed}`);
+              if (presetFields.length) {
+                contractParts.push(`Presets: ${presetFields.join(', ')}`);
+              }
+            }
+
+            if (machineProfile.meta && typeof machineProfile.meta.notes === 'string' && machineProfile.meta.notes.trim()) {
+              contractParts.push(`Notes: ${machineProfile.meta.notes.trim()}`);
+            }
+          } else {
+            const controllerLabel = profileMachine.label || profileMachine.id || 'controller';
+            const controllerFamily = profileMachine.controller_family || 'unknown';
+            contractParts.push(`You are writing GCOM for a ${controllerLabel} controller (${controllerFamily}).`);
+
+            if (guidance.summary) {
+              contractParts.push(String(guidance.summary));
+            }
+            if (Array.isArray(guidance.preferred_style) && guidance.preferred_style.length) {
+              contractParts.push('Preferred style:');
+              for (let i = 0; i < guidance.preferred_style.length; i++) {
+                contractParts.push(`${i + 1}. ${String(guidance.preferred_style[i])}`);
+              }
+            }
+            if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
+              contractParts.push('Avoid:');
+              for (let i = 0; i < guidance.avoid.length; i++) {
+                contractParts.push(`${i + 1}. ${String(guidance.avoid[i])}`);
+              }
+            }
+          }
 
           const boilerplate = (profileMachine.boilerplate_gcom && typeof profileMachine.boilerplate_gcom === 'object')
             ? profileMachine.boilerplate_gcom
             : null;
           if (boilerplate && typeof boilerplate.gcom === 'string' && boilerplate.gcom.trim()) {
-            composerParts.push('Recommended boilerplate prior (use as preferred script structure for this machine):');
+            contractParts.push('Recommended starting structure:');
             if (typeof boilerplate.title === 'string' && boilerplate.title.trim()) {
-              composerParts.push(`- title: ${boilerplate.title.trim()}`);
+              contractParts.push(`Title: ${boilerplate.title.trim()}`);
             }
-            if (typeof boilerplate.description === 'string' && boilerplate.description.trim()) {
-              composerParts.push(`- description: ${boilerplate.description.trim()}`);
+            contractParts.push('```gcom');
+            contractParts.push(String(boilerplate.gcom).trim());
+            contractParts.push('```');
+          }
+
+          if (ackPolicy.mode || (Number.isFinite(Number(ackPolicy.default_timeout_ms)) && Number(ackPolicy.default_timeout_ms) > 0)) {
+            const ackMode = ackPolicy.mode ? String(ackPolicy.mode) : 'unknown';
+            const ackTimeout = (Number.isFinite(Number(ackPolicy.default_timeout_ms)) && Number(ackPolicy.default_timeout_ms) > 0)
+              ? String(Number(ackPolicy.default_timeout_ms))
+              : 'none';
+            contractParts.push(`Ack policy: mode=${ackMode}, timeout=${ackTimeout}`);
+          }
+
+          if (Array.isArray(guidance.preferred_style) && guidance.preferred_style.length) {
+            contractParts.push('Guidance preferred style:');
+            for (let i = 0; i < guidance.preferred_style.length; i++) {
+              contractParts.push(`${i + 1}. ${String(guidance.preferred_style[i])}`);
             }
-            composerParts.push('```gcom');
-            composerParts.push(String(boilerplate.gcom).trim());
-            composerParts.push('```');
+          }
+          if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
+            contractParts.push('Guidance avoid:');
+            for (let i = 0; i < guidance.avoid.length; i++) {
+              contractParts.push(`${i + 1}. ${String(guidance.avoid[i])}`);
+            }
           }
 
           if (contractParts.length > 1) {
