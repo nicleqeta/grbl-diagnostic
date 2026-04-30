@@ -117,6 +117,25 @@
           "description": "Rapid positioning feed rate in mm/min"
         }
       }
+    },
+    "transport_tuning": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional sender fallback capacities used before live Bf observations are available",
+      "properties": {
+        "rx_buffer_bytes": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 4096,
+          "description": "Fallback serial RX buffer capacity in bytes when Bf serial data is not yet observed"
+        },
+        "planner_slots": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "Fallback planner capacity in slots when Bf planner data is unavailable"
+        }
+      }
     }
   }
 }
