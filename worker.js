@@ -544,6 +544,86 @@ export default {
       }
     }
 
+    // ── User machine profile endpoints ────────────────────────────────────
+    if (url.pathname === '/api/profiles' || url.pathname.startsWith('/api/profiles/')) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: SCRIPT_CORS_HEADERS });
+      }
+
+      if (!env.GCOM_SCRIPTS) {
+        return new Response(JSON.stringify({ error: 'Missing KV binding: GCOM_SCRIPTS' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      // POST /api/profiles — store a new user machine profile
+      if (url.pathname === '/api/profiles' && request.method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (_) {
+          return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          });
+        }
+
+        const VALID_CONTROLLERS = ['grbl-vanilla', 'fluidnc'];
+        const metaName = body && body.meta && typeof body.meta.name === 'string' ? body.meta.name.trim() : '';
+        const baseController = body && typeof body.base_controller === 'string' ? body.base_controller.trim() : '';
+
+        if (!metaName) {
+          return new Response(JSON.stringify({ error: 'meta.name is required' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          });
+        }
+        if (!VALID_CONTROLLERS.includes(baseController)) {
+          return new Response(JSON.stringify({ error: `base_controller must be one of: ${VALID_CONTROLLERS.join(', ')}` }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          });
+        }
+
+        const id = generateId();
+        await env.GCOM_SCRIPTS.put(`profile:${id}`, JSON.stringify(body));
+
+        return new Response(JSON.stringify({ id, url: `https://gcomposer.app/profiler?id=${id}` }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      // GET /api/profiles/:id — retrieve a stored user machine profile
+      if (url.pathname.startsWith('/api/profiles/') && request.method === 'GET') {
+        const id = decodeURIComponent(url.pathname.slice('/api/profiles/'.length)).trim();
+        if (!id) {
+          return new Response(JSON.stringify({ error: 'Missing profile ID' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          });
+        }
+
+        const value = await env.GCOM_SCRIPTS.get(`profile:${id}`);
+        if (!value) {
+          return new Response(JSON.stringify({ error: 'not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+          });
+        }
+
+        return new Response(value, {
+          headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+        });
+      }
+
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json', ...SCRIPT_CORS_HEADERS },
+      });
+    }
+
     // ── AI agent endpoint ──────────────────────────────────────────────────
     if (url.pathname === '/api/ai/agent') {
       if (request.method === 'OPTIONS') {

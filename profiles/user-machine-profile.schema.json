@@ -1,0 +1,122 @@
+{
+  "$id": "https://gcomposer.app/schemas/user-machine-profile.schema.json",
+  "title": "GCOM User Machine Profile",
+  "description": "User-authored machine profile storing plain concrete GCOM examples for AI context injection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "base_controller"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable machine name, e.g. 'Ortur LM2 Pro S2'"
+        },
+        "firmware": {
+          "type": "string",
+          "description": "Firmware version string, e.g. '1.1h'"
+        },
+        "bed_width_mm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Work area width in millimetres"
+        },
+        "bed_height_mm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Work area height in millimetres"
+        },
+        "tool": {
+          "type": "string",
+          "description": "Tool type, e.g. 'diode laser', 'spindle router'"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form notes about this machine injected into AI context"
+        }
+      }
+    },
+    "base_controller": {
+      "type": "string",
+      "enum": ["grbl-vanilla", "fluidnc"],
+      "description": "Controller profile this machine is based on"
+    },
+    "commands": {
+      "type": "array",
+      "description": "Plain concrete GCOM command examples for AI context. Names are free-form; lifecycle hook names (job_start, job_end, tool_on_sequence, tool_off_sequence, home, rapid_move, cut_move) are suggested in the profiler UI.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "gcom"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Command identifier. No enum constraint — lifecycle hook names are conventions only."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what this command does"
+          },
+          "gcom": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Complete literal runnable GCOM line or block for this command"
+          },
+          "example": {
+            "type": "string",
+            "description": "Optional example usage or context note"
+          }
+        }
+      }
+    },
+    "snippets": {
+      "type": "array",
+      "description": "Named reusable GCOM blocks for AI context",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "gcom"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "gcom": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "presets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Default numeric presets for this machine",
+      "properties": {
+        "default_feed": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Default feed rate in mm/min"
+        },
+        "default_power": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Default spindle/laser power (0-255 or 0-1000 depending on machine)"
+        },
+        "rapid_feed": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Rapid positioning feed rate in mm/min"
+        }
+      }
+    }
+  }
+}
