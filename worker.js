@@ -773,6 +773,7 @@ Safety rules:
 - Do not claim a statement/command is unsupported unless that claim is grounded in the provided manifest/profile/context.
 - When terminal output context is present, include a short section titled "Evidence from terminal log" before diagnosis and quote at least one relevant line.
 - If evidence is insufficient or ambiguous, say so explicitly instead of asserting a definitive root cause.
+- Keep numeric precision practical: use up to 6 decimal places for intermediate LET calculations, and round emitted motion/feed values in SEND lines to at most 4 decimal places (for example LET x_out = ROUND(x, 4)).
 - Keep explanations concise; lead with the script.`;
 
     const REPAIR_SYSTEM = `
@@ -857,6 +858,7 @@ AUTHORING RULES
 - Use REQUIRE_OK when generating motion/control commands unless the user explicitly asks for another pacing mode.
 - Prefer STATUS for polling machine status in scripts; avoid SEND "?" unless the user explicitly asks for it.
 - SEND_DELAY defaults to 0; do not add redundant SET SEND_DELAY 0 lines unless the user asks for explicit pacing.
+- Precision discipline for performance/readability: keep internal math at <= 6 decimal places and round emitted coordinate/feed words in SEND lines to <= 4 decimal places.
 
 BENCH MARKERS
 - BENCH protocol has three marker lines emitted via PRINT: BENCH META, BENCH START, BENCH END.
