@@ -217,6 +217,7 @@ function validateGcomSource(source, vars = {}, state = null) {
   if (!state) state = initializeValidationState();
   const lines = {}, order = [], definedVars = new Set(Object.keys(vars || {}));
   const addErr = (ln, msg, code) => addValidationDiagnostic(state, createValidationDiagnostic(ln, code, VALIDATION_SEVERITY.ERROR, msg));
+  const addWarn = (ln, msg, code) => addValidationDiagnostic(state, createValidationDiagnostic(ln, code, VALIDATION_SEVERITY.WARNING, msg));
   const statementBuckets = new Map();
   let executableCount = 0;
   
@@ -290,7 +291,7 @@ function validateGcomSource(source, vars = {}, state = null) {
   }
   
   if (order.length && !/^END$/i.test(lines[order[order.length - 1]])) {
-    addErr(order[order.length - 1], `program must end with END`, VALIDATION_DIAGNOSTIC_CODES.E010_MISSING_END);
+    addWarn(order[order.length - 1], `program must end with END; execution will stop after the last line`, VALIDATION_DIAGNOSTIC_CODES.E010_MISSING_END);
   }
   
   return { diagnostics: state, lines, order, definedVars };
