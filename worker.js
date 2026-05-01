@@ -730,6 +730,7 @@ CRITICAL SYNTAX RULES (must follow):
 - Looping must use FOR/NEXT or IF ... THEN GOTO.
 - IF statements must be single-line and complete: IF <condition> THEN <action>. Never emit a bare THEN with no action.
 - Every FOR must have a matching NEXT, and every generated script must include a final END line.
+- END must be the highest numbered executable line in the script. When using GOSUB/RETURN, place subroutine blocks before the final END terminator.
 - Never emit bare identifiers in expressions unless they were defined by LET earlier or are declared placeholders {name}.
 - Emit only supported statements listed above.
 - Prefer SEND + REQUIRE_OK/BUFFERED modifiers over legacy SENDACK/SENDBUFF spellings.
