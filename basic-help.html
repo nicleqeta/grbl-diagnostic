@@ -962,9 +962,9 @@
 1000 SEND "$120=" &amp; current_accel TIMEOUT 2000 REQUIRE_OK
 1010 WAIT {settle_ms}
 1020 FOR j = 1 TO {repeats}
-1030 SEND "G1 X" &amp; {x_travel} &amp; " F" &amp; {x_feed} TIMEOUT 2000 REQUIRE_OK
+1030 SEND "G1 X" &amp; {x_travel} &amp; " F" &amp; {x_feed} BUFFERED
 1040 WAIT_IDLE {idle_timeout}
-1050 SEND "G1 X-" &amp; {x_travel} &amp; " F" &amp; {x_feed} TIMEOUT 2000 REQUIRE_OK
+1050 SEND "G1 X-" &amp; {x_travel} &amp; " F" &amp; {x_feed} BUFFERED
 1060 WAIT_IDLE {idle_timeout}
 1070 NEXT j
 1080 LET answer = FORM("Tested $120=" &amp; current_accel &amp; ". [Bad or Skip] [Still Clean]", 1, 0)

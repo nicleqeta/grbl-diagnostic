@@ -955,24 +955,25 @@ function buildExampleProgram() {
   if (cmdMap['job_start']) {
     seq.push({ gcom: cmdMap['job_start'], comment: '; preamble (job_start)' });
   } else {
-    seq.push({ gcom: `SEND "${unitMode}" REQUIRE_OK`, comment: `; ${unitMode === 'G21' ? 'metric' : 'imperial'}` });
-    seq.push({ gcom: 'SEND "G90" REQUIRE_OK',          comment: '; absolute coords' });
+    seq.push({ gcom: 'SET SEND_MODE AUTO',                comment: '; auto ack routing' });
+    seq.push({ gcom: `SEND "${unitMode}" REQUIRE_OK`,   comment: `; ${unitMode === 'G21' ? 'metric' : 'imperial'}` });
+    seq.push({ gcom: 'SEND "G90" REQUIRE_OK',            comment: '; absolute coords' });
     if (ctrl === 'grbl-vanilla') {
       seq.push({ gcom: 'SEND "$32=1" REQUIRE_OK', comment: '; laser mode' });
     }
     if (workOff) {
       seq.push({ gcom: `SEND "${workOff}" REQUIRE_OK`, comment: '; work offset' });
     }
-    seq.push({ gcom: hasZ ? `SEND "M5 S0" REQUIRE_OK` : `SEND "M5 S0" REQUIRE_OK`, comment: '; tool off safe start' });
+    seq.push({ gcom: 'SEND "M5 S0" REQUIRE_OK', comment: '; tool off safe start' });
   }
 
   // Rapid to corner
   if (hasZ) {
-    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; safe height' });
-    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK',       comment: '; rapid to start corner' });
-    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge to depth' });
+    seq.push({ gcom: `SEND "G0 Z${safeZ}"`,                    comment: '; safe height' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5"',                        comment: '; rapid to start corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}"`,        comment: '; plunge to depth' });
   } else {
-    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK', comment: '; rapid to start corner' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5"', comment: '; rapid to start corner' });
   }
 
   // Air assist on
@@ -990,32 +991,32 @@ function buildExampleProgram() {
   seq.push({ comment: '; box — tests +X +Y −X −Y individually' });
 
   // Box sides
-  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}" REQUIRE_OK`,  comment: '; +X edge' });
-  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}" REQUIRE_OK`, comment: '; +Y edge' });
-  seq.push({ gcom: `SEND "G1 X5 Y25 F${feed}" REQUIRE_OK`,  comment: '; −X edge' });
-  seq.push({ gcom: `SEND "G1 X5 Y5 F${feed}" REQUIRE_OK`,   comment: '; −Y edge (close)' });
+  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}"`,  comment: '; +X edge' });
+  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}"`, comment: '; +Y edge' });
+  seq.push({ gcom: `SEND "G1 X5 Y25 F${feed}"`,  comment: '; −X edge' });
+  seq.push({ gcom: `SEND "G1 X5 Y5 F${feed}"`,   comment: '; −Y edge (close)' });
 
   seq.push({ comment: '; diagonals — tests simultaneous XY' });
 
   // Diagonal 1 — bottom-left to top-right (going there via rapid)
   if (hasZ) {
-    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; retract' });
-    seq.push({ gcom: 'SEND "G0 X5 Y25" REQUIRE_OK',      comment: '; rapid to top-left corner' });
-    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge' });
+    seq.push({ gcom: `SEND "G0 Z${safeZ}"`,                    comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X5 Y25"',                       comment: '; rapid to top-left corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}"`,        comment: '; plunge' });
   } else {
-    seq.push({ gcom: 'SEND "G0 X5 Y25" REQUIRE_OK', comment: '; rapid to top-left corner' });
+    seq.push({ gcom: 'SEND "G0 X5 Y25"', comment: '; rapid to top-left corner' });
   }
-  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}" REQUIRE_OK`,  comment: '; diagonal ↘' });
+  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}"`,  comment: '; diagonal ↘' });
 
   // Diagonal 2 — top-left to bottom-right
   if (hasZ) {
-    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; retract' });
-    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK',       comment: '; rapid to bottom-left corner' });
-    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge' });
+    seq.push({ gcom: `SEND "G0 Z${safeZ}"`,                    comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5"',                        comment: '; rapid to bottom-left corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}"`,        comment: '; plunge' });
   } else {
-    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK', comment: '; rapid to bottom-left corner' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5"', comment: '; rapid to bottom-left corner' });
   }
-  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}" REQUIRE_OK`, comment: '; diagonal ↗' });
+  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}"`, comment: '; diagonal ↗' });
 
   seq.push({ comment: '; end' });
 
@@ -1035,8 +1036,8 @@ function buildExampleProgram() {
   if (cmdMap['job_end']) {
     seq.push({ gcom: cmdMap['job_end'], comment: '; end (job_end)' });
   } else {
-    if (hasZ) seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`, comment: '; retract' });
-    seq.push({ gcom: 'SEND "G0 X0 Y0" REQUIRE_OK', comment: '; return home' });
+    if (hasZ) seq.push({ gcom: `SEND "G0 Z${safeZ}"`, comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X0 Y0"', comment: '; return home' });
   }
 
   return seq;

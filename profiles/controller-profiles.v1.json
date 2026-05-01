@@ -43,7 +43,7 @@
           "preferred_style": [
             "Initialize parser state explicitly with G90 and unit mode.",
             "Use conservative modal transitions and explicit feed rates.",
-            "Wrap setup commands with REQUIRE_OK on SEND."
+            "Use SET SEND_MODE AUTO at script start. Explicit REQUIRE_OK only for homing, spindle on/off, probing, and config writes."
           ],
           "avoid": [
             "Do not emit FluidNC-specific config commands.",
@@ -55,7 +55,7 @@
         "boilerplate_gcom": {
           "title": "Vanilla GRBL Starter",
           "description": "Minimal setup sequence for common GRBL 1.1 machines.",
-          "gcom": "10 PRINT \"Vanilla GRBL starter\"\n20 SEND \"$I\" REQUIRE_OK\n30 SEND \"$G\" REQUIRE_OK\n40 SEND \"G90\" REQUIRE_OK\n50 SEND \"G21\" REQUIRE_OK\n60 STATUS\n70 END"
+          "gcom": "10 PRINT \"Vanilla GRBL starter\"\n20 SET SEND_MODE AUTO\n30 SEND \"$I\" REQUIRE_OK\n40 SEND \"$G\" REQUIRE_OK\n50 SEND \"G90\" REQUIRE_OK\n60 SEND \"G21\" REQUIRE_OK\n70 STATUS\n80 END"
         }
       },
       "rule_set": {
@@ -126,12 +126,12 @@
         },
         "cut_move": {
           "template": [
-            "SEND \"G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}\" REQUIRE_OK"
+            "SEND \"G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}\""
           ]
         },
         "rapid_move": {
           "template": [
-            "SEND \"G0 [X]{x}[Y]{y}[Z]{z}\" REQUIRE_OK"
+            "SEND \"G0 [X]{x}[Y]{y}[Z]{z}\""
           ]
         },
         "tool_on": {
@@ -146,7 +146,7 @@
         },
         "dwell": {
           "template": [
-            "SEND \"G4 P{dwell}\" REQUIRE_OK"
+            "SEND \"G4 P{dwell}\""
           ]
         },
         "zero_all_axes": {
@@ -215,7 +215,7 @@
         "boilerplate_gcom": {
           "title": "FluidNC Starter",
           "description": "Fast sanity sequence for FluidNC with GRBL-compatible sender flow.",
-          "gcom": "10 PRINT \"FluidNC starter\"\n20 SEND \"$I\" REQUIRE_OK\n30 SEND \"$G\" REQUIRE_OK\n40 STATUS\n50 SEND \"$Config/Filename=config.yaml\" REQUIRE_OK\n60 END"
+          "gcom": "10 PRINT \"FluidNC starter\"\n20 SET SEND_MODE AUTO\n30 SEND \"$I\" REQUIRE_OK\n40 SEND \"$G\" REQUIRE_OK\n50 STATUS\n60 SEND \"$Config/Filename=config.yaml\" REQUIRE_OK\n70 END"
         }
       },
       "rule_set": {
@@ -286,12 +286,12 @@
         },
         "cut_move": {
           "template": [
-            "SEND \"G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}\" REQUIRE_OK"
+            "SEND \"G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}\""
           ]
         },
         "rapid_move": {
           "template": [
-            "SEND \"G0 [X]{x}[Y]{y}[Z]{z}\" REQUIRE_OK"
+            "SEND \"G0 [X]{x}[Y]{y}[Z]{z}\""
           ]
         },
         "tool_on": {
@@ -306,7 +306,7 @@
         },
         "dwell": {
           "template": [
-            "SEND \"G4 P{dwell}\" REQUIRE_OK"
+            "SEND \"G4 P{dwell}\""
           ]
         },
         "zero_all_axes": {

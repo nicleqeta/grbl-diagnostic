@@ -1781,13 +1781,14 @@
   QUICK START EXAMPLE
   -------------------
   10 LET feedrate = 1000
-  20 SEND "G28" REQUIRE_OK
-  30 WAIT_IDLE 15000
-  40 PRINT "Homing complete"
-  50 FOR i = 1 TO 5
-  60   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate) REQUIRE_OK
-  70 NEXT i
-  80 END
+  20 SET SEND_MODE AUTO
+  30 SEND "G28" REQUIRE_OK
+  40 WAIT_IDLE 15000
+  50 PRINT "Homing complete"
+  60 FOR i = 1 TO 5
+  70   SEND "G1 X" & STR(i * 10) & " F" & STR(feedrate)
+  80 NEXT i
+  90 END
 -->
 
 <header>
@@ -2586,7 +2587,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       boilerplate: {
         title: 'GRBL Base Diagnostic',
         description: 'Baseline serial checks and status query.',
-        gcom: '10 PRINT "GRBL base starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$$" REQUIRE_OK\n40 SEND "?"\n50 END'
+        gcom: '10 PRINT "GRBL base starter"\n20 SET SEND_MODE AUTO\n30 SEND "$I" REQUIRE_OK\n40 SEND "$$" REQUIRE_OK\n50 SEND "?"\n60 END'
       }
     },
     'grbl-vanilla': {
@@ -2624,7 +2625,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
           preferred_style: [
             'Initialize parser state explicitly with G90 and unit mode.',
             'Use conservative modal transitions and explicit feed rates.',
-            'Wrap setup commands with REQUIRE_OK on SEND.'
+            'Use SET SEND_MODE AUTO at script start. Explicit REQUIRE_OK only for homing, spindle on/off, probing, and config writes.'
           ],
           avoid: [
             'Do not emit FluidNC-specific config commands.',
@@ -2636,7 +2637,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
         boilerplate_gcom: {
           title: 'Vanilla GRBL Starter',
           description: 'Minimal setup sequence for common GRBL 1.1 machines.',
-          gcom: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 STATUS\n70 END'
+          gcom: '10 PRINT "Vanilla GRBL starter"\n20 SET SEND_MODE AUTO\n30 SEND "$I" REQUIRE_OK\n40 SEND "$G" REQUIRE_OK\n50 SEND "G90" REQUIRE_OK\n60 SEND "G21" REQUIRE_OK\n70 STATUS\n80 END'
         }
       },
       rule_set: {
@@ -2704,12 +2705,12 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
         },
         cut_move: {
           template: [
-            'SEND "G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}" REQUIRE_OK'
+            'SEND "G1 [X]{x}[Y]{y}[Z]{z}[F]{speed}"'
           ]
         },
         rapid_move: {
           template: [
-            'SEND "G0 [X]{x}[Y]{y}[Z]{z}" REQUIRE_OK'
+            'SEND "G0 [X]{x}[Y]{y}[Z]{z}"'
           ]
         },
         tool_on: {
@@ -2724,7 +2725,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
         },
         dwell: {
           template: [
-            'SEND "G4 P{dwell}" REQUIRE_OK'
+            'SEND "G4 P{dwell}"'
           ]
         },
         zero_all_axes: {
@@ -2757,7 +2758,7 @@ const BUILTIN_CONTROLLER_PROFILE_FALLBACK = Object.freeze({
       boilerplate: {
         title: 'FluidNC Starter',
         description: 'Fast sanity sequence for FluidNC with GRBL-compatible sender flow.',
-        gcom: '10 PRINT "FluidNC starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "?"\n50 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n60 END'
+        gcom: '10 PRINT "FluidNC starter"\n20 SET SEND_MODE AUTO\n30 SEND "$I" REQUIRE_OK\n40 SEND "$G" REQUIRE_OK\n50 SEND "?"\n60 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n70 END'
       }
     }
   }
