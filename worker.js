@@ -713,6 +713,16 @@ State/Runtime: STATE() CLOCK() ELAPSED() BF_SERIAL() BF_PLANNER() GCODE_PARAM(ke
 Template variables come from ; VAR name=value headers and are referenced as {name} in program text.
 DESCRIPTION lines may also use {{expr}} placeholders for rendered metadata.
 
+Advanced GCOM capabilities:
+- Subroutines (GOSUB line, RETURN): Use subroutines for reusable motion sequences, repeated pattern segments, and diagnostic sub-procedures instead of duplicating blocks inline. Any script that repeats a motion pattern should factor the repeated body into a GOSUB/RETURN routine.
+- WebSocket connection (CONNECT WS "host" [PORT expr]): Use CONNECT WS for FluidNC WiFi sessions, with optional PORT when not using the default. Prefer this for network-connected controllers instead of serial CONNECT.
+- Buffered streaming (SEND ... BUFFERED, WAIT_IDLE, SET SEND_MODE AUTO, BF_SERIAL(), BF_PLANNER()): Use buffered sends for motion batches, then WAIT_IDLE after each batch to ensure motion completion. Default to SET SEND_MODE AUTO for scripts that stream many motion commands, and use BF_SERIAL/BF_PLANNER when adapting pacing.
+- Live controller reads (SETTING("$N"), READ("$N")): Use these to fetch live controller settings and runtime values directly in-script before making decisions. Prefer reads over hardcoded assumptions when values may differ between machines.
+- Pattern matching waits (WAIT_FOR_LINE("pattern", timeoutMs)): Use WAIT_FOR_LINE for connection detection, banner parsing, and response synchronization; pattern supports regex matching. Use explicit timeouts and handle timeout outcomes for robust scripts.
+- Interactive dialogs (FORM(...), INPUT(FORM(...))): Use FORM and INPUT(FORM(...)) for operator confirmations, branch selection, and diagnostic gates before risky actions. This is the preferred pattern for yes/no or multi-choice runtime decisions.
+- Benchmark markers (BENCH META, BENCH START, BENCH END): Use benchmark markers to bracket timed sections and emit structured performance telemetry for analysis. BENCH META should define context before timed runs, then START/END should wrap each measured segment.
+- State functions (STATE(), WAIT_STATE "idle", WAIT_IDLE): Use STATE/WAIT_STATE to manage controller state transitions safely, and WAIT_IDLE to confirm queued motion is complete. Prefer state-aware flow control over fixed delays when sequencing machine operations.
+
 CRITICAL SYNTAX RULES (must follow):
 - Do NOT use // comments anywhere.
 - Use REM comments inside numbered program lines, or metadata headers prefixed with ';'.
