@@ -242,28 +242,61 @@
   .preview-block .hl { color: var(--teal); }
   .preview-block .hd { color: var(--text); font-weight: 600; }
 
-  .rosetta-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+  /* ── Example tabs ── */
+  .example-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
   }
-  .rosetta-col-label {
+  .example-tab {
+    padding: 6px 14px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--text-dim);
-    margin-bottom: 6px;
-  }
-  .rosetta-block {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px 12px;
-    font-family: var(--mono);
-    font-size: 11px;
-    line-height: 1.7;
+    letter-spacing: 0.04em;
     color: var(--text-muted);
-    white-space: pre-wrap;
-    word-break: break-word;
+    cursor: pointer;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    font-family: var(--sans);
+    transition: color 0.12s;
+  }
+  .example-tab:hover { color: var(--text-dim); }
+  .example-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  /* ── Toggleable rows ── */
+  .field-row.hidden { display: none; }
+  .toggle-note {
+    font-size: 11px;
+    color: var(--amber);
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(245,158,11,0.08);
+    border-radius: 4px;
+    border: 1px solid rgba(245,158,11,0.2);
+  }
+  .peripheral-commands {
+    padding-left: 16px;
+    margin-top: 6px;
+    display: none;
+  }
+  .peripheral-commands.visible { display: block; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .checkbox-row input[type=checkbox] {
+    width: auto;
+    accent-color: var(--teal);
+  }
+  .axes-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 4px;
   }
 
   /* ── Bottom bar ── */
@@ -380,6 +413,56 @@
         <label>Notes <small style="color:var(--text-muted)">(injected into AI context)</small></label>
         <textarea id="meta-notes" rows="3" placeholder="Any machine-specific notes the AI should know…"></textarea>
       </div>
+      <div class="two-col" style="margin-top:8px">
+        <div class="field-row" style="margin:0">
+          <label>Unit mode</label>
+          <select id="meta-unit-mode">
+            <option value="metric">Metric (G21)</option>
+            <option value="imperial">Imperial (G20)</option>
+          </select>
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Work offset</label>
+          <input type="text" id="meta-work-offset" placeholder="G54" list="work-offset-suggestions">
+          <datalist id="work-offset-suggestions">
+            <option value="G54"><option value="G55"><option value="G56">
+            <option value="G57"><option value="G58"><option value="G59">
+          </datalist>
+        </div>
+      </div>
+      <div class="field-row" style="margin-top:8px">
+        <label>Axes</label>
+        <div class="axes-group">
+          <label class="checkbox-row"><input type="checkbox" id="axis-x" checked> X</label>
+          <label class="checkbox-row"><input type="checkbox" id="axis-y" checked> Y</label>
+          <label class="checkbox-row"><input type="checkbox" id="axis-z"> Z</label>
+          <label class="checkbox-row"><input type="checkbox" id="axis-a"> A</label>
+        </div>
+        <div id="no-z-notice" class="toggle-note" style="display:none">No Z axis — AI will omit Z words from all generated GCOM</div>
+      </div>
+      <div class="field-row hidden" id="safe-z-row">
+        <label>Safe Z height (mm)</label>
+        <input type="number" id="meta-safe-z" placeholder="5" min="0.001" step="0.5">
+      </div>
+    </div>
+
+    <!-- Peripherals -->
+    <div class="section">
+      <div class="section-label">Peripherals</div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="periph-air-assist">
+        <label for="periph-air-assist">Air assist (M8/M9)</label>
+      </div>
+      <div class="peripheral-commands" id="air-assist-cmds">
+        <div class="field-row">
+          <label>Air on command</label>
+          <input type="text" id="air-assist-on" placeholder='SEND "M8" REQUIRE_OK'>
+        </div>
+        <div class="field-row">
+          <label>Air off command</label>
+          <input type="text" id="air-assist-off" placeholder='SEND "M9" REQUIRE_OK'>
+        </div>
+      </div>
     </div>
 
     <!-- Commands -->
@@ -406,6 +489,17 @@
         <option value="home">
         <option value="rapid_move">
         <option value="cut_move">
+        <option value="on_connect">
+        <option value="probe">
+        <option value="home_x">
+        <option value="home_y">
+        <option value="home_z">
+        <option value="safe_rapid">
+        <option value="set_work_offset">
+        <option value="air_on">
+        <option value="air_off">
+        <option value="coolant_on">
+        <option value="coolant_off">
       </datalist>
     </div>
 
@@ -443,6 +537,10 @@
           <input type="number" id="preset-rapid" placeholder="3000" min="0">
         </div>
       </div>
+      <div class="field-row hidden" id="plunge-feed-row">
+        <label>Plunge feed (mm/min)</label>
+        <input type="number" id="preset-plunge" placeholder="300" min="0">
+      </div>
     </div>
 
     <!-- Transport tuning -->
@@ -465,26 +563,16 @@
   <!-- Right panel — preview -->
   <div class="right-panel">
 
-    <!-- AI preview -->
+    <!-- Machine test program (two-tab live example) -->
     <div class="preview-section">
-      <div class="preview-section-label">AI will see this for your machine</div>
-      <div class="preview-block" id="ai-preview"><span class="ph">Fill in the form to see what the AI receives as context for this machine…</span></div>
-    </div>
-
-    <!-- Rosetta comparison -->
-    <div class="preview-section">
-      <div class="preview-section-label">Rosetta — controller boilerplate reference</div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Default starter GCOM for each controller flavor. Not injected into the AI — for your reference when writing commands.</p>
-      <div class="rosetta-grid">
-        <div>
-          <div class="rosetta-col-label">Vanilla GRBL</div>
-          <div class="rosetta-block" id="rosetta-grbl"></div>
-        </div>
-        <div>
-          <div class="rosetta-col-label">FluidNC</div>
-          <div class="rosetta-block" id="rosetta-fluid"></div>
-        </div>
+      <div class="preview-section-label">Machine test program — updates live</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">A read-only X-in-a-box program using your machine settings. Like "the quick brown fox" — exercises rapids, cuts, diagonals, tool on/off, preamble, and air assist in one compact job.</p>
+      <div class="example-tabs">
+        <button class="example-tab" id="tab-gcom" onclick="switchTab('gcom')">GCOM script</button>
+        <button class="example-tab active" id="tab-output" onclick="switchTab('output')">Machine output</button>
       </div>
+      <div class="preview-block" id="example-gcom" style="display:none"><span class="ph">Enter a machine name to see the example script…</span></div>
+      <div class="preview-block" id="example-output"><span class="ph">Enter a machine name to see the machine output…</span></div>
     </div>
 
   </div><!-- /right-panel -->
@@ -517,7 +605,6 @@
 const CONTROLLER_DATA = {
   'grbl-vanilla': {
     label: 'Vanilla GRBL',
-    boilerplate: '10 PRINT "Vanilla GRBL starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 SEND "G90" REQUIRE_OK\n50 SEND "G21" REQUIRE_OK\n60 STATUS\n70 END',
     guidance: {
       summary: 'Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.',
       preferred_style: [
@@ -534,7 +621,6 @@ const CONTROLLER_DATA = {
   },
   'fluidnc': {
     label: 'FluidNC',
-    boilerplate: '10 PRINT "FluidNC starter"\n20 SEND "$I" REQUIRE_OK\n30 SEND "$G" REQUIRE_OK\n40 STATUS\n50 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n60 END',
     guidance: {
       summary: 'Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.',
       preferred_style: [
@@ -565,6 +651,20 @@ const metaTool      = document.getElementById('meta-tool');
 const metaBedW      = document.getElementById('meta-bed-w');
 const metaBedH      = document.getElementById('meta-bed-h');
 const metaNotes     = document.getElementById('meta-notes');
+const metaUnitMode  = document.getElementById('meta-unit-mode');
+const metaWorkOffset= document.getElementById('meta-work-offset');
+const metaSafeZ     = document.getElementById('meta-safe-z');
+const axisX         = document.getElementById('axis-x');
+const axisY         = document.getElementById('axis-y');
+const axisZ         = document.getElementById('axis-z');
+const axisA         = document.getElementById('axis-a');
+const noZNotice     = document.getElementById('no-z-notice');
+const safeZRow      = document.getElementById('safe-z-row');
+const plungeFeedRow = document.getElementById('plunge-feed-row');
+const periphAirAssist = document.getElementById('periph-air-assist');
+const airAssistCmds = document.getElementById('air-assist-cmds');
+const airAssistOn   = document.getElementById('air-assist-on');
+const airAssistOff  = document.getElementById('air-assist-off');
 const cmdsTbody     = document.getElementById('commands-tbody');
 const cmdsEmpty     = document.getElementById('commands-empty');
 const snipTbody     = document.getElementById('snippets-tbody');
@@ -572,11 +672,11 @@ const snipEmpty     = document.getElementById('snippets-empty');
 const presetFeed    = document.getElementById('preset-feed');
 const presetPower   = document.getElementById('preset-power');
 const presetRapid   = document.getElementById('preset-rapid');
+const presetPlunge  = document.getElementById('preset-plunge');
 const tuningRxBuffer = document.getElementById('tuning-rx-buffer');
 const tuningPlannerSlots = document.getElementById('tuning-planner-slots');
-const aiPreview     = document.getElementById('ai-preview');
-const rosettaGrbl   = document.getElementById('rosetta-grbl');
-const rosettaFluid  = document.getElementById('rosetta-fluid');
+const exampleGcom   = document.getElementById('example-gcom');
+const exampleOutput = document.getElementById('example-output');
 const saveBtn       = document.getElementById('save-btn');
 const resultBox     = document.getElementById('result-box');
 const resultIdLine  = document.getElementById('result-id-line');
@@ -586,10 +686,6 @@ const saveStatus    = document.getElementById('save-status');
 const loadIdInput   = document.getElementById('load-id-input');
 const loadBtn       = document.getElementById('load-btn');
 const loadStatus    = document.getElementById('load-status');
-
-// ── Rosetta panel — static content ──
-rosettaGrbl.textContent  = CONTROLLER_DATA['grbl-vanilla'].boilerplate;
-rosettaFluid.textContent = CONTROLLER_DATA['fluidnc'].boilerplate;
 
 // ── Commands table ──
 function renderCommands() {
@@ -674,6 +770,15 @@ document.getElementById('add-snippet-btn').addEventListener('click', () => {
 });
 
 // ── Build profile object from form ──
+function getAxesFromForm() {
+  const axes = [];
+  if (axisX.checked) axes.push('X');
+  if (axisY.checked) axes.push('Y');
+  if (axisZ.checked) axes.push('Z');
+  if (axisA.checked) axes.push('A');
+  return axes;
+}
+
 function buildProfile() {
   const profile = {
     meta: { name: metaName.value.trim() },
@@ -687,10 +792,25 @@ function buildProfile() {
   if (!isNaN(bw) && bw >= 0) profile.meta.bed_width_mm  = bw;
   if (!isNaN(bh) && bh >= 0) profile.meta.bed_height_mm = bh;
 
+  const unitMode = metaUnitMode.value;
+  if (unitMode) profile.meta.unit_mode = unitMode;
+
+  const workOffset = metaWorkOffset.value.trim();
+  if (workOffset) profile.meta.work_offset = workOffset;
+
+  const axes = getAxesFromForm();
+  if (axes.length) profile.meta.axes = axes;
+
+  const safeZ = parseFloat(metaSafeZ.value);
+  if (!isNaN(safeZ) && safeZ > 0 && axisZ.checked) profile.meta.safe_z_mm = safeZ;
+
   const validCmds = commands.filter(c => c.name.trim() && c.gcom.trim());
   if (validCmds.length) {
     profile.commands = validCmds.map(c => {
-      const o = { name: c.name.trim(), gcom: c.gcom.trim() };
+      const rawGcom = c.gcom.trim();
+      const lines = rawGcom.split('\n').map(l => l.trim()).filter(Boolean);
+      const serializedGcom = lines.length > 1 ? lines : rawGcom;
+      const o = { name: c.name.trim(), gcom: serializedGcom };
       if (c.description && c.description.trim()) o.description = c.description.trim();
       return o;
     });
@@ -704,11 +824,22 @@ function buildProfile() {
   const df = parseFloat(presetFeed.value);
   const dp = parseFloat(presetPower.value);
   const dr = parseFloat(presetRapid.value);
+  const dpf = parseFloat(presetPlunge.value);
   const presets = {};
-  if (!isNaN(df) && df >= 0) presets.default_feed  = df;
-  if (!isNaN(dp) && dp >= 0) presets.default_power = dp;
-  if (!isNaN(dr) && dr >= 0) presets.rapid_feed    = dr;
+  if (!isNaN(df) && df >= 0)  presets.default_feed  = df;
+  if (!isNaN(dp) && dp >= 0)  presets.default_power = dp;
+  if (!isNaN(dr) && dr >= 0)  presets.rapid_feed    = dr;
+  if (!isNaN(dpf) && dpf > 0 && axisZ.checked) presets.plunge_feed = dpf;
   if (Object.keys(presets).length) profile.presets = presets;
+
+  if (periphAirAssist.checked) {
+    const periph = { air_assist: true };
+    const onCmd  = airAssistOn.value.trim()  || 'SEND "M8" REQUIRE_OK';
+    const offCmd = airAssistOff.value.trim() || 'SEND "M9" REQUIRE_OK';
+    periph.air_assist_on  = onCmd;
+    periph.air_assist_off = offCmd;
+    profile.peripherals = periph;
+  }
 
   const rxBufferRaw = Math.trunc(Number(tuningRxBuffer.value));
   const plannerSlotsRaw = Math.trunc(Number(tuningPlannerSlots.value));
@@ -729,67 +860,232 @@ function populateForm(profile) {
   metaNotes.value          = (profile.meta && profile.meta.notes)           || '';
   metaBedW.value           = (profile.meta && profile.meta.bed_width_mm  != null) ? profile.meta.bed_width_mm  : '';
   metaBedH.value           = (profile.meta && profile.meta.bed_height_mm != null) ? profile.meta.bed_height_mm : '';
+  metaUnitMode.value       = (profile.meta && profile.meta.unit_mode) || 'metric';
+  metaWorkOffset.value     = (profile.meta && profile.meta.work_offset) || '';
+  metaSafeZ.value          = (profile.meta && profile.meta.safe_z_mm != null) ? profile.meta.safe_z_mm : '';
+
+  const axes = (profile.meta && Array.isArray(profile.meta.axes)) ? profile.meta.axes : ['X', 'Y'];
+  axisX.checked = axes.includes('X');
+  axisY.checked = axes.includes('Y');
+  axisZ.checked = axes.includes('Z');
+  axisA.checked = axes.includes('A');
+
   presetFeed.value         = (profile.presets && profile.presets.default_feed  != null) ? profile.presets.default_feed  : '';
   presetPower.value        = (profile.presets && profile.presets.default_power != null) ? profile.presets.default_power : '';
   presetRapid.value        = (profile.presets && profile.presets.rapid_feed    != null) ? profile.presets.rapid_feed    : '';
+  presetPlunge.value       = (profile.presets && profile.presets.plunge_feed   != null) ? profile.presets.plunge_feed   : '';
   tuningRxBuffer.value     = (profile.transport_tuning && profile.transport_tuning.rx_buffer_bytes != null) ? profile.transport_tuning.rx_buffer_bytes : '';
   tuningPlannerSlots.value = (profile.transport_tuning && profile.transport_tuning.planner_slots != null) ? profile.transport_tuning.planner_slots : '';
-  commands = (profile.commands || []).map(c => ({ name: c.name || '', description: c.description || '', gcom: c.gcom || '' }));
+
+  const periph = profile.peripherals || {};
+  periphAirAssist.checked = !!periph.air_assist;
+  airAssistOn.value  = periph.air_assist_on  || '';
+  airAssistOff.value = periph.air_assist_off || '';
+
+  commands = (profile.commands || []).map(c => {
+    const rawGcom = Array.isArray(c.gcom) ? c.gcom.join('\n') : (c.gcom || '');
+    return { name: c.name || '', description: c.description || '', gcom: rawGcom };
+  });
   snippets = (profile.snippets || []).map(s => ({ name: s.name || '', gcom: s.gcom || '' }));
   renderCommands();
   renderSnippets();
+  updateVisibility();
+  renderExample();
 }
 
-// ── AI preview ──
-function renderPreview() {
-  const ctrl = baseCtrlSel.value;
-  const cd   = CONTROLLER_DATA[ctrl] || CONTROLLER_DATA['grbl-vanilla'];
-  const name = metaName.value.trim();
+// ── Conditional visibility ──
+function updateVisibility() {
+  const hasZ = axisZ.checked;
+  noZNotice.style.display = hasZ ? 'none' : 'block';
+  safeZRow.classList.toggle('hidden', !hasZ);
+  plungeFeedRow.classList.toggle('hidden', !hasZ);
+  airAssistCmds.classList.toggle('visible', periphAirAssist.checked);
+}
 
+// ── Tab switcher ──
+let activeTab = 'output';
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-gcom').classList.toggle('active', tab === 'gcom');
+  document.getElementById('tab-output').classList.toggle('active', tab === 'output');
+  exampleGcom.style.display   = tab === 'gcom'   ? 'block' : 'none';
+  exampleOutput.style.display = tab === 'output' ? 'block' : 'none';
+}
+
+// ── Extract raw serial lines from a SEND "..." GCOM line ──
+function extractSendLine(gcomLine) {
+  const m = gcomLine.match(/SEND\s+"([^"]+)"/i);
+  return m ? m[1] : null;
+}
+
+// ── Build the X-in-a-box example program ──
+function buildExampleProgram() {
+  const name      = metaName.value.trim();
+  const ctrl      = baseCtrlSel.value;
+  const cd        = CONTROLLER_DATA[ctrl] || CONTROLLER_DATA['grbl-vanilla'];
+  const hasZ      = axisZ.checked;
+  const unitMode  = metaUnitMode.value === 'imperial' ? 'G20' : 'G21';
+  const workOff   = metaWorkOffset.value.trim() || '';
+  const airOn     = periphAirAssist.checked;
+  const airOnCmd  = (airAssistOn.value.trim()  || 'SEND "M8" REQUIRE_OK');
+  const airOffCmd = (airAssistOff.value.trim() || 'SEND "M9" REQUIRE_OK');
+  const feed      = parseFloat(presetFeed.value)  || 1200;
+  const power     = parseFloat(presetPower.value) || 600;
+  const rapid     = parseFloat(presetRapid.value) || 3000;
+  const safeZ     = hasZ ? (parseFloat(metaSafeZ.value) || 5) : null;
+  const plungeF   = hasZ ? (parseFloat(presetPlunge.value) || 300) : null;
+  const depth     = hasZ ? -2 : null; // nominal 2mm cut depth for router example
+
+  // Find named lifecycle commands from user's profile, keyed by name
+  const cmdMap = {};
+  commands.filter(c => c.name.trim() && c.gcom.trim()).forEach(c => { cmdMap[c.name.trim()] = c.gcom.trim(); });
+
+  // Build the sequence as [{gcom, comment}] pairs
+  // Each entry: gcom = SEND "..." line (or multi-line), comment = inline note
+  const seq = []; // {n, gcom, comment}
+
+  // Header comment
+  if (name) {
+    seq.push({ comment: `; Machine test — ${name} [${cd.label}]` });
+    seq.push({ comment: `; cut F${feed} · S${power}${airOn ? ' · air assist' : ''}${hasZ ? ` · depth ${depth}mm` : ''}` });
+    seq.push({ comment: ';' });
+  }
+
+  // Preamble — use job_start if defined, else synthesize
+  if (cmdMap['job_start']) {
+    seq.push({ gcom: cmdMap['job_start'], comment: '; preamble (job_start)' });
+  } else {
+    seq.push({ gcom: `SEND "${unitMode}" REQUIRE_OK`, comment: `; ${unitMode === 'G21' ? 'metric' : 'imperial'}` });
+    seq.push({ gcom: 'SEND "G90" REQUIRE_OK',          comment: '; absolute coords' });
+    if (ctrl === 'grbl-vanilla') {
+      seq.push({ gcom: 'SEND "$32=1" REQUIRE_OK', comment: '; laser mode' });
+    }
+    if (workOff) {
+      seq.push({ gcom: `SEND "${workOff}" REQUIRE_OK`, comment: '; work offset' });
+    }
+    seq.push({ gcom: hasZ ? `SEND "M5 S0" REQUIRE_OK` : `SEND "M5 S0" REQUIRE_OK`, comment: '; tool off safe start' });
+  }
+
+  // Rapid to corner
+  if (hasZ) {
+    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; safe height' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK',       comment: '; rapid to start corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge to depth' });
+  } else {
+    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK', comment: '; rapid to start corner' });
+  }
+
+  // Air assist on
+  if (airOn) {
+    seq.push({ gcom: airOnCmd, comment: '; air assist on' });
+  }
+
+  // Tool on — use tool_on_sequence if defined
+  if (cmdMap['tool_on_sequence']) {
+    seq.push({ gcom: cmdMap['tool_on_sequence'], comment: '; tool on (tool_on_sequence)' });
+  } else {
+    seq.push({ gcom: `SEND "M3 S${power}" REQUIRE_OK`, comment: '; tool on' });
+  }
+
+  seq.push({ comment: '; box — tests +X +Y −X −Y individually' });
+
+  // Box sides
+  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}" REQUIRE_OK`,  comment: '; +X edge' });
+  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}" REQUIRE_OK`, comment: '; +Y edge' });
+  seq.push({ gcom: `SEND "G1 X5 Y25 F${feed}" REQUIRE_OK`,  comment: '; −X edge' });
+  seq.push({ gcom: `SEND "G1 X5 Y5 F${feed}" REQUIRE_OK`,   comment: '; −Y edge (close)' });
+
+  seq.push({ comment: '; diagonals — tests simultaneous XY' });
+
+  // Diagonal 1 — bottom-left to top-right (going there via rapid)
+  if (hasZ) {
+    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X5 Y25" REQUIRE_OK',      comment: '; rapid to top-left corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge' });
+  } else {
+    seq.push({ gcom: 'SEND "G0 X5 Y25" REQUIRE_OK', comment: '; rapid to top-left corner' });
+  }
+  seq.push({ gcom: `SEND "G1 X25 Y5 F${feed}" REQUIRE_OK`,  comment: '; diagonal ↘' });
+
+  // Diagonal 2 — top-left to bottom-right
+  if (hasZ) {
+    seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`,   comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK',       comment: '; rapid to bottom-left corner' });
+    seq.push({ gcom: `SEND "G1 Z${depth} F${plungeF}" REQUIRE_OK`, comment: '; plunge' });
+  } else {
+    seq.push({ gcom: 'SEND "G0 X5 Y5" REQUIRE_OK', comment: '; rapid to bottom-left corner' });
+  }
+  seq.push({ gcom: `SEND "G1 X25 Y25 F${feed}" REQUIRE_OK`, comment: '; diagonal ↗' });
+
+  seq.push({ comment: '; end' });
+
+  // Tool off — use tool_off_sequence if defined
+  if (cmdMap['tool_off_sequence']) {
+    seq.push({ gcom: cmdMap['tool_off_sequence'], comment: '; tool off (tool_off_sequence)' });
+  } else {
+    seq.push({ gcom: 'SEND "M5 S0" REQUIRE_OK', comment: '; tool off' });
+  }
+
+  // Air assist off
+  if (airOn) {
+    seq.push({ gcom: airOffCmd, comment: '; air assist off' });
+  }
+
+  // Job end — use job_end if defined, else return home (with safe Z if present)
+  if (cmdMap['job_end']) {
+    seq.push({ gcom: cmdMap['job_end'], comment: '; end (job_end)' });
+  } else {
+    if (hasZ) seq.push({ gcom: `SEND "G0 Z${safeZ}" REQUIRE_OK`, comment: '; retract' });
+    seq.push({ gcom: 'SEND "G0 X0 Y0" REQUIRE_OK', comment: '; return home' });
+  }
+
+  return seq;
+}
+
+function renderExample() {
+  const name = metaName.value.trim();
+  const ph = '<span class="ph">Enter a machine name to see the example…</span>';
   if (!name) {
-    aiPreview.innerHTML = '<span class="ph">Enter a machine name to see the AI context preview…</span>';
+    exampleGcom.innerHTML   = ph;
+    exampleOutput.innerHTML = ph;
     return;
   }
 
-  const lines = [];
-  lines.push(`You are writing GCOM for a ${escHtml(name)} running ${escHtml(cd.label)}.`);
-  if (metaTool.value.trim()) lines.push(`Tool: ${escHtml(metaTool.value.trim())}`);
-  if (metaBedW.value && metaBedH.value) lines.push(`Work area: ${metaBedW.value} × ${metaBedH.value} mm`);
-  if (metaNotes.value.trim()) lines.push(`Notes: ${escHtml(metaNotes.value.trim())}`);
+  const seq  = buildExampleProgram();
+  let ln = 10; // GCOM line number counter
 
-  const validCmds = commands.filter(c => c.name.trim() && c.gcom.trim());
-  if (validCmds.length) {
-    lines.push('');
-    lines.push('Use these exact GCOM lines for common operations:');
-    validCmds.forEach((c, i) => {
-      lines.push(`  ${i + 1}. ${escHtml(c.name)}${c.description ? ': ' + escHtml(c.description) : ''}`);
-      lines.push(`     ${escHtml(c.gcom)}`);
-    });
+  const gcomLines   = [];
+  const outputLines = [];
+
+  for (const entry of seq) {
+    if (entry.comment && !entry.gcom) {
+      // pure comment/blank — GCOM only (no serial output)
+      const dimmed = `<span style="color:var(--text-muted)">${escHtml(entry.comment)}</span>`;
+      gcomLines.push(dimmed);
+      continue;
+    }
+    if (entry.gcom) {
+      // May be multi-line (e.g. a job_start block)
+      const gcomBlock = entry.gcom;
+      const blockLines = gcomBlock.split('\n').map(l => l.trim()).filter(Boolean);
+      for (const gl of blockLines) {
+        const sendMatch = gl.match(/SEND\s+"([^"]+)"/i);
+        const rawSerial = sendMatch ? sendMatch[1] : null;
+        const commentSuffix = entry.comment && blockLines.length === 1 ? `  <span style="color:var(--text-muted)">${escHtml(entry.comment)}</span>` : '';
+        gcomLines.push(`<span style="color:var(--text-dim)">${ln}</span> <span style="color:var(--teal)">${escHtml(gl)}</span>${commentSuffix}`);
+        ln += 10;
+        if (rawSerial) {
+          outputLines.push(`<span style="color:var(--text)">${escHtml(rawSerial)}</span>`);
+        }
+      }
+    }
   }
 
-  const validSnips = snippets.filter(s => s.name.trim() && s.gcom.trim());
-  if (validSnips.length) {
-    lines.push('');
-    lines.push('Named GCOM snippets:');
-    validSnips.forEach(s => {
-      lines.push(`  [${escHtml(s.name)}]`);
-      lines.push(`  ${escHtml(s.gcom)}`);
-    });
-  }
+  // Final END line in GCOM
+  gcomLines.push(`<span style="color:var(--text-dim)">${ln}</span> <span style="color:var(--teal)">END</span>`);
 
-  const df = parseFloat(presetFeed.value);
-  const dp = parseFloat(presetPower.value);
-  const dr = parseFloat(presetRapid.value);
-  const presetLines = [];
-  if (!isNaN(df) && df >= 0) presetLines.push(`default_feed=${df}`);
-  if (!isNaN(dp) && dp >= 0) presetLines.push(`default_power=${dp}`);
-  if (!isNaN(dr) && dr >= 0) presetLines.push(`rapid_feed=${dr}`);
-  if (presetLines.length) {
-    lines.push('');
-    lines.push('Default presets: ' + presetLines.join(', '));
-  }
-
-  aiPreview.innerHTML = lines.join('\n');
+  exampleGcom.innerHTML   = gcomLines.join('\n')   || ph;
+  exampleOutput.innerHTML = outputLines.join('\n') || ph;
 }
 
 // ── localStorage draft ──
@@ -809,13 +1105,18 @@ function loadDraft() {
 
 // ── Form change handler ──
 function onFormChange() {
-  renderPreview();
+  updateVisibility();
+  renderExample();
   saveDraft();
 }
 
 // ── Wire up all form inputs to onFormChange ──
 [baseCtrlSel, metaName, metaFirmware, metaTool, metaBedW, metaBedH, metaNotes,
- presetFeed, presetPower, presetRapid, tuningRxBuffer, tuningPlannerSlots].forEach(el => {
+ metaUnitMode, metaWorkOffset, metaSafeZ,
+ axisX, axisY, axisZ, axisA,
+ periphAirAssist, airAssistOn, airAssistOff,
+ presetFeed, presetPower, presetRapid, presetPlunge,
+ tuningRxBuffer, tuningPlannerSlots].forEach(el => {
   el.addEventListener('input', onFormChange);
   el.addEventListener('change', onFormChange);
 });
@@ -942,7 +1243,8 @@ function handleUrlParams() {
     if (baseParam && (baseParam === 'grbl-vanilla' || baseParam === 'fluidnc')) {
       baseCtrlSel.value = baseParam;
     }
-    renderPreview();
+    updateVisibility();
+    renderExample();
   }
 }
 
@@ -964,6 +1266,7 @@ function escHtml(str) {
 // ── Init ──
 renderCommands();
 renderSnippets();
+updateVisibility();
 handleUrlParams();
 </script>
 </body>

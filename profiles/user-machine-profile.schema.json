@@ -37,6 +37,25 @@
         "notes": {
           "type": "string",
           "description": "Free-form notes about this machine injected into AI context"
+        },
+        "unit_mode": {
+          "type": "string",
+          "enum": ["metric", "imperial"],
+          "description": "Unit system this machine uses. Metric = G21, Imperial = G20."
+        },
+        "safe_z_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Safe retract height above material in mm for all rapids and tool-off moves"
+        },
+        "work_offset": {
+          "type": "string",
+          "description": "Active work coordinate system, e.g. G54"
+        },
+        "axes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Axes this machine has, e.g. [\"X\",\"Y\"] for a laser or [\"X\",\"Y\",\"Z\"] for a router. When Z is absent the AI must not emit Z words in generated GCOM."
         }
       }
     },
@@ -63,9 +82,11 @@
             "description": "Human-readable description of what this command does"
           },
           "gcom": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Complete literal runnable GCOM line or block for this command"
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+            ],
+            "description": "Complete literal runnable GCOM line, or an array of GCOM lines forming a multi-line sequence"
           },
           "example": {
             "type": "string",
@@ -115,7 +136,28 @@
           "type": "number",
           "minimum": 0,
           "description": "Rapid positioning feed rate in mm/min"
+        },
+        "plunge_feed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Feed rate for Z-axis plunge moves in mm/min"
         }
+      }
+    },
+    "peripherals": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional peripheral devices attached to this machine",
+      "properties": {
+        "air_assist": { "type": "boolean", "description": "Machine has air assist" },
+        "air_assist_on": { "type": "string", "default": "SEND \"M8\" REQUIRE_OK", "description": "GCOM line to turn air assist on" },
+        "air_assist_off": { "type": "string", "default": "SEND \"M9\" REQUIRE_OK", "description": "GCOM line to turn air assist off" },
+        "coolant": { "type": "boolean", "description": "Machine has coolant" },
+        "coolant_on": { "type": "string", "description": "GCOM line to turn coolant on" },
+        "coolant_off": { "type": "string", "description": "GCOM line to turn coolant off" },
+        "vacuum": { "type": "boolean", "description": "Machine has vacuum" },
+        "vacuum_on": { "type": "string", "description": "GCOM line to turn vacuum on" },
+        "vacuum_off": { "type": "string", "description": "GCOM line to turn vacuum off" }
       }
     },
     "transport_tuning": {
@@ -139,3 +181,4 @@
     }
   }
 }
+

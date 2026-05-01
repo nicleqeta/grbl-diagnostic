@@ -1224,12 +1224,53 @@ Before emitting a script, verify:
             const baseController = String(machineProfile.base_controller);
             contractParts.push(`You are writing GCOM for a ${machineName} (${baseController}). Use these exact GCOM lines for common operations on this machine:`);
 
+            // ── Axis constraint — injected first, most critical for laser machines ──
+            const axes = Array.isArray(machineProfile.meta.axes) ? machineProfile.meta.axes.map(String) : null;
+            if (axes && !axes.includes('Z')) {
+              contractParts.push('CRITICAL: This machine has no Z axis. Never emit Z words, Z coordinates, or Z-axis commands in any generated GCOM.');
+            } else if (axes && axes.length) {
+              contractParts.push(`Available axes: ${axes.join(', ')}.`);
+            }
+
+            // ── Unit mode ──
+            if (machineProfile.meta.unit_mode === 'imperial') {
+              contractParts.push('This machine uses imperial units (G20). Always emit G20 in job preambles.');
+            } else if (machineProfile.meta.unit_mode === 'metric' || machineProfile.meta.unit_mode === undefined) {
+              contractParts.push('This machine uses metric units (G21). Always emit G21 in job preambles.');
+            }
+
+            // ── Work offset ──
+            if (typeof machineProfile.meta.work_offset === 'string' && machineProfile.meta.work_offset.trim()) {
+              contractParts.push(`Active work coordinate system is ${machineProfile.meta.work_offset.trim()}. Always include this in job preambles.`);
+            }
+
+            // ── Safe Z ──
+            if (axes && axes.includes('Z') && typeof machineProfile.meta.safe_z_mm === 'number' && machineProfile.meta.safe_z_mm > 0) {
+              contractParts.push(`Safe Z retract height is ${machineProfile.meta.safe_z_mm}mm. Use this height for all rapid moves and tool-off sequences.`);
+            }
+
+            // ── Peripherals ──
+            const periph = (machineProfile.peripherals && typeof machineProfile.peripherals === 'object') ? machineProfile.peripherals : null;
+            if (periph && periph.air_assist) {
+              const airOn  = typeof periph.air_assist_on  === 'string' && periph.air_assist_on.trim()  ? periph.air_assist_on.trim()  : 'SEND "M8" REQUIRE_OK';
+              const airOff = typeof periph.air_assist_off === 'string' && periph.air_assist_off.trim() ? periph.air_assist_off.trim() : 'SEND "M9" REQUIRE_OK';
+              contractParts.push(`This machine has air assist. Always turn air on before cutting and off after tool_off. Air on: ${airOn} — Air off: ${airOff}`);
+            }
+            if (periph && periph.coolant && periph.coolant_on && periph.coolant_off) {
+              contractParts.push(`Coolant on: ${periph.coolant_on} — Coolant off: ${periph.coolant_off}`);
+            }
+            if (periph && periph.vacuum && periph.vacuum_on && periph.vacuum_off) {
+              contractParts.push(`Vacuum on: ${periph.vacuum_on} — Vacuum off: ${periph.vacuum_off}`);
+            }
+
             const commands = Array.isArray(machineProfile.commands) ? machineProfile.commands : [];
             for (let i = 0; i < commands.length; i++) {
               const command = commands[i] && typeof commands[i] === 'object' ? commands[i] : null;
               if (!command) continue;
               const commandName = typeof command.name === 'string' ? command.name : '';
-              const commandGcom = typeof command.gcom === 'string' ? command.gcom : '';
+              const commandGcom = Array.isArray(command.gcom)
+                ? command.gcom.join('\n')
+                : (typeof command.gcom === 'string' ? command.gcom : '');
               if (!commandName || !commandGcom) continue;
               contractParts.push(`${i + 1}. ${commandName}: ${commandGcom}`);
             }
@@ -1251,11 +1292,15 @@ Before emitting a script, verify:
               : null;
             if (presets) {
               const presetFields = [];
-              if (presets.default_feed !== undefined) presetFields.push(`default_feed=${presets.default_feed}`);
+              if (presets.default_feed !== undefined)  presetFields.push(`default_feed=${presets.default_feed}`);
               if (presets.default_power !== undefined) presetFields.push(`default_power=${presets.default_power}`);
-              if (presets.rapid_feed !== undefined) presetFields.push(`rapid_feed=${presets.rapid_feed}`);
+              if (presets.rapid_feed !== undefined)    presetFields.push(`rapid_feed=${presets.rapid_feed}`);
+              if (presets.plunge_feed !== undefined)   presetFields.push(`plunge_feed=${presets.plunge_feed}`);
               if (presetFields.length) {
                 contractParts.push(`Presets: ${presetFields.join(', ')}`);
+              }
+              if (typeof presets.plunge_feed === 'number' && presets.plunge_feed > 0) {
+                contractParts.push(`Plunge feed rate for Z moves is ${presets.plunge_feed} mm/min.`);
               }
             }
 
