@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCOM Profiler Help</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #161a24;
+    --surface2: #1d2433;
+    --border: #2d364c;
+    --text: #e5edf8;
+    --muted: #93a4bc;
+    --soft: #64748b;
+    --teal: #14b8a6;
+    --blue: #60a5fa;
+    --amber: #f59e0b;
+    --green: #22c55e;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: radial-gradient(circle at top, rgba(20,184,166,0.08), transparent 28%), var(--bg);
+    color: var(--text);
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 24px;
+    background: rgba(15,17,23,0.94);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .topbar p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 720px;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .btn:hover {
+    border-color: #43506d;
+    background: #263047;
+  }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  .hero {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .card {
+    background: rgba(22,26,36,0.9);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 16px 32px rgba(0,0,0,0.16);
+  }
+  .card.warn {
+    border-color: rgba(245,158,11,0.32);
+    background: rgba(120,53,15,0.18);
+  }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  h2, h3 {
+    margin: 0 0 10px;
+    letter-spacing: -0.02em;
+  }
+  h2 { font-size: 24px; }
+  h3 { font-size: 16px; }
+  p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  p + p { margin-top: 10px; }
+  ul {
+    margin: 10px 0 0 18px;
+    padding: 0;
+    color: var(--muted);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  li + li { margin-top: 6px; }
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(15,23,42,0.46);
+    border: 1px solid rgba(148,163,184,0.18);
+    border-radius: 6px;
+    padding: 2px 6px;
+    color: var(--text);
+  }
+  .chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 5px 9px;
+    border: 1px solid rgba(96,165,250,0.22);
+    background: rgba(30,64,175,0.14);
+    color: #dbeafe;
+    font-size: 12px;
+  }
+  .checklist li::marker {
+    color: var(--green);
+  }
+  .code-block {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(20,184,166,0.24);
+    background: rgba(15,23,42,0.48);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    color: var(--text);
+  }
+  .two-col {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--soft);
+  }
+  @media (max-width: 960px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+    .topbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>Profiler Help</h1>
+    <p>What each control does, where defaults come from, and how a saved machine profile changes AI output.</p>
+  </div>
+  <div class="actions">
+    <button class="btn" id="close-help-btn" type="button">Close</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <article class="card">
+      <div class="eyebrow">Active controller</div>
+      <h2 id="controller-label">Vanilla GRBL</h2>
+      <p id="controller-summary">Controller summary loading…</p>
+      <div class="chips" id="controller-chips"></div>
+      <p class="note">The Help button passes the active base controller into this window so the guidance stays relevant while you edit.</p>
+    </article>
+
+    <article class="card">
+      <div class="eyebrow">What helps the AI today</div>
+      <ul class="checklist">
+        <li>Machine name and notes give the AI human context for the machine.</li>
+        <li>Axes tell the AI whether Z moves are allowed.</li>
+        <li>Unit mode and work offset shape preambles the AI generates.</li>
+        <li>Safe Z changes how rapid moves and tool-off sequences are described.</li>
+        <li>Peripherals add exact support commands like air assist on/off.</li>
+        <li>Commands and snippets are injected verbatim as exact GCOM examples.</li>
+        <li>Presets provide feed, power, rapid, and plunge defaults.</li>
+      </ul>
+    </article>
+
+    <article class="card warn">
+      <div class="eyebrow">Stored but not injected today</div>
+      <ul>
+        <li>Firmware is stored for reference but does not alter the AI prompt yet.</li>
+        <li>Tool type is documentation only. It does not infer controller settings like <code>$32=1</code>.</li>
+        <li>Bed width and height are stored for context but are not injected into the AI contract yet.</li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">How to enter commands</div>
+    <h3>Commands are plain GCOM examples, not templates and not line-numbered BASIC blocks.</h3>
+    <p>Use unnumbered GCOM statements only. Put one statement on each line. Multiline blocks are valid for lifecycle commands like <code>job_start</code> and <code>tool_off_sequence</code>.</p>
+    <div class="code-block">SET SEND_MODE AUTO
+SEND "G21" REQUIRE_OK
+SEND "G90" REQUIRE_OK
+SEND "G54" REQUIRE_OK
+SEND "M5 S0" REQUIRE_OK</div>
+    <p class="note">When you save a command named <code>job_start</code>, the profiler sample uses that block instead of its synthesized preamble.</p>
+  </section>
+
+  <section class="two-col">
+    <article class="card">
+      <div class="eyebrow">Base controller</div>
+      <p>Chooses the controller contract the profile is built on. This controls live guidance, starter boilerplate, recommended lifecycle examples, serial defaults, and which compatibility rules the AI will follow.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Machine info</div>
+      <ul>
+        <li><strong>Machine name</strong>: required. Used in the AI prompt as the machine identity.</li>
+        <li><strong>Notes</strong>: injected directly into the AI prompt.</li>
+        <li><strong>Unit mode</strong>: tells the AI whether to prefer <code>G21</code> or <code>G20</code>.</li>
+        <li><strong>Work offset</strong>: adds an explicit coordinate system like <code>G54</code> to recommended preambles.</li>
+        <li><strong>Axes</strong>: critical for lasers and other XY-only machines because it suppresses Z output.</li>
+        <li><strong>Safe Z</strong>: only matters when Z exists and becomes guidance for rapid moves and tool-off behavior.</li>
+      </ul>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Peripherals</div>
+      <p>Air assist defaults to <code>SEND "M8" REQUIRE_OK</code> and <code>SEND "M9" REQUIRE_OK</code> when enabled and left blank. Saving these values makes them part of the AI prompt so generated scripts know how to turn support hardware on and off.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Commands</div>
+      <p>This is the highest-value section for AI quality. Saved commands are injected as exact examples, so the AI learns your preferred startup, shutdown, and motion idioms from real GCOM instead of guessing.</p>
+      <ul>
+        <li><code>job_start</code>: full preamble for this machine</li>
+        <li><code>job_end</code>: full postamble or parking sequence</li>
+        <li><code>tool_on_sequence</code>: spindle or laser on, usually with power</li>
+        <li><code>tool_off_sequence</code>: spindle or laser off</li>
+        <li><code>rapid_move</code>: representative positioning move</li>
+        <li><code>cut_move</code>: representative cutting or marking move with feed</li>
+      </ul>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Snippets</div>
+      <p>Snippets are named reusable blocks that the AI sees as reference material. Use them for small machine rituals, fixture setup, or patterns you want the AI to reuse without pretending they are lifecycle hooks.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Presets</div>
+      <p>Presets give the AI numeric defaults for feed, power, rapid feed, and plunge feed. When these fields are blank, the profiler shows live defaults from the selected controller where available, or profiler fallbacks when no controller default exists.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Transport tuning</div>
+      <p>Transport tuning is sender-side only. It does not change controller firmware. These values help the host estimate buffer and planner capacity before live telemetry arrives.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Live preview and save flow</div>
+      <p>The machine test preview is a read-only sample that updates from the current form. Saving posts the profile to the worker and returns a shareable profile ID. Loading by ID restores a saved profile into the form.</p>
+    </article>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <div class="eyebrow">Default sources</div>
+    <div class="section-grid">
+      <article class="card" style="padding:14px">
+        <div class="eyebrow">Controller defaults</div>
+        <p>These come from the selected controller profile, such as default feed, default power, serial baud, and ACK timeout. They are live-read only and never overwrite your form automatically.</p>
+      </article>
+      <article class="card" style="padding:14px">
+        <div class="eyebrow">Generated recommendations</div>
+        <p>The recommended lifecycle examples are built from the selected controller plus your current axes, unit mode, work offset, safe Z, peripherals, and presets. They are suggestions until you save them as real commands.</p>
+      </article>
+      <article class="card" style="padding:14px">
+        <div class="eyebrow">Profiler fallbacks</div>
+        <p>Some values do not exist in the controller profile today, such as rapid feed, plunge feed, RX buffer, and planner slots. The profiler shows these as explicit fallbacks so you can see what is assumed before you override them.</p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script>
+const EMBEDDED_CONTROLLER_DATA = {
+  'grbl-vanilla': {
+    label: 'Vanilla GRBL',
+    summary: 'Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.',
+    chips: ['115200 baud serial default', 'ACK timeout 3500 ms', 'Max feed 6000 mm/min', 'Default feed 1000 mm/min', 'Default power 1000']
+  },
+  'fluidnc': {
+    label: 'FluidNC',
+    summary: 'Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.',
+    chips: ['115200 baud serial default', 'ACK timeout 4000 ms', 'Max feed 10000 mm/min', 'Default feed 1000 mm/min', 'Default power 1000']
+  }
+};
+
+function renderControllerSummary() {
+  const params = new URLSearchParams(window.location.search);
+  const base = params.get('base') || 'grbl-vanilla';
+  const controller = EMBEDDED_CONTROLLER_DATA[base] || EMBEDDED_CONTROLLER_DATA['grbl-vanilla'];
+  document.getElementById('controller-label').textContent = controller.label;
+  document.getElementById('controller-summary').textContent = controller.summary;
+  document.getElementById('controller-chips').innerHTML = controller.chips
+    .map(chip => `<span class="chip">${chip}</span>`)
+    .join('');
+}
+
+document.getElementById('close-help-btn').addEventListener('click', () => {
+  window.close();
+});
+
+renderControllerSummary();
+</script>
+</body>
+</html>

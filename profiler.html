@@ -126,6 +126,20 @@
   .btn.danger:hover { color: var(--red); background: var(--red-dim); border-color: #7f1d1d; }
   .btn.back { background: var(--surface2); border-color: var(--border); color: var(--text-dim); }
   .btn.back:hover { color: var(--text); }
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn.help {
+    border-color: rgba(59,130,246,0.32);
+    color: #bfdbfe;
+  }
+  .btn.help:hover {
+    background: rgba(59,130,246,0.14);
+    border-color: rgba(96,165,250,0.48);
+    color: #eff6ff;
+  }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn.full { width: 100%; }
 
@@ -298,6 +312,146 @@
     flex-wrap: wrap;
     margin-top: 4px;
   }
+  .helper-card {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(59,130,246,0.22);
+    background: rgba(59,130,246,0.08);
+  }
+  .helper-card.info {
+    border-color: rgba(20,184,166,0.22);
+    background: rgba(20,184,166,0.08);
+  }
+  .helper-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .helper-card p,
+  .helper-card li {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-dim);
+  }
+  .helper-card p + p {
+    margin-top: 6px;
+  }
+  .helper-card code,
+  .helper-tile code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    background: rgba(15,23,42,0.4);
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+  .helper-list {
+    list-style: none;
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .helper-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .helper-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.2);
+    background: rgba(15,23,42,0.35);
+    color: var(--text);
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .helper-grid {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .helper-grid.two-col {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin-bottom: 0;
+  }
+  .helper-tile {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(15,23,42,0.28);
+  }
+  .helper-tile-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+  .helper-tile-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .helper-tile-note {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+  .recommendation-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .recommendation-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: rgba(15,23,42,0.22);
+  }
+  .recommendation-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .recommendation-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .recommendation-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .recommendation-code {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(15,23,42,0.48);
+    border: 1px solid rgba(148,163,184,0.14);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .helper-note {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
 
   /* ── Bottom bar ── */
   .bottombar {
@@ -361,7 +515,10 @@
 <!-- Top bar -->
 <header class="topbar">
   <h1>GCOM Profiler <span>machine context editor</span></h1>
-  <button class="btn back" onclick="window.open('/', '_blank', 'noopener')">← Back to app</button>
+  <div class="topbar-actions">
+    <button class="btn help" id="profiler-help-btn" type="button">Help</button>
+    <button class="btn back" type="button" onclick="window.open('/', '_blank', 'noopener')">← Back to app</button>
+  </div>
 </header>
 
 <!-- Main layout -->
@@ -380,6 +537,7 @@
           <option value="fluidnc">FluidNC</option>
         </select>
       </div>
+      <div class="helper-card" id="controller-summary"></div>
     </div>
 
     <!-- Machine meta -->
@@ -463,17 +621,27 @@
           <input type="text" id="air-assist-off" placeholder='SEND "M9" REQUIRE_OK'>
         </div>
       </div>
+      <div class="helper-card" id="peripheral-defaults"></div>
     </div>
 
     <!-- Commands -->
     <div class="section">
       <div class="section-label">Commands <small style="color:var(--text-muted);text-transform:none;letter-spacing:0;font-size:10px">— plain GCOM examples for the AI</small></div>
+      <div class="helper-card info">
+        <div class="helper-card-title">How commands help the AI</div>
+        <div id="commands-help-copy"></div>
+      </div>
+      <div class="helper-card">
+        <div class="helper-card-title">Recommended lifecycle examples</div>
+        <div id="command-recommendations" class="recommendation-list"></div>
+        <div class="helper-note">These are live suggestions based on the selected controller and your current form values. They do not overwrite the Commands table until you save your own entries.</div>
+      </div>
       <table class="cmd-table" id="commands-table">
         <thead>
           <tr>
             <th class="col-name">Name</th>
             <th class="col-desc">Description</th>
-            <th class="col-gcom">GCOM line</th>
+            <th class="col-gcom">GCOM example</th>
             <th class="col-del"></th>
           </tr>
         </thead>
@@ -541,6 +709,7 @@
         <label>Plunge feed (mm/min)</label>
         <input type="number" id="preset-plunge" placeholder="300" min="0">
       </div>
+      <div class="helper-grid two-col" id="preset-defaults"></div>
     </div>
 
     <!-- Transport tuning -->
@@ -556,6 +725,7 @@
           <input type="number" id="tuning-planner-slots" placeholder="15" min="1" max="256" step="1">
         </div>
       </div>
+      <div class="helper-grid two-col" id="transport-defaults"></div>
     </div>
 
   </div><!-- /left-panel -->
@@ -602,25 +772,61 @@
 
 <script>
 // ── Known controller data (embedded — matches controller-profiles.v1.json) ──
-const CONTROLLER_DATA = {
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+const EMBEDDED_CONTROLLER_DATA = {
   'grbl-vanilla': {
     label: 'Vanilla GRBL',
+    maxFeedRate: 6000,
+    connectionDefaults: {
+      primaryTransport: 'serial-ascii',
+      baudRate: 115200,
+      supportsUsbSerial: true,
+      supportsWebsocket: true
+    },
+    ackPolicy: {
+      mode: 'required',
+      defaultTimeoutMs: 3500
+    },
     guidance: {
       summary: 'Assume strict GRBL 1.1 behavior and prefer broadly supported command forms.',
       preferred_style: [
         'Initialize parser state explicitly with G90 and unit mode.',
         'Use conservative modal transitions and explicit feed rates.',
-        'Wrap setup commands with REQUIRE_OK on SEND.'
+        'Use SET SEND_MODE AUTO at script start. Explicit REQUIRE_OK only for homing, spindle on/off, probing, and config writes.'
       ],
       avoid: [
         'Do not emit FluidNC-specific config commands.',
         'Do not assume macro or canned cycle support.',
         'Do not emit advanced M-codes unless explicitly requested.'
       ]
+    },
+    boilerplate: {
+      title: 'Vanilla GRBL Starter',
+      description: 'Minimal setup sequence for common GRBL 1.1 machines.',
+      gcom: '10 PRINT "Vanilla GRBL starter"\n20 SET SEND_MODE AUTO\n30 SEND "$I" REQUIRE_OK\n40 SEND "$G" REQUIRE_OK\n50 SEND "G90" REQUIRE_OK\n60 SEND "G21" REQUIRE_OK\n70 STATUS\n80 END'
+    },
+    operationsDefaults: {
+      speed: 1000,
+      spindlespeed: 1000,
+      dwell: 1
     }
   },
   'fluidnc': {
     label: 'FluidNC',
+    maxFeedRate: 10000,
+    connectionDefaults: {
+      primaryTransport: 'serial-ascii',
+      baudRate: 115200,
+      supportsUsbSerial: true,
+      supportsWebsocket: true
+    },
+    ackPolicy: {
+      mode: 'required',
+      defaultTimeoutMs: 4000
+    },
     guidance: {
       summary: 'Use GRBL-compatible command flow first, then FluidNC-specific commands when explicitly useful.',
       preferred_style: [
@@ -633,9 +839,21 @@ const CONTROLLER_DATA = {
         'Do not replace standard GRBL flow with config commands unless requested.',
         'Do not silently downgrade blocked commands.'
       ]
+    },
+    boilerplate: {
+      title: 'FluidNC Starter',
+      description: 'Fast sanity sequence for FluidNC with GRBL-compatible sender flow.',
+      gcom: '10 PRINT "FluidNC starter"\n20 SET SEND_MODE AUTO\n30 SEND "$I" REQUIRE_OK\n40 SEND "$G" REQUIRE_OK\n50 STATUS\n60 SEND "$Config/Filename=config.yaml" REQUIRE_OK\n70 END'
+    },
+    operationsDefaults: {
+      speed: 1000,
+      spindlespeed: 1000,
+      dwell: 1
     }
   }
 };
+
+let controllerCatalog = cloneData(EMBEDDED_CONTROLLER_DATA);
 
 const DRAFT_KEY = 'gcom_profiler_draft';
 
@@ -645,6 +863,7 @@ let snippets = [];   // [{name, gcom}]
 
 // ── DOM refs ──
 const baseCtrlSel   = document.getElementById('base-controller');
+const profilerHelpBtn = document.getElementById('profiler-help-btn');
 const metaName      = document.getElementById('meta-name');
 const metaFirmware  = document.getElementById('meta-firmware');
 const metaTool      = document.getElementById('meta-tool');
@@ -675,6 +894,12 @@ const presetRapid   = document.getElementById('preset-rapid');
 const presetPlunge  = document.getElementById('preset-plunge');
 const tuningRxBuffer = document.getElementById('tuning-rx-buffer');
 const tuningPlannerSlots = document.getElementById('tuning-planner-slots');
+const controllerSummary = document.getElementById('controller-summary');
+const peripheralDefaults = document.getElementById('peripheral-defaults');
+const commandsHelpCopy = document.getElementById('commands-help-copy');
+const commandRecommendations = document.getElementById('command-recommendations');
+const presetDefaults = document.getElementById('preset-defaults');
+const transportDefaults = document.getElementById('transport-defaults');
 const exampleGcom   = document.getElementById('example-gcom');
 const exampleOutput = document.getElementById('example-output');
 const saveBtn       = document.getElementById('save-btn');
@@ -701,7 +926,7 @@ function renderCommands() {
         <input type="text" value="${esc(cmd.description||'')}" placeholder="Optional description" data-i="${i}" data-field="description">
       </td>
       <td class="col-gcom">
-        <textarea rows="2" placeholder="10 SEND &quot;G28&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(cmd.gcom)}</textarea>
+        <textarea rows="2" placeholder="SET SEND_MODE AUTO&#10;SEND &quot;G21&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(cmd.gcom)}</textarea>
       </td>
       <td class="col-del">
         <button class="btn danger" title="Remove" data-del-cmd="${i}">✕</button>
@@ -741,7 +966,7 @@ function renderSnippets() {
         <input type="text" value="${esc(snip.name)}" placeholder="init_block" data-i="${i}" data-field="name">
       </td>
       <td class="col-snip-gcom">
-        <textarea rows="2" placeholder="10 SEND &quot;G90&quot; REQUIRE_OK\n20 SEND &quot;G21&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(snip.gcom)}</textarea>
+        <textarea rows="2" placeholder="SEND &quot;G90&quot; REQUIRE_OK\nSEND &quot;G21&quot; REQUIRE_OK" data-i="${i}" data-field="gcom">${esc(snip.gcom)}</textarea>
       </td>
       <td class="col-snip-del">
         <button class="btn danger" title="Remove" data-del-snip="${i}">✕</button>
@@ -890,6 +1115,7 @@ function populateForm(profile) {
   renderCommands();
   renderSnippets();
   updateVisibility();
+  renderLiveDefaults();
   renderExample();
 }
 
@@ -918,27 +1144,309 @@ function extractSendLine(gcomLine) {
   return m ? m[1] : null;
 }
 
+function getControllerData(controllerId) {
+  return controllerCatalog[controllerId] || EMBEDDED_CONTROLLER_DATA[controllerId] || EMBEDDED_CONTROLLER_DATA['grbl-vanilla'];
+}
+
+function normalizeControllerCatalog(payload) {
+  const profiles = payload && payload.profiles && typeof payload.profiles === 'object' ? payload.profiles : null;
+  if (!profiles) return cloneData(EMBEDDED_CONTROLLER_DATA);
+  const normalized = {};
+  for (const [id, profile] of Object.entries(profiles)) {
+    const machine = profile && profile.machine_description && typeof profile.machine_description === 'object' ? profile.machine_description : {};
+    const guidance = machine.ai_guidance && typeof machine.ai_guidance === 'object' ? machine.ai_guidance : {};
+    const connectionDefaults = machine.connection_defaults && typeof machine.connection_defaults === 'object' ? machine.connection_defaults : {};
+    const ackPolicy = machine.ack_policy && typeof machine.ack_policy === 'object' ? machine.ack_policy : {};
+    const boilerplate = machine.boilerplate_gcom && typeof machine.boilerplate_gcom === 'object' ? machine.boilerplate_gcom : null;
+    const variables = profile && profile.operations && profile.operations.variables && typeof profile.operations.variables === 'object'
+      ? profile.operations.variables
+      : {};
+    normalized[id] = {
+      label: typeof machine.label === 'string' && machine.label.trim() ? machine.label.trim() : id,
+      maxFeedRate: Number.isFinite(Number(machine.max_feed_rate)) ? Number(machine.max_feed_rate) : null,
+      connectionDefaults: {
+        primaryTransport: typeof connectionDefaults.primary_transport === 'string' ? connectionDefaults.primary_transport : '',
+        baudRate: Number.isFinite(Number(connectionDefaults.baud_rate)) ? Number(connectionDefaults.baud_rate) : null,
+        supportsUsbSerial: Boolean(connectionDefaults.supports_usb_serial),
+        supportsWebsocket: Boolean(connectionDefaults.supports_websocket)
+      },
+      ackPolicy: {
+        mode: typeof ackPolicy.mode === 'string' ? ackPolicy.mode : '',
+        defaultTimeoutMs: Number.isFinite(Number(ackPolicy.default_timeout_ms)) ? Number(ackPolicy.default_timeout_ms) : null
+      },
+      guidance: {
+        summary: typeof guidance.summary === 'string' ? guidance.summary : '',
+        preferred_style: Array.isArray(guidance.preferred_style) ? guidance.preferred_style.map(String) : [],
+        avoid: Array.isArray(guidance.avoid) ? guidance.avoid.map(String) : []
+      },
+      boilerplate: boilerplate && typeof boilerplate.gcom === 'string'
+        ? {
+            title: typeof boilerplate.title === 'string' ? boilerplate.title : '',
+            description: typeof boilerplate.description === 'string' ? boilerplate.description : '',
+            gcom: boilerplate.gcom
+          }
+        : null,
+      operationsDefaults: {
+        speed: Number.isFinite(Number(variables.speed && variables.speed.default)) ? Number(variables.speed.default) : null,
+        spindlespeed: Number.isFinite(Number(variables.spindlespeed && variables.spindlespeed.default)) ? Number(variables.spindlespeed.default) : null,
+        dwell: Number.isFinite(Number(variables.dwell && variables.dwell.default)) ? Number(variables.dwell.default) : null
+      }
+    };
+  }
+  return Object.keys(normalized).length ? normalized : cloneData(EMBEDDED_CONTROLLER_DATA);
+}
+
+async function loadControllerCatalog() {
+  try {
+    const url = new URL('profiles/controller-profiles.v1.json', window.location.href);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    controllerCatalog = normalizeControllerCatalog(await res.json());
+  } catch (_) {
+    controllerCatalog = cloneData(EMBEDDED_CONTROLLER_DATA);
+  }
+  renderLiveDefaults();
+  renderExample();
+}
+
+function parseFloatWithFallback(rawValue, fallback) {
+  const value = parseFloat(rawValue);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function parseIntWithFallback(rawValue, fallback) {
+  const normalized = typeof rawValue === 'string' ? rawValue.trim() : String(rawValue ?? '').trim();
+  if (!normalized) return fallback;
+  const value = Math.trunc(Number(normalized));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function getNamedCommandMap() {
+  const map = {};
+  commands.filter(c => c.name.trim() && c.gcom.trim()).forEach(c => {
+    map[c.name.trim()] = c.gcom.trim();
+  });
+  return map;
+}
+
+function getUiContext() {
+  const ctrl = baseCtrlSel.value || 'grbl-vanilla';
+  const controller = getControllerData(ctrl);
+  const hasZ = axisZ.checked;
+  const defaultFeed = Number.isFinite(Number(controller.operationsDefaults && controller.operationsDefaults.speed))
+    ? Number(controller.operationsDefaults.speed)
+    : 1000;
+  const defaultPower = Number.isFinite(Number(controller.operationsDefaults && controller.operationsDefaults.spindlespeed))
+    ? Number(controller.operationsDefaults.spindlespeed)
+    : 1000;
+  const defaultRapid = controller.maxFeedRate ? Math.min(controller.maxFeedRate, 3000) : 3000;
+  return {
+    ctrl,
+    controller,
+    label: controller.label || ctrl,
+    hasZ,
+    unitMode: metaUnitMode.value === 'imperial' ? 'G20' : 'G21',
+    workOffset: metaWorkOffset.value.trim() || '',
+    airAssistEnabled: periphAirAssist.checked,
+    airAssistOnCmd: airAssistOn.value.trim() || 'SEND "M8" REQUIRE_OK',
+    airAssistOffCmd: airAssistOff.value.trim() || 'SEND "M9" REQUIRE_OK',
+    feed: parseFloatWithFallback(presetFeed.value, defaultFeed),
+    power: parseFloatWithFallback(presetPower.value, defaultPower),
+    rapid: parseFloatWithFallback(presetRapid.value, defaultRapid),
+    safeZ: hasZ ? parseFloatWithFallback(metaSafeZ.value, 5) : null,
+    plungeFeed: hasZ ? parseFloatWithFallback(presetPlunge.value, 300) : null,
+    rxBuffer: parseIntWithFallback(tuningRxBuffer.value, 64),
+    plannerSlots: parseIntWithFallback(tuningPlannerSlots.value, 15),
+    sources: {
+      feed: presetFeed.value.trim() ? 'saved preset' : 'controller default',
+      power: presetPower.value.trim() ? 'saved preset' : 'controller default',
+      rapid: presetRapid.value.trim() ? 'saved preset' : 'profiler fallback',
+      plunge: presetPlunge.value.trim() ? 'saved preset' : 'profiler fallback',
+      rxBuffer: tuningRxBuffer.value.trim() ? 'saved override' : 'profiler fallback',
+      plannerSlots: tuningPlannerSlots.value.trim() ? 'saved override' : 'profiler fallback'
+    },
+    commandMap: getNamedCommandMap()
+  };
+}
+
+function formatSourceLabel(source) {
+  return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+function renderControllerSummary() {
+  const ctx = getUiContext();
+  const controller = ctx.controller;
+  const chips = [];
+  if (controller.connectionDefaults && controller.connectionDefaults.baudRate) chips.push(`${controller.connectionDefaults.baudRate} baud serial default`);
+  if (controller.ackPolicy && controller.ackPolicy.defaultTimeoutMs) chips.push(`ACK timeout ${controller.ackPolicy.defaultTimeoutMs} ms`);
+  if (controller.maxFeedRate) chips.push(`Max feed ${controller.maxFeedRate} mm/min`);
+  if (controller.connectionDefaults && controller.connectionDefaults.supportsWebsocket) chips.push('WebSocket capable');
+  let html = `<div class="helper-card-title">${escHtml(controller.label || ctx.ctrl)} defaults</div>`;
+  html += `<p>${escHtml(controller.guidance && controller.guidance.summary ? controller.guidance.summary : 'Controller guidance unavailable.')}</p>`;
+  if (chips.length) {
+    html += `<div class="helper-badges">${chips.map(chip => `<span class="helper-chip">${escHtml(chip)}</span>`).join('')}</div>`;
+  }
+  if (controller.guidance && Array.isArray(controller.guidance.preferred_style) && controller.guidance.preferred_style.length) {
+    html += `<div class="helper-subtitle">Preferred style</div><ul class="helper-list">${controller.guidance.preferred_style.map(item => `<li>${escHtml(item)}</li>`).join('')}</ul>`;
+  }
+  if (controller.boilerplate && controller.boilerplate.gcom) {
+    html += `<div class="helper-subtitle">Starter boilerplate</div>`;
+    if (controller.boilerplate.description) html += `<p>${escHtml(controller.boilerplate.description)}</p>`;
+    html += `<div class="recommendation-code">${escHtml(controller.boilerplate.gcom)}</div>`;
+  }
+  controllerSummary.innerHTML = html;
+}
+
+function renderCommandsHelp() {
+  commandsHelpCopy.innerHTML = [
+    '<p>Saved commands are injected into the AI prompt as exact machine-specific examples.</p>',
+    '<ul class="helper-list">',
+    '<li>Use lifecycle names like <code>job_start</code>, <code>tool_on_sequence</code>, <code>tool_off_sequence</code>, <code>rapid_move</code>, and <code>cut_move</code> when they fit.</li>',
+    '<li>Enter unnumbered GCOM statements only. Put one statement on each line.</li>',
+    '<li>Use multiline blocks for preambles and other short sequences when a single line is not enough.</li>',
+    '</ul>'
+  ].join('');
+}
+
+function renderPeripheralDefaults() {
+  const ctx = getUiContext();
+  let html = `<div class="helper-card-title">Live defaults</div>`;
+  html += `<p>${ctx.airAssistEnabled ? 'Air assist is enabled. These commands will reach the AI after you save the profile.' : 'If you enable air assist and leave the fields blank, these defaults are used.'}</p>`;
+  html += `<div class="helper-grid two-col">`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Default air on</div><div class="helper-tile-value">M8</div><div class="helper-tile-note"><code>SEND "M8" REQUIRE_OK</code></div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Default air off</div><div class="helper-tile-value">M9</div><div class="helper-tile-note"><code>SEND "M9" REQUIRE_OK</code></div></div>`;
+  html += `</div>`;
+  if (ctx.airAssistEnabled) {
+    html += `<div class="helper-subtitle">Current resolved commands</div>`;
+    html += `<div class="helper-grid two-col">`;
+    html += `<div class="helper-tile"><div class="helper-tile-label">Current air on</div><div class="helper-tile-note"><code>${escHtml(ctx.airAssistOnCmd)}</code></div></div>`;
+    html += `<div class="helper-tile"><div class="helper-tile-label">Current air off</div><div class="helper-tile-note"><code>${escHtml(ctx.airAssistOffCmd)}</code></div></div>`;
+    html += `</div>`;
+  }
+  peripheralDefaults.innerHTML = html;
+}
+
+function renderPresetDefaults() {
+  const ctx = getUiContext();
+  let html = '';
+  html += `<div class="helper-tile"><div class="helper-tile-label">Default feed</div><div class="helper-tile-value">${escHtml(String(ctx.feed))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.feed))}. Controller default when blank.</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Default power</div><div class="helper-tile-value">${escHtml(String(ctx.power))}</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.power))}. Controller default when blank.</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Rapid feed</div><div class="helper-tile-value">${escHtml(String(ctx.rapid))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.rapid))}. Profiler-side recommendation derived from controller ceiling.</div></div>`;
+  if (ctx.hasZ) {
+    html += `<div class="helper-tile"><div class="helper-tile-label">Plunge feed</div><div class="helper-tile-value">${escHtml(String(ctx.plungeFeed))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.plunge))}. Used only for Z moves.</div></div>`;
+  }
+  presetDefaults.innerHTML = html;
+}
+
+function renderTransportDefaults() {
+  const ctx = getUiContext();
+  let html = '';
+  html += `<div class="helper-tile"><div class="helper-tile-label">RX buffer</div><div class="helper-tile-value">${escHtml(String(ctx.rxBuffer))} bytes</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.rxBuffer))}. AUTO send mode uses this until live buffer data is observed.</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Planner slots</div><div class="helper-tile-value">${escHtml(String(ctx.plannerSlots))} slots</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.plannerSlots))}. Hint only unless you save an override.</div></div>`;
+  transportDefaults.innerHTML = html;
+}
+
+function buildRecommendedCommands(ctx) {
+  const jobStartLines = [
+    'SET SEND_MODE AUTO',
+    `SEND "${ctx.unitMode}" REQUIRE_OK`,
+    'SEND "G90" REQUIRE_OK'
+  ];
+  if (ctx.workOffset) jobStartLines.push(`SEND "${ctx.workOffset}" REQUIRE_OK`);
+  jobStartLines.push('SEND "M5 S0" REQUIRE_OK');
+
+  const rapidMoveLines = [];
+  if (ctx.hasZ) rapidMoveLines.push(`SEND "G0 Z${ctx.safeZ}"`);
+  rapidMoveLines.push('SEND "G0 X25 Y25"');
+
+  const cutMoveLines = [];
+  if (ctx.hasZ) cutMoveLines.push(`SEND "G1 Z-2 F${ctx.plungeFeed}"`);
+  cutMoveLines.push(`SEND "G1 X25 Y25 F${ctx.feed}"`);
+
+  return [
+    {
+      name: 'job_start',
+      description: 'Full preamble sequence for this machine. Save this name to replace the synthesized preamble in the machine test sample and give the AI a concrete machine-specific start block.',
+      note: ctx.commandMap.job_start
+        ? 'Saved override present. The sample preview already uses your custom job_start.'
+        : 'No saved job_start yet. Configuration writes like $32=1 are not inferred from Tool type; add them only if your machine actually needs them.',
+      code: jobStartLines.join('\n')
+    },
+    {
+      name: 'tool_on_sequence',
+      description: 'Representative tool-start sequence using the current power preset.',
+      note: ctx.commandMap.tool_on_sequence ? 'Saved override present.' : 'No saved override yet.',
+      code: `SEND "M3 S${ctx.power}" REQUIRE_OK`
+    },
+    {
+      name: 'tool_off_sequence',
+      description: 'Representative safe-stop sequence for the active tool.',
+      note: ctx.commandMap.tool_off_sequence ? 'Saved override present.' : 'No saved override yet.',
+      code: 'SEND "M5 S0" REQUIRE_OK'
+    },
+    {
+      name: 'rapid_move',
+      description: 'Representative positioning move. Safe-Z behavior is included automatically when the machine has a Z axis.',
+      note: ctx.commandMap.rapid_move ? 'Saved override present.' : 'No saved override yet.',
+      code: rapidMoveLines.join('\n')
+    },
+    {
+      name: 'cut_move',
+      description: 'Representative cutting or marking move using the current feed preset.',
+      note: ctx.commandMap.cut_move ? 'Saved override present.' : 'No saved override yet.',
+      code: cutMoveLines.join('\n')
+    }
+  ];
+}
+
+function renderCommandRecommendations() {
+  const ctx = getUiContext();
+  const recommendations = buildRecommendedCommands(ctx);
+  commandRecommendations.innerHTML = recommendations.map(item => {
+    return `<div class="recommendation-item"><div class="recommendation-header"><div class="recommendation-title">${escHtml(item.name)}</div><span class="helper-chip">Recommended example</span></div><div class="recommendation-desc">${escHtml(item.description)}</div><div class="helper-note">${escHtml(item.note)}</div><div class="recommendation-code">${escHtml(item.code)}</div></div>`;
+  }).join('');
+}
+
+function renderLiveDefaults() {
+  renderControllerSummary();
+  renderCommandsHelp();
+  renderPeripheralDefaults();
+  renderCommandRecommendations();
+  renderPresetDefaults();
+  renderTransportDefaults();
+}
+
+function openProfilerHelpWindow() {
+  const base = encodeURIComponent(baseCtrlSel.value || 'grbl-vanilla');
+  const helpUrl = `profiler-help.html?base=${base}`;
+  const width = Math.min(1100, Math.max(920, Math.round(window.innerWidth * 0.8)));
+  const height = Math.min(860, Math.max(720, Math.round(window.innerHeight * 0.82)));
+  const left = Math.max(0, Math.round((window.screen.width - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.height - height) / 2));
+  const features = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+  const helpWindow = window.open(helpUrl, 'gcom-profiler-help-window', features);
+  if (helpWindow) helpWindow.focus();
+}
+
 // ── Build the X-in-a-box example program ──
 function buildExampleProgram() {
   const name      = metaName.value.trim();
-  const ctrl      = baseCtrlSel.value;
-  const cd        = CONTROLLER_DATA[ctrl] || CONTROLLER_DATA['grbl-vanilla'];
-  const hasZ      = axisZ.checked;
-  const unitMode  = metaUnitMode.value === 'imperial' ? 'G20' : 'G21';
-  const workOff   = metaWorkOffset.value.trim() || '';
-  const airOn     = periphAirAssist.checked;
-  const airOnCmd  = (airAssistOn.value.trim()  || 'SEND "M8" REQUIRE_OK');
-  const airOffCmd = (airAssistOff.value.trim() || 'SEND "M9" REQUIRE_OK');
-  const feed      = parseFloat(presetFeed.value)  || 1200;
-  const power     = parseFloat(presetPower.value) || 600;
-  const rapid     = parseFloat(presetRapid.value) || 3000;
-  const safeZ     = hasZ ? (parseFloat(metaSafeZ.value) || 5) : null;
-  const plungeF   = hasZ ? (parseFloat(presetPlunge.value) || 300) : null;
+  const ctx       = getUiContext();
+  const hasZ      = ctx.hasZ;
+  const unitMode  = ctx.unitMode;
+  const workOff   = ctx.workOffset;
+  const airOn     = ctx.airAssistEnabled;
+  const airOnCmd  = ctx.airAssistOnCmd;
+  const airOffCmd = ctx.airAssistOffCmd;
+  const feed      = ctx.feed;
+  const power     = ctx.power;
+  const rapid     = ctx.rapid;
+  const safeZ     = ctx.safeZ;
+  const plungeF   = ctx.plungeFeed;
   const depth     = hasZ ? -2 : null; // nominal 2mm cut depth for router example
 
   // Find named lifecycle commands from user's profile, keyed by name
-  const cmdMap = {};
-  commands.filter(c => c.name.trim() && c.gcom.trim()).forEach(c => { cmdMap[c.name.trim()] = c.gcom.trim(); });
+  const cmdMap = ctx.commandMap;
 
   // Build the sequence as [{gcom, comment}] pairs
   // Each entry: gcom = SEND "..." line (or multi-line), comment = inline note
@@ -946,7 +1454,7 @@ function buildExampleProgram() {
 
   // Header comment
   if (name) {
-    seq.push({ comment: `; Machine test — ${name} [${cd.label}]` });
+    seq.push({ comment: `; Machine test — ${name} [${ctx.label}]` });
     seq.push({ comment: `; cut F${feed} · S${power}${airOn ? ' · air assist' : ''}${hasZ ? ` · depth ${depth}mm` : ''}` });
     seq.push({ comment: ';' });
   }
@@ -958,9 +1466,6 @@ function buildExampleProgram() {
     seq.push({ gcom: 'SET SEND_MODE AUTO',                comment: '; auto ack routing' });
     seq.push({ gcom: `SEND "${unitMode}" REQUIRE_OK`,   comment: `; ${unitMode === 'G21' ? 'metric' : 'imperial'}` });
     seq.push({ gcom: 'SEND "G90" REQUIRE_OK',            comment: '; absolute coords' });
-    if (ctrl === 'grbl-vanilla') {
-      seq.push({ gcom: 'SEND "$32=1" REQUIRE_OK', comment: '; laser mode' });
-    }
     if (workOff) {
       seq.push({ gcom: `SEND "${workOff}" REQUIRE_OK`, comment: '; work offset' });
     }
@@ -1107,6 +1612,7 @@ function loadDraft() {
 // ── Form change handler ──
 function onFormChange() {
   updateVisibility();
+  renderLiveDefaults();
   renderExample();
   saveDraft();
 }
@@ -1121,6 +1627,8 @@ function onFormChange() {
   el.addEventListener('input', onFormChange);
   el.addEventListener('change', onFormChange);
 });
+
+profilerHelpBtn.addEventListener('click', openProfilerHelpWindow);
 
 // ── Save ──
 saveBtn.addEventListener('click', async () => {
@@ -1268,7 +1776,9 @@ function escHtml(str) {
 renderCommands();
 renderSnippets();
 updateVisibility();
+renderLiveDefaults();
 handleUrlParams();
+loadControllerCatalog();
 </script>
 </body>
 </html>
