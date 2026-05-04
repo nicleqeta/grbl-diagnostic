@@ -217,6 +217,7 @@
         <li>Axes tell the AI whether Z moves are allowed.</li>
         <li>Unit mode and work offset shape preambles the AI generates.</li>
         <li>Safe Z changes how rapid moves and tool-off sequences are described.</li>
+        <li>Output scaling tells the AI what S means, the valid S range, and whether M4 or M3 is preferred for lasers.</li>
         <li>Peripherals add exact support commands like air assist on/off.</li>
         <li>Commands and snippets are injected verbatim as exact GCOM examples.</li>
         <li>Presets provide feed, power, rapid, and plunge defaults.</li>
@@ -262,6 +263,15 @@ SEND "M5 S0" REQUIRE_OK</div>
       </ul>
     </article>
     <article class="card">
+      <div class="eyebrow">Output scaling</div>
+      <p>This section tells the AI how to interpret S values. Use it to describe whether S means laser power or spindle RPM, what the machine's valid range is, and which GRBL laser mode should be preferred.</p>
+      <ul>
+        <li><strong>S min ($31)</strong>: lowest allowed S value.</li>
+        <li><strong>S max ($30)</strong>: highest allowed S value.</li>
+        <li><strong>Preferred laser mode</strong>: <code>M4</code> is the profiler default for lasers because it dynamically scales power with motion speed. <code>M3</code> keeps constant power.</li>
+      </ul>
+    </article>
+    <article class="card">
       <div class="eyebrow">Peripherals</div>
       <p>Air assist defaults to <code>SEND "M8" REQUIRE_OK</code> and <code>SEND "M9" REQUIRE_OK</code> when enabled and left blank. Saving these values makes them part of the AI prompt so generated scripts know how to turn support hardware on and off.</p>
     </article>
@@ -283,7 +293,7 @@ SEND "M5 S0" REQUIRE_OK</div>
     </article>
     <article class="card">
       <div class="eyebrow">Presets</div>
-      <p>Presets give the AI numeric defaults for feed, power, rapid feed, and plunge feed. When these fields are blank, the profiler shows live defaults from the selected controller where available, or profiler fallbacks when no controller default exists.</p>
+      <p>Presets give the AI numeric defaults for feed, the nominal default S value, rapid feed, and plunge feed. If Output scaling says S means spindle RPM, the Default power field is treated as default spindle RPM. If Output scaling says S means laser power, Default power stays the working S value inside the saved $31/$30 range.</p>
     </article>
     <article class="card">
       <div class="eyebrow">Transport tuning</div>

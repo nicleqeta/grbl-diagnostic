@@ -144,6 +144,34 @@
         }
       }
     },
+    "output_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional structured S-value semantics for this machine. Defines what the controller's S range means and which laser mode the AI should prefer when generating tool-on commands.",
+      "properties": {
+        "meaning": {
+          "type": "string",
+          "enum": ["laser_power", "spindle_rpm"],
+          "description": "What S values represent on this machine. Use laser_power for GRBL laser workflows and spindle_rpm for spindle speed workflows."
+        },
+        "s_value_min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum valid S value for this machine, equivalent to GRBL $31 when applicable."
+        },
+        "s_value_max": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Maximum valid S value for this machine, equivalent to GRBL $30 when applicable."
+        },
+        "preferred_laser_mode": {
+          "type": "string",
+          "enum": ["m3", "m4", "unspecified"],
+          "default": "m4",
+          "description": "Preferred GRBL laser power mode. M3 keeps constant power, M4 dynamically scales power with motion speed, unspecified leaves the choice to the generated program."
+        }
+      }
+    },
     "peripherals": {
       "type": "object",
       "additionalProperties": false,

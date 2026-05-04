@@ -604,6 +604,40 @@
       </div>
     </div>
 
+    <!-- Output scaling -->
+    <div class="section">
+      <div class="section-label">Output scaling</div>
+      <div class="two-col">
+        <div class="field-row" style="margin:0">
+          <label>Meaning of S values</label>
+          <select id="output-meaning">
+            <option value="">Not set yet</option>
+            <option value="laser_power">Laser power</option>
+            <option value="spindle_rpm">Spindle RPM</option>
+          </select>
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>Preferred laser mode</label>
+          <select id="output-laser-mode">
+            <option value="m4">M4 dynamic power</option>
+            <option value="m3">M3 constant power</option>
+            <option value="unspecified">No saved preference</option>
+          </select>
+        </div>
+      </div>
+      <div class="two-col" style="margin-top:8px">
+        <div class="field-row" style="margin:0">
+          <label>S min ($31)</label>
+          <input type="number" id="output-s-min" placeholder="0" min="0" step="1">
+        </div>
+        <div class="field-row" style="margin:0">
+          <label>S max ($30)</label>
+          <input type="number" id="output-s-max" placeholder="1000" min="0.001" step="1">
+        </div>
+      </div>
+      <div class="helper-card info" id="output-profile-summary"></div>
+    </div>
+
     <!-- Peripherals -->
     <div class="section">
       <div class="section-label">Peripherals</div>
@@ -697,7 +731,7 @@
           <input type="number" id="preset-feed" placeholder="1000" min="0">
         </div>
         <div class="field-row" style="margin:0">
-          <label>Default power</label>
+          <label id="preset-power-label">Default power / S value</label>
           <input type="number" id="preset-power" placeholder="255" min="0">
         </div>
         <div class="field-row" style="margin:0">
@@ -880,6 +914,11 @@ const axisA         = document.getElementById('axis-a');
 const noZNotice     = document.getElementById('no-z-notice');
 const safeZRow      = document.getElementById('safe-z-row');
 const plungeFeedRow = document.getElementById('plunge-feed-row');
+const outputMeaning = document.getElementById('output-meaning');
+const outputLaserMode = document.getElementById('output-laser-mode');
+const outputSMin = document.getElementById('output-s-min');
+const outputSMax = document.getElementById('output-s-max');
+const outputProfileSummary = document.getElementById('output-profile-summary');
 const periphAirAssist = document.getElementById('periph-air-assist');
 const airAssistCmds = document.getElementById('air-assist-cmds');
 const airAssistOn   = document.getElementById('air-assist-on');
@@ -890,6 +929,7 @@ const snipTbody     = document.getElementById('snippets-tbody');
 const snipEmpty     = document.getElementById('snippets-empty');
 const presetFeed    = document.getElementById('preset-feed');
 const presetPower   = document.getElementById('preset-power');
+const presetPowerLabel = document.getElementById('preset-power-label');
 const presetRapid   = document.getElementById('preset-rapid');
 const presetPlunge  = document.getElementById('preset-plunge');
 const tuningRxBuffer = document.getElementById('tuning-rx-buffer');
@@ -1057,6 +1097,16 @@ function buildProfile() {
   if (!isNaN(dpf) && dpf > 0 && axisZ.checked) presets.plunge_feed = dpf;
   if (Object.keys(presets).length) profile.presets = presets;
 
+  const outputProfile = {};
+  const outputMeaningValue = outputMeaning.value;
+  const sValueMin = parseFloat(outputSMin.value);
+  const sValueMax = parseFloat(outputSMax.value);
+  if (outputMeaningValue) outputProfile.meaning = outputMeaningValue;
+  if (!isNaN(sValueMin) && sValueMin >= 0) outputProfile.s_value_min = sValueMin;
+  if (!isNaN(sValueMax) && sValueMax > 0) outputProfile.s_value_max = sValueMax;
+  if (outputMeaningValue === 'laser_power') outputProfile.preferred_laser_mode = outputLaserMode.value || 'm4';
+  if (Object.keys(outputProfile).length) profile.output_profile = outputProfile;
+
   if (periphAirAssist.checked) {
     const periph = { air_assist: true };
     const onCmd  = airAssistOn.value.trim()  || 'SEND "M8" REQUIRE_OK';
@@ -1088,6 +1138,12 @@ function populateForm(profile) {
   metaUnitMode.value       = (profile.meta && profile.meta.unit_mode) || 'metric';
   metaWorkOffset.value     = (profile.meta && profile.meta.work_offset) || '';
   metaSafeZ.value          = (profile.meta && profile.meta.safe_z_mm != null) ? profile.meta.safe_z_mm : '';
+
+  const outputProfile = profile.output_profile || {};
+  outputMeaning.value       = outputProfile.meaning || '';
+  outputSMin.value          = (outputProfile.s_value_min != null) ? outputProfile.s_value_min : '';
+  outputSMax.value          = (outputProfile.s_value_max != null) ? outputProfile.s_value_max : '';
+  outputLaserMode.value     = outputProfile.preferred_laser_mode || 'm4';
 
   const axes = (profile.meta && Array.isArray(profile.meta.axes)) ? profile.meta.axes : ['X', 'Y'];
   axisX.checked = axes.includes('X');
@@ -1126,6 +1182,7 @@ function updateVisibility() {
   safeZRow.classList.toggle('hidden', !hasZ);
   plungeFeedRow.classList.toggle('hidden', !hasZ);
   airAssistCmds.classList.toggle('visible', periphAirAssist.checked);
+  outputLaserMode.disabled = outputMeaning.value !== 'laser_power';
 }
 
 // ── Tab switcher ──
@@ -1221,6 +1278,21 @@ function parseIntWithFallback(rawValue, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function getPowerFieldLabel(outputMeaningValue) {
+  if (outputMeaningValue === 'spindle_rpm') return 'Default spindle RPM';
+  if (outputMeaningValue === 'laser_power') return 'Default power';
+  return 'Default power / S value';
+}
+
+function getResolvedToolOnMode(outputMeaningValue, preferredLaserMode) {
+  if (outputMeaningValue !== 'laser_power') return 'M3';
+  return preferredLaserMode === 'm3' ? 'M3' : 'M4';
+}
+
+function getDefaultToolOnCommand(ctx) {
+  return `SEND "${ctx.toolOnMode} S${ctx.power}" REQUIRE_OK`;
+}
+
 function getNamedCommandMap() {
   const map = {};
   commands.filter(c => c.name.trim() && c.gcom.trim()).forEach(c => {
@@ -1233,6 +1305,10 @@ function getUiContext() {
   const ctrl = baseCtrlSel.value || 'grbl-vanilla';
   const controller = getControllerData(ctrl);
   const hasZ = axisZ.checked;
+  const outputMeaningValue = outputMeaning.value || '';
+  const preferredLaserMode = outputLaserMode.value || 'm4';
+  const sValueMinRaw = parseFloat(outputSMin.value);
+  const sValueMaxRaw = parseFloat(outputSMax.value);
   const defaultFeed = Number.isFinite(Number(controller.operationsDefaults && controller.operationsDefaults.speed))
     ? Number(controller.operationsDefaults.speed)
     : 1000;
@@ -1245,6 +1321,12 @@ function getUiContext() {
     controller,
     label: controller.label || ctrl,
     hasZ,
+    outputMeaning: outputMeaningValue,
+    preferredLaserMode,
+    sValueMin: Number.isFinite(sValueMinRaw) ? sValueMinRaw : null,
+    sValueMax: Number.isFinite(sValueMaxRaw) ? sValueMaxRaw : null,
+    defaultPowerLabel: getPowerFieldLabel(outputMeaningValue),
+    toolOnMode: getResolvedToolOnMode(outputMeaningValue, preferredLaserMode),
     unitMode: metaUnitMode.value === 'imperial' ? 'G20' : 'G21',
     workOffset: metaWorkOffset.value.trim() || '',
     airAssistEnabled: periphAirAssist.checked,
@@ -1326,11 +1408,54 @@ function renderPeripheralDefaults() {
   peripheralDefaults.innerHTML = html;
 }
 
+function renderOutputProfileSummary() {
+  const ctx = getUiContext();
+  let intro = 'Choose what S means on this machine so the AI can interpret default power correctly.';
+  if (ctx.outputMeaning === 'laser_power') {
+    intro = 'S values represent laser power on this machine. Default power stays the nominal S value inside the configured range.';
+  } else if (ctx.outputMeaning === 'spindle_rpm') {
+    intro = 'S values represent spindle RPM on this machine. The default power field becomes the default spindle speed.';
+  }
+
+  let modeValue = 'Not used';
+  let modeNote = 'Set Meaning of S values to Laser power to enable M3/M4 guidance.';
+  if (ctx.outputMeaning === 'laser_power') {
+    if (ctx.preferredLaserMode === 'm3') {
+      modeValue = 'M3 constant power';
+      modeNote = 'Uses constant power even when motion slows down.';
+    } else if (ctx.preferredLaserMode === 'unspecified') {
+      modeValue = 'No saved preference';
+      modeNote = 'The saved profile leaves laser mode open; the live recommender still falls back to M4.';
+    } else {
+      modeValue = 'M4 dynamic power';
+      modeNote = 'Recommended default for laser work because power tracks motion speed.';
+    }
+  }
+
+  let html = `<div class="helper-card-title">How the profiler interprets S</div>`;
+  html += `<p>${escHtml(intro)}</p>`;
+  html += `<div class="helper-grid two-col">`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">S min ($31)</div><div class="helper-tile-value">${escHtml(ctx.sValueMin != null ? String(ctx.sValueMin) : 'Not set')}</div><div class="helper-tile-note">Lowest allowed S value.</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">S max ($30)</div><div class="helper-tile-value">${escHtml(ctx.sValueMax != null ? String(ctx.sValueMax) : 'Not set')}</div><div class="helper-tile-note">Highest allowed S value.</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Preferred laser mode</div><div class="helper-tile-value">${escHtml(modeValue)}</div><div class="helper-tile-note">${escHtml(modeNote)}</div></div>`;
+  html += `<div class="helper-tile"><div class="helper-tile-label">Nominal default</div><div class="helper-tile-value">${escHtml(String(ctx.power))}</div><div class="helper-tile-note">${escHtml(ctx.defaultPowerLabel)} remains the working default inside this range.</div></div>`;
+  html += `</div>`;
+  if (ctx.outputMeaning === 'laser_power') {
+    html += `<div class="helper-note">Live recommendation: <code>${escHtml(getDefaultToolOnCommand(ctx))}</code></div>`;
+  }
+  outputProfileSummary.innerHTML = html;
+  presetPowerLabel.textContent = ctx.defaultPowerLabel;
+}
+
 function renderPresetDefaults() {
   const ctx = getUiContext();
   let html = '';
   html += `<div class="helper-tile"><div class="helper-tile-label">Default feed</div><div class="helper-tile-value">${escHtml(String(ctx.feed))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.feed))}. Controller default when blank.</div></div>`;
-  html += `<div class="helper-tile"><div class="helper-tile-label">Default power</div><div class="helper-tile-value">${escHtml(String(ctx.power))}</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.power))}. Controller default when blank.</div></div>`;
+  const powerUnits = ctx.outputMeaning === 'spindle_rpm' ? ' RPM' : '';
+  const rangeNote = (ctx.sValueMin != null || ctx.sValueMax != null)
+    ? ` Range ${ctx.sValueMin != null ? `S${ctx.sValueMin}` : 'S?'} to ${ctx.sValueMax != null ? `S${ctx.sValueMax}` : 'S?'}.`
+    : '';
+  html += `<div class="helper-tile"><div class="helper-tile-label">${escHtml(ctx.defaultPowerLabel)}</div><div class="helper-tile-value">${escHtml(String(ctx.power))}${escHtml(powerUnits)}</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.power))}. Controller default when blank.${escHtml(rangeNote)}</div></div>`;
   html += `<div class="helper-tile"><div class="helper-tile-label">Rapid feed</div><div class="helper-tile-value">${escHtml(String(ctx.rapid))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.rapid))}. Profiler-side recommendation derived from controller ceiling.</div></div>`;
   if (ctx.hasZ) {
     html += `<div class="helper-tile"><div class="helper-tile-label">Plunge feed</div><div class="helper-tile-value">${escHtml(String(ctx.plungeFeed))} mm/min</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.plunge))}. Used only for Z moves.</div></div>`;
@@ -1344,6 +1469,29 @@ function renderTransportDefaults() {
   html += `<div class="helper-tile"><div class="helper-tile-label">RX buffer</div><div class="helper-tile-value">${escHtml(String(ctx.rxBuffer))} bytes</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.rxBuffer))}. AUTO send mode uses this until live buffer data is observed.</div></div>`;
   html += `<div class="helper-tile"><div class="helper-tile-label">Planner slots</div><div class="helper-tile-value">${escHtml(String(ctx.plannerSlots))} slots</div><div class="helper-tile-note">${escHtml(formatSourceLabel(ctx.sources.plannerSlots))}. Hint only unless you save an override.</div></div>`;
   transportDefaults.innerHTML = html;
+}
+
+function getToolOnRecommendationDescription(ctx) {
+  if (ctx.outputMeaning === 'laser_power') {
+    return ctx.toolOnMode === 'M3'
+      ? 'Representative laser-start sequence using constant power mode and the current power preset.'
+      : 'Representative laser-start sequence using dynamic power mode and the current power preset.';
+  }
+  if (ctx.outputMeaning === 'spindle_rpm') {
+    return 'Representative spindle-start sequence using the current spindle RPM preset.';
+  }
+  return 'Representative tool-start sequence using the current S-value preset.';
+}
+
+function getToolOnRecommendationNote(ctx) {
+  if (ctx.commandMap.tool_on_sequence) return 'Saved override present.';
+  if (ctx.outputMeaning === 'laser_power') {
+    if (ctx.preferredLaserMode === 'm3') return 'No saved override yet. Using M3 constant power from Output scaling.';
+    if (ctx.preferredLaserMode === 'unspecified') return 'No saved override yet. Output scaling leaves the mode open, so the live recommender falls back to M4.';
+    return 'No saved override yet. Using M4 dynamic power from Output scaling.';
+  }
+  if (ctx.outputMeaning === 'spindle_rpm') return 'No saved override yet. S values are treated as spindle RPM.';
+  return 'No saved override yet. Set Output scaling to explain what S means on this machine.';
 }
 
 function buildRecommendedCommands(ctx) {
@@ -1374,9 +1522,9 @@ function buildRecommendedCommands(ctx) {
     },
     {
       name: 'tool_on_sequence',
-      description: 'Representative tool-start sequence using the current power preset.',
-      note: ctx.commandMap.tool_on_sequence ? 'Saved override present.' : 'No saved override yet.',
-      code: `SEND "M3 S${ctx.power}" REQUIRE_OK`
+      description: getToolOnRecommendationDescription(ctx),
+      note: getToolOnRecommendationNote(ctx),
+      code: getDefaultToolOnCommand(ctx)
     },
     {
       name: 'tool_off_sequence',
@@ -1411,6 +1559,7 @@ function renderLiveDefaults() {
   renderControllerSummary();
   renderCommandsHelp();
   renderPeripheralDefaults();
+  renderOutputProfileSummary();
   renderCommandRecommendations();
   renderPresetDefaults();
   renderTransportDefaults();
@@ -1455,7 +1604,7 @@ function buildExampleProgram() {
   // Header comment
   if (name) {
     seq.push({ comment: `; Machine test — ${name} [${ctx.label}]` });
-    seq.push({ comment: `; cut F${feed} · S${power}${airOn ? ' · air assist' : ''}${hasZ ? ` · depth ${depth}mm` : ''}` });
+    seq.push({ comment: `; cut F${feed} · ${ctx.toolOnMode} S${power}${airOn ? ' · air assist' : ''}${hasZ ? ` · depth ${depth}mm` : ''}` });
     seq.push({ comment: ';' });
   }
 
@@ -1490,7 +1639,7 @@ function buildExampleProgram() {
   if (cmdMap['tool_on_sequence']) {
     seq.push({ gcom: cmdMap['tool_on_sequence'], comment: '; tool on (tool_on_sequence)' });
   } else {
-    seq.push({ gcom: `SEND "M3 S${power}" REQUIRE_OK`, comment: '; tool on' });
+    seq.push({ gcom: getDefaultToolOnCommand(ctx), comment: '; tool on' });
   }
 
   seq.push({ comment: '; box — tests +X +Y −X −Y individually' });
@@ -1621,6 +1770,7 @@ function onFormChange() {
 [baseCtrlSel, metaName, metaFirmware, metaTool, metaBedW, metaBedH, metaNotes,
  metaUnitMode, metaWorkOffset, metaSafeZ,
  axisX, axisY, axisZ, axisA,
+ outputMeaning, outputLaserMode, outputSMin, outputSMax,
  periphAirAssist, airAssistOn, airAssistOff,
  presetFeed, presetPower, presetRapid, presetPlunge,
  tuningRxBuffer, tuningPlannerSlots].forEach(el => {

@@ -1264,6 +1264,37 @@ Before emitting a script, verify:
               contractParts.push(`Vacuum on: ${periph.vacuum_on} — Vacuum off: ${periph.vacuum_off}`);
             }
 
+            const outputProfile = (machineProfile.output_profile && typeof machineProfile.output_profile === 'object' && !Array.isArray(machineProfile.output_profile))
+              ? machineProfile.output_profile
+              : null;
+            if (outputProfile) {
+              if (outputProfile.meaning === 'laser_power') {
+                contractParts.push('S values on this machine represent laser power, not spindle RPM.');
+              } else if (outputProfile.meaning === 'spindle_rpm') {
+                contractParts.push('S values on this machine represent spindle RPM.');
+              }
+
+              const outputRange = [];
+              if (typeof outputProfile.s_value_min === 'number') outputRange.push(`minimum S value is ${outputProfile.s_value_min} ($31)`);
+              if (typeof outputProfile.s_value_max === 'number') outputRange.push(`maximum S value is ${outputProfile.s_value_max} ($30)`);
+              if (outputRange.length) {
+                contractParts.push(`Output range: ${outputRange.join(', ')}.`);
+              }
+
+              if (outputProfile.meaning === 'laser_power') {
+                const preferredLaserMode = typeof outputProfile.preferred_laser_mode === 'string'
+                  ? outputProfile.preferred_laser_mode
+                  : 'm4';
+                if (preferredLaserMode === 'm3') {
+                  contractParts.push('Preferred laser mode is M3. M3 keeps constant power during motion. Use M3 unless the user explicitly asks for M4 dynamic power.');
+                } else if (preferredLaserMode === 'unspecified') {
+                  contractParts.push('Laser mode preference is unspecified. M3 keeps constant power and M4 dynamically scales power with motion speed, so choose explicitly when the job requires one or the other.');
+                } else {
+                  contractParts.push('Preferred laser mode is M4. M4 dynamically scales power with motion speed, while M3 keeps constant power. Use M4 unless the user explicitly asks for M3.');
+                }
+              }
+            }
+
             const commands = Array.isArray(machineProfile.commands) ? machineProfile.commands : [];
             for (let i = 0; i < commands.length; i++) {
               const command = commands[i] && typeof commands[i] === 'object' ? commands[i] : null;
@@ -1299,6 +1330,11 @@ Before emitting a script, verify:
               if (presets.plunge_feed !== undefined)   presetFields.push(`plunge_feed=${presets.plunge_feed}`);
               if (presetFields.length) {
                 contractParts.push(`Presets: ${presetFields.join(', ')}`);
+              }
+              if (presets.default_power !== undefined && outputProfile && outputProfile.meaning === 'laser_power') {
+                contractParts.push(`Treat default_power=${presets.default_power} as the nominal default laser power S value when the user does not specify one.`);
+              } else if (presets.default_power !== undefined && outputProfile && outputProfile.meaning === 'spindle_rpm') {
+                contractParts.push(`Treat default_power=${presets.default_power} as the default spindle RPM when the user does not specify one.`);
               }
               if (typeof presets.plunge_feed === 'number' && presets.plunge_feed > 0) {
                 contractParts.push(`Plunge feed rate for Z moves is ${presets.plunge_feed} mm/min.`);
