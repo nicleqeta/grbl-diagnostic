@@ -1880,6 +1880,7 @@
         <option value="19200">19200 baud</option>
         <option value="9600">9600 baud</option>
       </select>
+      <div id="serial-connect-anchor"></div>
       <details class="section-collapsible" id="advanced-section" style="margin-bottom:8px; border:1px solid var(--border); border-radius:6px;">
         <summary class="section-toggle" style="padding:10px 12px;">
           <span class="section-label" style="margin-bottom:0;">Advanced Connection</span>
@@ -1939,8 +1940,10 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
         </div>
         <div class="help-text" style="margin-top:4px;">FluidNC default port is 80. Earlier versions use port 81.</div>
       </div>
-      <button class="btn primary" id="connect-btn">Connect</button>
-      <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
+      <div id="connection-actions">
+        <button class="btn primary" id="connect-btn">Connect</button>
+        <button class="btn danger" id="disconnect-btn" style="display:none; margin-top:6px;">Disconnect</button>
+      </div>
     </div>
 
     <!-- GCOM Script section -->
@@ -3821,6 +3824,13 @@ function autoResizeBasicDescription() {
   el.style.height = el.scrollHeight + 'px';
 }
 
+function autoResizeBasicScriptInput() {
+  const el = basicScriptInput;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 function buildBasicOverrideEntries() {
   if (!basicSourceId) return [];
   const overrides = [];
@@ -4825,6 +4835,7 @@ function applyBasicScriptPackage(script, { sourceId = '', overrides = null, upda
   setBasicScriptMeta(normalized);
   basicRawProgram = normalized.programText;
   basicScriptInput.value = normalized.programText;
+  autoResizeBasicScriptInput();
   basicBaseVars = { ...normalized.vars };
   basicLoadedVars = { ...normalized.vars };
 
@@ -8934,6 +8945,7 @@ if (applyGcomStarterBtn) {
 
 // Enable/disable run button based on connection and script content
 basicScriptInput.addEventListener('input', () => {
+  autoResizeBasicScriptInput();
   markBasicScriptStructuralDirty();
 });
 
@@ -9290,6 +9302,7 @@ function applySelectedGcomStarter() {
   const selected = String(gcomStarterSelect.value || 'blank');
   if (selected === 'blank') {
     basicScriptInput.value = '';
+    autoResizeBasicScriptInput();
     if (!basicTitleInput.value.trim()) basicTitleInput.value = 'Untitled GCOM Script';
     if (!basicDescriptionInput.value.trim()) basicDescriptionInput.value = 'Fill in your script steps and variables.';
     autoResizeBasicDescription();
@@ -9309,6 +9322,7 @@ function applySelectedGcomStarter() {
   setActiveControllerProfile(profileId, { persist: true, announce: true });
   if (profile.boilerplate && typeof profile.boilerplate.gcom === 'string') {
     basicScriptInput.value = profile.boilerplate.gcom;
+    autoResizeBasicScriptInput();
   }
   if (profile.boilerplate && typeof profile.boilerplate.title === 'string' && profile.boilerplate.title.trim()) {
     basicTitleInput.value = profile.boilerplate.title;
@@ -10816,6 +10830,8 @@ async function connectViaWebSocket() {
   const wsBtn = document.getElementById('transport-ws-btn');
   const wsUrlRow = document.getElementById('ws-url-row');
   const serialControls = document.getElementById('serial-controls');
+  const serialConnectAnchor = document.getElementById('serial-connect-anchor');
+  const connectionActions = document.getElementById('connection-actions');
   if (!serialBtn || !wsBtn) return;
 
   function applyMode(isWs) {
@@ -10824,6 +10840,13 @@ async function connectViaWebSocket() {
     wsBtn.classList.toggle('active', isWs);
     wsUrlRow.style.display = isWs ? 'block' : 'none';
     serialControls.style.display = isWs ? 'none' : 'block';
+    if (connectionActions) {
+      if (isWs) {
+        wsUrlRow.after(connectionActions);
+      } else if (serialConnectAnchor) {
+        serialConnectAnchor.after(connectionActions);
+      }
+    }
   }
 
   serialBtn.addEventListener('click', () => applyMode(false));
@@ -11756,6 +11779,7 @@ function aiHandleAction(action, msgEl) {
       applyBasicScriptPackage(candidatePackage, { sourceId: '', updateHistory: false });
     } else if (basicScriptInput) {
       basicScriptInput.value = candidatePackage.programText || '';
+      if (typeof autoResizeBasicScriptInput === 'function') autoResizeBasicScriptInput();
     }
 
     if (typeof markBasicScriptStructuralDirty === 'function') markBasicScriptStructuralDirty();
