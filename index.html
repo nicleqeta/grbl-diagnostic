@@ -2131,6 +2131,7 @@ $I" title="Enter up to 10 commands, one per line."></textarea>
     <div class="ai-sidebar-header">
       <span class="ai-sidebar-title">&#129302; AI Agent</span>
       <div style="display:flex;gap:4px;align-items:center;">
+        <button class="icon-btn" id="ai-help-btn" title="AI help, prompt examples, and context tips" aria-label="Open AI help" style="padding:3px 7px;font-size:13px;">?</button>
         <button class="icon-btn" id="ai-reboot-btn" title="Clear session and start fresh (reboot)" style="padding:3px 7px;font-size:13px;">&#128257;</button>
         <button class="icon-btn" id="ai-export-btn" title="Export conversation to clipboard" style="padding:3px 7px;font-size:13px;">&#128203;</button>
         <button class="icon-btn" id="ai-sidebar-close-btn" title="Close AI panel" style="padding:3px 7px;">&#10005;</button>
@@ -11010,6 +11011,7 @@ const aiSidebarEl        = document.getElementById('ai-sidebar');
 const aiSidebarResizerEl = document.getElementById('ai-sidebar-resizer');
 const aiSidebarToggleBtn = document.getElementById('ai-sidebar-toggle-btn');
 const aiSidebarCloseBtn  = document.getElementById('ai-sidebar-close-btn');
+const aiHelpBtnEl        = document.getElementById('ai-help-btn');
 const aiExportBtnEl      = document.getElementById('ai-export-btn');
 const aiExportOverlayEl  = document.getElementById('ai-export-overlay');
 const aiExportListEl     = document.getElementById('ai-export-list');
@@ -12017,6 +12019,34 @@ function aiSetContext(payload) {
   aiContextBarEl.style.display = 'flex';
 }
 
+function aiOpenHelpWindow() {
+  const width = 1080;
+  const height = 860;
+  const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+  const profile = getActiveControllerProfile();
+  const params = new URLSearchParams();
+
+  if (profile && profile.id) params.set('base', String(profile.id));
+  if (profile && profile.label) params.set('controllerLabel', String(profile.label));
+  if (activeMachineProfileId) params.set('profileId', String(activeMachineProfileId));
+  if (activeMachineProfile && activeMachineProfile.meta && activeMachineProfile.meta.name) {
+    params.set('machineName', String(activeMachineProfile.meta.name));
+  }
+
+  const features = [
+    `width=${width}`,
+    `height=${height}`,
+    `left=${left}`,
+    `top=${top}`,
+    'resizable=yes',
+    'scrollbars=yes'
+  ].join(',');
+
+  const url = 'ai-help.html' + (params.toString() ? '?' + params.toString() : '');
+  window.open(url, 'gcom-ai-help-window', features);
+}
+
 // AI sidebar drag-to-resize
 let _aiDrag = false, _aiDragX = 0, _aiDragW = 0;
 if (aiSidebarResizerEl) {
@@ -12045,6 +12075,7 @@ document.addEventListener('mouseup', () => {
 
 if (aiSidebarToggleBtn) aiSidebarToggleBtn.addEventListener('click', () => aiSetOpen(!aiSidebarOpen));
 if (aiSidebarCloseBtn)  aiSidebarCloseBtn.addEventListener('click',  () => aiSetOpen(false));
+if (aiHelpBtnEl)        aiHelpBtnEl.addEventListener('click',        () => aiOpenHelpWindow());
 if (aiExportBtnEl)      aiExportBtnEl.addEventListener('click',      () => aiOpenExportModal());
 if (aiExportCloseBtnEl) aiExportCloseBtnEl.addEventListener('click', () => aiCloseExportModal());
 if (aiExportOverlayEl)  aiExportOverlayEl.addEventListener('click',  e => { if (e.target === aiExportOverlayEl) aiCloseExportModal(); });

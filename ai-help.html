@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCOM AI Help</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #171c27;
+    --surface2: #21293a;
+    --border: #2f3b52;
+    --text: #e7edf8;
+    --muted: #97a7bf;
+    --soft: #6b7b94;
+    --teal: #14b8a6;
+    --blue: #60a5fa;
+    --amber: #f59e0b;
+    --green: #22c55e;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--sans);
+    background:
+      radial-gradient(900px 520px at 10% -10%, rgba(20, 184, 166, 0.16), transparent 55%),
+      radial-gradient(920px 560px at 110% 0%, rgba(96, 165, 250, 0.14), transparent 55%),
+      var(--bg);
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 24px;
+    background: rgba(15, 17, 23, 0.94);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+  }
+
+  .topbar p {
+    margin: 6px 0 0;
+    max-width: 820px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    border-color: #456182;
+    background: #273247;
+  }
+
+  main {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .hero,
+  .two-col,
+  .three-col {
+    display: grid;
+    gap: 14px;
+  }
+
+  .hero {
+    grid-template-columns: 1.3fr 1fr;
+    margin-bottom: 16px;
+  }
+
+  .two-col {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    margin-top: 16px;
+  }
+
+  .three-col {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    margin-top: 16px;
+  }
+
+  .card {
+    background: rgba(23, 28, 39, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+  }
+
+  .card.warn {
+    border-color: rgba(245, 158, 11, 0.34);
+    background: rgba(120, 53, 15, 0.18);
+  }
+
+  .card.good {
+    border-color: rgba(34, 197, 94, 0.28);
+  }
+
+  .eyebrow {
+    margin-bottom: 8px;
+    color: var(--soft);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  h2, h3 {
+    margin: 0 0 10px;
+    letter-spacing: -0.02em;
+  }
+
+  h2 { font-size: 26px; }
+  h3 { font-size: 17px; }
+
+  p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  p + p { margin-top: 10px; }
+
+  ul, ol {
+    margin: 10px 0 0 18px;
+    padding: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  li + li { margin-top: 6px; }
+
+  strong { color: var(--text); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(15, 23, 42, 0.44);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 6px;
+    padding: 2px 6px;
+    color: #dbeafe;
+  }
+
+  pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .code-block {
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    background: rgba(15, 23, 42, 0.52);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.72;
+  }
+
+  .example-frame {
+    position: relative;
+  }
+
+  .example-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 6px;
+  }
+
+  .example-btn {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 9px;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .example-btn:hover {
+    border-color: #456182;
+    background: #273247;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 5px 10px;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    background: rgba(30, 64, 175, 0.14);
+    color: #dbeafe;
+    font-size: 12px;
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .note {
+    margin-top: 10px;
+    color: var(--soft);
+    font-size: 12px;
+  }
+
+  @media (max-width: 940px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+
+    .topbar {
+      flex-direction: column;
+    }
+  }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>AI Help</h1>
+    <p>How to ask for the result you want, what context the AI actually sees, and why a loaded machine profile usually produces more useful GCOM on the first pass.</p>
+  </div>
+  <div class="actions">
+    <button class="btn" id="close-help-btn" type="button">Close</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <article class="card">
+      <div class="eyebrow">Current context</div>
+      <h2 id="controller-title">Controller guidance only</h2>
+      <p id="context-summary">This page mirrors the same context flow used by the AI request in the main app.</p>
+      <div class="chip-row" id="context-chips"></div>
+    </article>
+    <article class="card warn">
+      <div class="eyebrow">Fast rule</div>
+      <h3>Describe the motion pattern, not just the idea.</h3>
+      <p>The AI improves when you state the exact loop math, the start and end coordinates, whether a move should be <code>G0</code> or <code>G1</code>, and what the output must not do.</p>
+      <p class="note">If a previous answer scaled values, inserted <code>ROUND()</code>, or chose the wrong geometry, say not to do that in the next prompt.</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Where AI gets context</div>
+    <h3>The AI sees more than the latest chat message.</h3>
+    <div class="section-grid">
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Current script</div>
+        <p>Your script source, metadata fields, and variable defaults are attached so the AI can modify or continue the program you already have.</p>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Validation state</div>
+        <p>Current syntax errors, warnings, and the validation summary are included, so the AI can explain or repair the exact issue the editor is showing.</p>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Preview selection</div>
+        <p>If you select commands or segments in Preview, the AI also gets those commands, motion segments, line numbers, and geometry summaries. This is the fastest way to focus it on a wrong move.</p>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Terminal output</div>
+        <p>If you enable the terminal toggle, or the app saw a recent script error, recent terminal lines are attached automatically.</p>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Controller profile</div>
+        <p>The AI always gets the active controller guidance: controller flavor, preferred style, avoid list, acknowledgement behavior, and boilerplate GCOM.</p>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Machine profile</div>
+        <p>If a machine profile is loaded, or a <code>;PROFILE:</code> header points to one, the AI also gets machine notes, exact command examples, snippets, presets, and output-scaling conventions.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="two-col">
+    <article class="card">
+      <div class="eyebrow">Why prompts drift</div>
+      <h3>Common missing details</h3>
+      <ul>
+        <li>You describe the visual result, but not the actual move order.</li>
+        <li>You name variables, but not how each variable should compound through the loop.</li>
+        <li>You do not say whether values should be used literally or transformed by scaling or rounding.</li>
+        <li>You do not specify whether the next line begins with a rapid reposition or a cut.</li>
+        <li>You do not say what extra moves are forbidden.</li>
+      </ul>
+    </article>
+    <article class="card good">
+      <div class="eyebrow">What to include</div>
+      <h3>High-yield prompt details</h3>
+      <ul>
+        <li>Name the required variables exactly.</li>
+        <li>Spell out the loop in plain language: <code>for each i from 0 to number_of_lines - 1</code>.</li>
+        <li>Give the coordinate formulas for start and end points.</li>
+        <li>Name the command types explicitly: <code>G0</code> to reposition, <code>G1</code> to cut.</li>
+        <li>State the prohibitions: do not scale, do not round, do not add extra return segments.</li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Prompt refinement example</div>
+    <h3>Your flared-cuts conversation needed the geometry to become explicit.</h3>
+    <div class="two-col">
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Earlier prompt</div>
+        <div class="code-block"><pre>I'd like to generate a series of horizontal cuts with variables controlling the spacing at each end so one end can optionally be flared out. power at 30%, speed 3000mm/min.</pre></div>
+        <ul>
+          <li>It did not define the exact G0 and G1 sequence.</li>
+          <li>It did not define <code>number_of_lines</code>.</li>
+          <li>It did not say whether <code>power</code>, <code>flare_start</code>, and <code>flare_end</code> should be used literally.</li>
+          <li>It did not say whether the flare should appear as horizontal spacing, diagonal endpoints, or a return pass.</li>
+        </ul>
+      </article>
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">Prompt that would have got you there much earlier</div>
+        <div class="code-block"><pre>I'd like to generate a series of horizontal cuts with variables controlling the spacing at each end so one end can optionally be flared out. The cuts should start at X0 Y0 and end at X100 Y0, then move rapidly to X0 Y1 and cut to X100 Y2, and so on. The first cut should start at X0 Y0 and end at X100 Y0, the second cut should start at X0 Y1 and end at X100 Y2, and so on. Use a number_of_lines variable to control the number of lines. Power should be 30% (300) and speed should be 3000 mm/min. Use ROUND to round the coordinates and feed rates to 4 decimal places. Use M4 for dynamic power scaling.</pre></div>
+      </article>
+    </div>
+    <p class="note">That version removes the biggest sources of drift: it fixes the exact variable set, the line length variable, the use of M4 and M5, the loop math, the retained ROUND formatting, and the ban on extra return segments.</p>
+  </section>
+
+  <section class="three-col">
+    <article class="card">
+      <div class="eyebrow">Say this early</div>
+      <p>Use these variable names exactly: <code>power</code>, <code>speed</code>, <code>flare_start</code>, <code>flare_end</code>, <code>number_of_lines</code>, <code>length_of_lines</code>.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Say this when needed</div>
+      <p>State explicitly whether emitted values should keep <code>ROUND(..., 4)</code> formatting or stay completely unrounded.</p>
+    </article>
+    <article class="card">
+      <div class="eyebrow">Say this for geometry</div>
+      <p>Describe each loop iteration as coordinate formulas, not only as words like flared, offset, or stepped.</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Machine profiles help</div>
+    <h3>Without a machine profile, the AI only has controller-level guidance.</h3>
+    <div class="two-col">
+      <article class="card" style="padding:14px;">
+        <div class="eyebrow">No machine profile loaded</div>
+        <ul>
+          <li>Controller flavor label</li>
+          <li>Preferred style and avoid guidance</li>
+          <li>Recommended boilerplate GCOM</li>
+          <li>General acknowledgement behavior</li>
+        </ul>
+      </article>
+      <article class="card good" style="padding:14px;">
+        <div class="eyebrow">Machine profile loaded</div>
+        <ul>
+          <li>Machine name and notes</li>
+          <li>Exact command examples such as <code>job_start</code>, <code>tool_on_sequence</code>, <code>rapid_move</code>, and <code>cut_move</code></li>
+          <li>Saved snippets and presets</li>
+          <li>Output-scaling conventions like what <code>S</code> means and the intended range</li>
+        </ul>
+        <p class="note">These are injected as plain GCOM references, which is why a good machine profile often improves first-pass results more than wording tweaks alone.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Best workflow</div>
+    <h3>Use the AI panel like a constrained editor.</h3>
+    <ol>
+      <li>Load the right controller profile and, if you have one, the right machine profile.</li>
+      <li>Select the wrong commands or segments in Preview before asking for a fix.</li>
+      <li>Describe the exact coordinate formulas or loop behavior you expect.</li>
+      <li>Name any hard constraints: no scaling, no rounding, no extra segments, preserve the current structure.</li>
+      <li>If the result is close, ask for a targeted correction instead of regenerating the entire script.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Target structure</div>
+    <h3>The working pattern you can load directly</h3>
+    <div class="code-block example-frame">
+      <div class="example-actions">
+        <button class="example-btn" id="final-example-copy-btn" type="button">Copy</button>
+        <button class="example-btn" id="final-example-load-btn" type="button">Load</button>
+      </div>
+      <pre id="final-example-code">; TITLE: Flared Horizontal Cuts
+; VERSION: 1
+; AUTHOR: GitHub Copilot
+; DESCRIPTION: Cut a series of horizontal lines with variable spacing at each end.
+; VAR flare_end=0.15
+; VAR flare_start=0.03
+; VAR number_of_lines=10
+; VAR power=300
+; VAR speed=3000
+; VAR length_of_lines=350
+
+10 LET power_s = {power}
+20 LET speed_f = {speed}
+30 SEND "M4" REQUIRE_OK
+40 SEND "G0 X0 Y0 F" & speed_f & " S" & power_s REQUIRE_OK
+50 FOR i = 0 TO {number_of_lines} - 1 STEP 1
+60 LET y_start = i * {flare_start}
+70 LET y_end = i * {flare_end}
+80 SEND "G0 X0 Y" & ROUND(y_start, 4) & " F" & ROUND(speed_f, 4) & " S" & ROUND(power_s, 4) REQUIRE_OK
+90 SEND "G1 X" & {length_of_lines} & " Y" & ROUND(y_end + {flare_end}, 4) & " F" & ROUND(speed_f, 4) & " S" & ROUND(power_s, 4) REQUIRE_OK
+100 NEXT i
+110 SEND "M5" REQUIRE_OK
+120 END</pre>
+    </div>
+    <p class="note">Load sends this full metadata-bearing example back to the main app using the same help-window message path as Basic help, so the title, description, and VAR defaults load with the script.</p>
+  </section>
+</main>
+
+<script>
+const CONTROLLER_SUMMARY = {
+  'grbl-vanilla': {
+    label: 'Vanilla GRBL',
+    chips: ['Controller guidance active', 'GRBL-style boilerplate', 'No machine-specific examples unless a profile is loaded']
+  },
+  'fluidnc': {
+    label: 'FluidNC',
+    chips: ['Controller guidance active', 'FluidNC-aware fallback', 'Machine profile can add exact examples']
+  }
+};
+
+function esc(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderContextSummary() {
+  const params = new URLSearchParams(window.location.search);
+  const base = params.get('base') || 'grbl-vanilla';
+  const controller = CONTROLLER_SUMMARY[base] || CONTROLLER_SUMMARY['grbl-vanilla'];
+  const controllerLabel = params.get('controllerLabel') || controller.label;
+  const machineName = params.get('machineName') || '';
+  const profileId = params.get('profileId') || '';
+  const chips = controller.chips.slice();
+
+  document.getElementById('controller-title').textContent = controllerLabel;
+
+  if (machineName) {
+    document.getElementById('context-summary').textContent = 'A machine profile is currently loaded, so the AI can use both controller guidance and machine-specific command examples.';
+    chips.unshift('Machine profile: ' + machineName);
+  } else {
+    document.getElementById('context-summary').textContent = 'No machine profile is currently attached, so the AI will fall back to controller-level guidance plus your script, selection, and diagnostics.';
+    chips.unshift('Machine profile: none loaded');
+  }
+
+  if (profileId) chips.splice(1, 0, 'Profile ID: ' + profileId);
+
+  document.getElementById('context-chips').innerHTML = chips
+    .map(chip => '<span class="chip">' + esc(chip) + '</span>')
+    .join('');
+}
+
+document.getElementById('close-help-btn').addEventListener('click', () => {
+  window.close();
+});
+
+async function copyFinalExample() {
+  const codeEl = document.getElementById('final-example-code');
+  const btn = document.getElementById('final-example-copy-btn');
+  const text = codeEl ? String(codeEl.textContent || '') : '';
+  if (!text.trim() || !btn) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+  } catch {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+  }
+}
+
+function loadFinalExample() {
+  const codeEl = document.getElementById('final-example-code');
+  const btn = document.getElementById('final-example-load-btn');
+  const text = codeEl ? String(codeEl.textContent || '') : '';
+  if (!text.trim() || !btn) return;
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage({ type: 'gcom-load-script', programText: text }, window.location.origin);
+    window.opener.focus();
+    btn.textContent = 'Loaded';
+    setTimeout(() => { btn.textContent = 'Load'; }, 1200);
+  } else {
+    btn.textContent = 'No window';
+    setTimeout(() => { btn.textContent = 'Load'; }, 2000);
+  }
+}
+
+document.getElementById('final-example-copy-btn').addEventListener('click', () => {
+  void copyFinalExample();
+});
+document.getElementById('final-example-load-btn').addEventListener('click', () => {
+  loadFinalExample();
+});
+
+renderContextSummary();
+</script>
+</body>
+</html>
